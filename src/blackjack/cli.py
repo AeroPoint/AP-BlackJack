@@ -194,7 +194,7 @@ def cmd_spread(args: argparse.Namespace) -> int:
         ),
     )
     grid = [float(c) for c in range(-6, 11)]
-    print(f"Solving the edge at {len(grid)} true counts (this is the slow part)...")
+    print(f"Solving the exact edge and variance at {len(grid)} true counts...")
     curve = count_edge_curve(rules, system, grid)
     result = evaluate_ramp(ramp, rules, system, edges=curve, counts=grid)
 

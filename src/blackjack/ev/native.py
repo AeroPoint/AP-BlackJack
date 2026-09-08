@@ -111,6 +111,27 @@ def action_evs(
     }
 
 
+def round_moments(comp: Composition, rules: RuleSet) -> tuple[float, float]:
+    """Exact ``(mean, second moment)`` of a round, on the native core.
+
+    Args:
+        comp: Shoe composition to evaluate.
+        rules: Table rules.
+
+    Returns:
+        Mean and second moment in units of the initial wager. The caller takes
+        the variance, because the second moment is the thing that composes and
+        the variance is the thing people read.
+    """
+    module = ACTIVE.module
+    if module is None:  # pragma: no cover - guarded by callers
+        raise RuntimeError("native core is not available")
+    result: tuple[float, float] = module.round_moments(
+        list(comp), core_rules(rules), rules.blackjack_multiplier
+    )
+    return result
+
+
 def solve_cells(
     comp: Composition,
     rules: RuleSet,

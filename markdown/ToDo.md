@@ -23,14 +23,21 @@ worth building twice.
   - move `enumerate_deals` into the core to drop the last Python loop in `solve`;
   - publish wheels in CI so `uv sync --extra native` needs no Rust toolchain.
 
-- [ ] **Exact variance from the solver.** *Now the top item.*
-  Propagate the full outcome distribution (win/lose/push at each stake) through
-  the play tree instead of only the expectation. Removes the last hardcoded
-  constant (`DEFAULT_VARIANCE_PER_UNIT = 1.32`) from the risk maths.
-  *Done when:* `bj spread` reports SD with no simulation input, and it matches a
-  10M-round simulation within its error bars.
+- [x] **Exact variance from the solver.** *Done.* `ev/moments.py` carries first
+  and second moments *conditional on each dealer outcome* through the play tree,
+  which is what makes splitting composable — two split hands face the same
+  dealer, so they are correlated until you condition on them.
+  The mean reproduces the EV recursion to 1e-18, and the exact SD of 1.16150
+  matches the simulator's independently measured 1.1619 (~2 standard errors).
+  Ported to Rust: 2.1 s -> 30 ms.
 
-- [ ] **Result cache with provenance.**
+  Variance turns out **not** to be flat across the count — 1.24 at TC −6, 1.67
+  at +10 — and a ramp bets most where variance is highest. The old constant was
+  understating a 1-12 spread's risk of ruin by 17% (3.77% vs the true 4.42%) and
+  the required bankroll by about $2,000. `bj spread` now reports exact variance
+  by default.
+
+- [ ] **Result cache with provenance.** *Now the top P0 item.*
   Key solves on `(rules.slug(), composition hash, engine version)`; store under
   `data/cache/`. Invalidate on engine version change, never on a timestamp.
   *Done when:* a repeated `bj spread` returns instantly and the cache entry

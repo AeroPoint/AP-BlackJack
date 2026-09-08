@@ -8,7 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from blackjack.config.loader import find_config_dir, list_available, load_rules, save_profile
+from blackjack.config.loader import (
+    find_config_dir,
+    list_available,
+    load_profile,
+    load_ramp,
+    load_rules,
+    load_system,
+    save_profile,
+)
 from blackjack.config.models import (
     SCHEMA_VERSION,
     ConfigError,
@@ -142,14 +150,34 @@ def test_every_config_kind_has_entries(kind: str) -> None:
     assert list_available(kind), f"no configs found under {kind}/"
 
 
-def test_shipped_rule_configs_all_load() -> None:
-    """Every file in configs/rules/ must parse. A broken config is a broken app."""
-    yaml = pytest.importorskip("yaml", reason="YAML configs need the cli extra")
-    del yaml
+def test_shipped_configs_all_load() -> None:
+    """Every shipped config must parse.
+
+    Covers all four kinds, not just rules. The version that checked only rules
+    missed a real bug: ``schema_version`` was tolerated by ``rules_from_dict``
+    and rejected by the counting-system and ramp loaders, so every shipped
+    counting system failed to load the moment PyYAML was installed.
+    """
+    pytest.importorskip("yaml", reason="YAML configs need the cli extra")
+
     for name in list_available("rules"):
         rules = load_rules(name)
         assert rules.decks >= 1
         assert rules.slug()
+
+    for name in list_available("counting"):
+        system = load_system(name)
+        assert len(system.tags) == 10
+        assert system.name
+
+    for name in list_available("spreads"):
+        ramp = load_ramp(name)
+        assert len(ramp.thresholds) == len(ramp.units)
+
+    for name in list_available("profiles"):
+        profile = load_profile(name)
+        assert profile.fingerprint()
+        assert profile.unit > 0
 
 
 def test_preset_keys_match_config_filenames() -> None:

@@ -265,15 +265,67 @@ figures, here computed rather than quoted.
 
 ### Variance
 
-The one thing not available analytically. The solver computes expectations, not
-full outcome distributions, so per-round variance comes from a measured constant
-(`1.32` per unit, and simulation reproduces `SD = 1.162` → variance 1.35) or from
-a simulation run. Flagged at every use. Fixing this is a P0 item in
-[ToDo.md](ToDo.md).
+Exact, and exact *per count*. See §10.
+
+Variance is not flat across the count — about 1.24 at true count −6 and 1.67 at
++10, because high counts mean more doubles and more splits. A ramp puts its
+largest bets exactly where variance is highest, and bets enter the variance
+squared, so treating variance as a constant understates risk of ruin where it
+matters most. For a 1-12 spread the flat assumption reported 3.77% lifetime risk
+against a true 4.42%, and a required bankroll about $2,000 light.
 
 ---
 
-## 10. Risk
+## 10. Exact variance
+
+Expectations add. Second moments do not, and the place that bites is splitting:
+two split hands play against the **same** dealer hand, so their results are
+strongly correlated and `Var(X₁ + X₂) ≠ Var(X₁) + Var(X₂)`.
+
+The resolution is to condition. Given the dealer's final total, the only thing
+coupling the hands is gone and they become independent, so the recursion carries
+moments **conditional on each dealer outcome** — six slots for standing totals
+17–21 and bust — and collapses them only at the end:
+
+```
+E[X]   = Σ_d  q_d · m₁(d)
+E[X²]  = Σ_d  q_d · m₂(d)
+```
+
+Splitting then composes in one line. A slot that splits into two conditionally
+independent, identically distributed copies of itself has
+
+```
+m₁' = 2·m₁          m₂' = 2·m₂ + 2·m₁²
+```
+
+which is just `E[(A+B)²] = E[A²] + E[B²] + 2E[A]E[B]`.
+
+Mixtures need no such care: `E[X²] = Σ_r P(r)·E[X²|r]` is exact, because a
+mixture is not a sum.
+
+**Decisions come from the unconditional expectation**, because that is what the
+player can see — they do not know the dealer's total. So the moment recursion
+asks the EV recursion which action is best and then propagates the moment vector
+for that action. If the two disagreed about strategy, the variance would belong
+to a game nobody plays.
+
+Validation, three ways:
+
+| check | result |
+|---|---|
+| Mean vs the EV recursion | agrees to 2.6 × 10⁻¹⁸ |
+| SD vs 12M simulated rounds | 1.16150 exact vs 1.1619 ± 0.0002 measured |
+| Native vs Python | agrees to a few ulp |
+
+That last row is the one place in the project that is *not* bit-identical, and
+the reason is benign: the round total is reduced across threads, floating-point
+addition is not associative, and a parallel reduction sums in whatever order the
+work landed.
+
+---
+
+## 11. Risk
 
 ```
 Risk of ruin (fixed bet, infinite horizon):  RoR = exp(−2·B·μ / σ²)
@@ -293,7 +345,7 @@ time to lose in all the ways the limit accounts for.
 
 ---
 
-## 11. Side bets
+## 12. Side bets
 
 No decisions, so no strategy — instead a pure enumeration:
 
@@ -307,11 +359,14 @@ than approximate. See [SideBets.md](SideBets.md).
 
 ---
 
-## 12. What is validated, and how
+## 13. What is validated, and how
 
 | claim | check |
 |---|---|
 | Dealer recursion | Infinite-deck probabilities match published tables to 5 dp |
+| Exact variance | SD 1.16150 vs 1.1619 measured over 12M rounds |
+| Counting correlations | Hi-Lo BC 0.969 (published 0.97), IC 0.760 (0.76) |
+| Native core | Reproduces the Python reference bit for bit |
 | Distributions | Sum to 1 for every upcard × rule combination |
 | House edge | 6D H17 DAS = 0.5498%; 6:5 costs 1.360 points (published 1.36–1.39) |
 | Insurance | −7.3955% off the top = exactly −23/311 |
@@ -321,7 +376,7 @@ than approximate. See [SideBets.md](SideBets.md).
 | Tilt | Round-trips to machine precision |
 | Simulator | Converges on the solver within its own error bars |
 
-The last row is the one that earns its keep. The solver and the simulator compute
+The simulator row is the one that earns its keep. The solver and the simulator compute
 the same quantity by completely different routes; requiring them to agree found
 both bugs in the initial simulator — resplit aces being unreachable, and the
 second hand of a split ace drawing a third card.
