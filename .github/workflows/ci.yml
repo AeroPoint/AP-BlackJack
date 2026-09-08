@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The engine has no dependencies, so this job proves it: a bare Python with
+  # nothing installed must run the CLI and import every module. If this breaks,
+  # ADR-0004 has been violated somewhere.
+  bare-python:
+    name: bare python (no dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run the solver with nothing installed
+        run: |
+          PYTHONPATH=src python -m blackjack.cli solve --rules vegas6-h17
+          PYTHONPATH=src python -m blackjack.cli explain T6 T
+      - name: Check declared licences
+        run: python scripts/check_licenses.py --declared
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python }}
+      - run: uv sync --extra cli --extra api
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Types
+        run: uv run mypy
+      - name: Fast tests
+        run: uv run pytest -m "not slow" -q
+      - name: Installed licences
+        run: uv run python scripts/check_licenses.py
+
+  # Cross-validation between the solver and the simulator needs millions of
+  # rounds, so it runs once rather than across the matrix.
+  cross-validation:
+    name: solver vs simulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync
+      - run: uv run pytest -m slow -q
+
+  native:
+    name: native core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --manifest-path crates/blackjack-core/Cargo.toml --check
+      - name: Clippy
+        run: cargo clippy --manifest-path crates/blackjack-core/Cargo.toml -- -D warnings
+      - name: Build
+        run: cargo build --manifest-path crates/blackjack-core/Cargo.toml --release

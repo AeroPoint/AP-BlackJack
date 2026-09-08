@@ -1,0 +1,13 @@
+# Six deck, dealer stands soft 17, late surrender. A genuinely good game.
+schema_version: 1
+name: "6D S17 DAS LS"
+decks: 6
+hit_soft_17: false
+blackjack_payout: "3/2"
+double_rule: any2
+double_after_split: true
+max_split_hands: 4
+resplit_aces: true
+surrender: late
+hole_card: peek
+penetration: 0.75

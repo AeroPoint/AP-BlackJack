@@ -1,0 +1,58 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# --- Virtual environments ---
+# The legacy Spyder venv; superseded by uv (see environment/README.md).
+blackjackenv/
+.venv/
+venv/
+env/
+
+# --- Rust ---
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# --- Node / web ---
+node_modules/
+apps/web/dist/
+apps/web/.vite/
+*.tsbuildinfo
+
+# --- Tooling / OS ---
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.spyproject/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Project outputs ---
+# Generated artifacts are reproducible from configs; never commit them.
+out/
+runs/
+*.parquet
+*.npz
+*.prof
+data/cache/
+data/generated/
+!data/reference/**
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example

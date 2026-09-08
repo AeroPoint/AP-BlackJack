@@ -1,0 +1,4 @@
+schema_version: 1
+name: "flat"
+thresholds: [-99]
+units: [1]

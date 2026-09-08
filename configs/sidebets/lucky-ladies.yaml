@@ -1,0 +1,11 @@
+schema_version: 1
+name: "Lucky Ladies"
+bet: "Lucky Ladies"
+variants:
+  standard-200-25-10-4:
+    payouts: {pair of queen of hearts: 200, matched 20: 25, suited 20: 10, any 20: 4}
+notes: >
+  The most countable common side bet: its EV is almost entirely a function of
+  ten density, so a plain ten side count moves it a long way. The 1000-to-1
+  line for a queen-of-hearts pair alongside a dealer blackjack is not modelled
+  here -- see markdown/SideBets.md.

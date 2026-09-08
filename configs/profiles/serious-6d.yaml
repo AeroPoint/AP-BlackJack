@@ -1,0 +1,13 @@
+schema_version: 1
+name: "serious 6D"
+rules: vegas6-s17-ls
+system: hi-lo
+ramp: 1-12
+unit: 100
+bankroll: 100000
+rounds: 5000000
+rounds_per_hour: 120
+seed: 20260907
+use_indices: true
+index_count: 24
+take_insurance: true

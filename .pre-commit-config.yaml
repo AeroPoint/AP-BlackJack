@@ -1,0 +1,43 @@
+# Install with: uv run pre-commit install
+# These are the checks that are cheap enough to run on every commit. The slow
+# ones -- cross-validation, the native build -- live in CI only.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: '\.(bat|ps1)$'
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # Guards ADR-0004. Cheap, and the failure it catches -- a stray `import
+      # numpy` at module scope -- is easy to introduce and easy to miss.
+      - id: no-engine-dependencies
+        name: engine imports only stdlib
+        entry: python -m pytest tests/unit/test_no_dependencies.py -q
+        language: system
+        pass_filenames: false
+        files: '^src/blackjack/.*\.py$'
+
+      # Guards ADR-0005.
+      - id: declared-licences
+        name: dependencies are permissively licensed
+        entry: python scripts/check_licenses.py --declared
+        language: system
+        pass_filenames: false
+        files: '^pyproject\.toml$'

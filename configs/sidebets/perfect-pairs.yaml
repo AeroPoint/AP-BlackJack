@@ -1,0 +1,11 @@
+schema_version: 1
+name: "Perfect Pairs"
+bet: "Perfect Pairs"
+variants:
+  standard-25-12-6:
+    payouts: {perfect pair: 25, coloured pair: 12, mixed pair: 6}
+  tight-25-8-5:
+    payouts: {perfect pair: 25, coloured pair: 8, mixed pair: 5}
+notes: >
+  Edge depends strongly on deck count because a perfect pair needs two
+  identical cards: 6.1% at six decks, 47% at one.
