@@ -1,0 +1,14 @@
+# Payouts are quoted TO 1. A sign reading "9 FOR 1" means 8 to 1.
+schema_version: 1
+name: "21+3"
+bet: "21+3"
+variants:
+  flat-9:
+    payouts: {flush: 9, straight: 9, three of a kind: 9, straight flush: 9, suited trips: 9}
+  tiered-100-40-30-10-5:
+    payouts: {suited trips: 100, straight flush: 40, three of a kind: 30, straight: 10, flush: 5}
+  tiered-100-40-25-10-4:
+    payouts: {suited trips: 100, straight flush: 40, three of a kind: 25, straight: 10, flush: 4}
+notes: >
+  Check the flush line first. It carries most of the probability, so trimming it
+  from 5 to 4 costs the player far more than the 100-to-1 top prize returns.

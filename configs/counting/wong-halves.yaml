@@ -1,0 +1,10 @@
+schema_version: 1
+name: "Wong Halves"
+tags: [-1, 0.5, 1, 1, 1.5, 1, 0.5, 0, -0.5, -1]
+balanced: true
+level: 3
+rounding: truncate
+notes: >
+  Highest betting correlation of the classic systems (about 0.99). Usually run
+  with every tag doubled so the running count stays an integer; that is a
+  presentation choice and does not change any result here.

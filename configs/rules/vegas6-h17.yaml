@@ -1,0 +1,20 @@
+# Vegas Strip six-deck, dealer hits soft 17. The default reference game.
+# Every field maps 1:1 onto blackjack.rules.RuleSet; unknown fields are an
+# error, not a warning, so a typo cannot silently change your numbers.
+schema_version: 1
+name: "Vegas Strip 6D H17 DAS"
+decks: 6
+hit_soft_17: true
+blackjack_payout: "3/2"
+double_rule: any2          # any2 | 9-11 | 10-11 | none
+double_after_split: true
+max_split_hands: 4         # 4 hands means up to 3 split operations
+resplit_aces: true
+hit_split_aces: false
+surrender: none            # none | late | early
+hole_card: peek            # peek (US) | enhc (European) | obo
+insurance_payout: "2/1"
+charlie: null              # e.g. 7 for a seven-card Charlie
+penetration: 0.75          # fraction of the shoe dealt before the shuffle
+max_hands_played: 1
+deck_estimation: 0.5       # half-deck discard-tray estimation

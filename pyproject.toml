@@ -1,0 +1,163 @@
+# =============================================================================
+#  Project metadata & configuration control
+#  ---------------------------------------------------------------------------
+#  Single source of truth for: dependencies, tool settings, and packaging.
+#  Environment is reproduced with `uv sync` against the committed uv.lock.
+#  See markdown/ConfigControl.md for the full policy.
+# =============================================================================
+[project]
+name = "blackjack"
+description = "Exact-solver and simulation engine for blackjack strategy, counting, bet spreads, and side bets."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "UNLICENSED-PROPRIETARY" }   # see markdown/adr/ADR-0005-licensing.md
+authors = [{ name = "Sean Fennig", email = "seanfennig@gmail.com" }]
+keywords = ["blackjack", "card-counting", "expected-value", "monte-carlo", "solver"]
+classifiers = [
+  "Private :: Do Not Upload",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Mathematics",
+]
+dynamic = ["version"]
+
+# --- Runtime deps -------------------------------------------------------------
+# DELIBERATELY EMPTY. The engine -- rules, solver, simulator, bankroll maths,
+# side bets, CLI -- imports nothing outside the Python standard library, and
+# tests/unit/test_no_dependencies.py enforces that. The reasons:
+#
+#   * it can be embedded anywhere, including inside the API server, a notebook,
+#     or a future mobile runtime, without dragging a dependency tree along;
+#   * it is trivially auditable for the commercial-licence question -- there is
+#     nothing to audit; and
+#   * a numerical core with no dependencies cannot break because someone else
+#     shipped a minor version.
+#
+# Everything optional lives in an extra below.
+#
+# HARD RULE for every extra: permissive licences only (MIT / BSD / Apache-2.0 /
+# PSF / ISC / MPL-2.0). No GPL, no LGPL, no source-available licences.
+# `python scripts/check_licenses.py` enforces this in CI. See
+# markdown/adr/ADR-0005-licensing.md.
+dependencies = []
+
+[project.optional-dependencies]
+# Nicer terminal output and YAML config files. The CLI works without these:
+# it falls back to plain text and to JSON configs.
+cli = [
+  "rich>=13.7",           # MIT
+  "pyyaml>=6.0",          # MIT
+]
+# Native accelerator. Optional so the pure-Python reference impl always works.
+native = ["blackjack-core"]
+# Local web application (ADR-0002).
+api = [
+  "fastapi>=0.111",       # MIT
+  "uvicorn[standard]>=0.30",  # BSD-3
+  "pydantic>=2.7",        # MIT
+  "orjson>=3.10",         # MIT / Apache-2.0
+  "pyyaml>=6.0",          # MIT
+]
+# Analysis / notebooks. Kept out of the shipped app.
+analysis = [
+  "pandas>=2.2",          # BSD-3
+  "matplotlib>=3.8",      # PSF-based, BSD-compatible
+  "scipy>=1.13",          # BSD-3
+]
+dev = [
+  "pytest>=8.2",          # MIT
+  "pytest-cov>=5.0",      # MIT
+  "hypothesis>=6.100",    # MPL-2.0 (dev-only; not distributed)
+  "ruff>=0.5",            # MIT
+  "mypy>=1.10",           # MIT
+  "pre-commit>=3.7",      # MIT
+  "maturin>=1.6",         # MIT/Apache-2.0 - builds the Rust core
+]
+
+[project.scripts]
+bj = "blackjack.cli:main"
+
+[project.urls]
+Documentation = "./markdown/ReadMe.md"
+
+# --- Build --------------------------------------------------------------------
+[build-system]
+requires = ["hatchling>=1.25"]   # MIT
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/blackjack/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blackjack"]
+
+# --- uv -----------------------------------------------------------------------
+[tool.uv]
+package = true
+default-groups = ["dev"]
+
+[tool.uv.sources]
+# Built from the in-repo Rust crate; `uv sync --extra native` compiles it.
+blackjack-core = { path = "crates/blackjack-core", editable = true }
+
+# --- Lint / format ------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "apps/api"]
+
+[tool.ruff.lint]
+select = [
+  "E", "F", "W",   # pycodestyle / pyflakes
+  "I",             # isort
+  "UP",            # pyupgrade
+  "B",             # bugbear
+  "C4",            # comprehensions
+  "SIM",           # simplify
+  "RUF",           # ruff-specific
+  "N",             # pep8-naming
+  "ANN",           # annotations
+  "D",             # docstrings
+]
+ignore = [
+  "D203", "D213",  # conflicting docstring conventions
+  "ANN401",        # allow Any where genuinely needed
+  "E741",          # ambiguous names: `l` is fine in card-math loops
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN", "S101"]
+"scripts/**" = ["D", "ANN"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# --- Types --------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+files = ["src", "apps/api"]
+
+
+[[tool.mypy.overrides]]
+module = ["blackjack_core.*"]
+ignore_missing_imports = true
+
+# --- Tests --------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "slow: takes more than ~5 seconds (deselect with -m 'not slow')",
+  "golden: asserts against published reference values",
+  "parity: asserts the Rust core matches the Python reference impl",
+  "native: requires the compiled blackjack_core extension",
+]
+
+[tool.coverage.run]
+source = ["src/blackjack"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

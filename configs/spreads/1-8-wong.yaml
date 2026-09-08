@@ -1,0 +1,7 @@
+# Same ramp, but sit out every round below a true count of zero. Back-counting
+# roughly triples SCORE at the cost of being obvious to anyone watching.
+schema_version: 1
+name: "1-8 wong out below 0"
+thresholds: [-99, 1, 2, 3, 4, 5]
+units:      [  1, 2, 3, 4, 6, 8]
+wong_out_below: 0

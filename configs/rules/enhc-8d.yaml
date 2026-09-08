@@ -1,0 +1,14 @@
+# European no-hole-card, eight decks. Doubled and split wagers are lost to a
+# dealer blackjack, which is worth roughly 0.11% and changes several plays.
+schema_version: 1
+name: "8D ENHC S17"
+decks: 8
+hit_soft_17: false
+blackjack_payout: "3/2"
+double_rule: "9-11"
+double_after_split: true
+max_split_hands: 4
+resplit_aces: false
+surrender: none
+hole_card: enhc
+penetration: 0.75

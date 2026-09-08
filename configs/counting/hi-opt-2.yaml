@@ -1,0 +1,10 @@
+schema_version: 1
+name: "Hi-Opt II"
+tags: [0, 1, 1, 2, 2, 1, 1, 0, 0, -2]
+balanced: true
+level: 2
+side_count_aces: true
+rounding: truncate
+notes: >
+  High playing efficiency. Ace-neutral, so it needs an ace side count before it
+  bets as well as Hi-Lo. Worth the effort only in a game with deep penetration.

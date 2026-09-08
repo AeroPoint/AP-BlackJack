@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+*.png  binary
+*.pdf  binary
+*.xlsx binary
+*.mat  binary
+uv.lock       linguist-generated=true merge=binary
+Cargo.lock    linguist-generated=true merge=binary
+package-lock.json linguist-generated=true merge=binary

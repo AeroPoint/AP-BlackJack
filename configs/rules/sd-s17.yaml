@@ -1,0 +1,15 @@
+# Single deck. Restricted doubling is how the house pays for the deck count --
+# check the sign before you sit, because 10-11 only costs about 0.2%.
+schema_version: 1
+name: "SD S17 double 10-11"
+decks: 1
+hit_soft_17: false
+blackjack_payout: "3/2"
+double_rule: "10-11"
+double_after_split: false
+max_split_hands: 2
+resplit_aces: false
+surrender: none
+hole_card: peek
+penetration: 0.65
+deck_estimation: 0.5
