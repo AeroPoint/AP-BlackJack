@@ -55,6 +55,13 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | `bankroll/spread.py` | Bet-ramp evaluation and Kelly-optimal ramp construction. |
 | `sidebets/base.py` | Rank-only side-bet framework. |
 | `sidebets/suited.py` | 52-card-type framework, for bets that see suits. |
+| `ev/eor.py` | Effect of removal; betting and insurance correlations. |
+| `ev/native.py` | The only module that knows the Rust core exists. |
+| `train/grading.py` | Prices a decision against the live shoe. |
+| `train/session.py` | Per-cell statistics; measured error rates. |
+| `train/drill.py` | Weights and samples the next question. |
+| `train/table.py` | A dealt game driven one action at a time. |
+| `train/loop.py` | Terminal front ends. ASCII only, and thin on purpose. |
 
 ### Interface
 
@@ -91,6 +98,18 @@ from. Conflating them is how order-dependence sneaks into a solver.
 functions taking primitives. Attribute lookup on a class is measurable overhead
 in CPython at these call counts, and the flat form is also what ports cleanly to
 Rust.
+
+### The trainer's table is a state machine
+
+`train/table.py` is driven one action at a time by its caller: no input, no
+output, no sleeping. That is why the same object works behind a terminal loop, an
+HTTP session and a test, and why `train/loop.py` — the only part that cannot be
+tested headlessly — is trivial.
+
+It is also a *third* implementation of the rules, alongside the solver and the
+simulator, and the slow test suite requires all three to agree. Different shapes
+of code fail differently: the simulator's round loop and the table's state
+machine would not make the same mistake.
 
 ### Strategy is compiled, not interpreted
 

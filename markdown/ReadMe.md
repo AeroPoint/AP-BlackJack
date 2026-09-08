@@ -135,7 +135,51 @@ one it returns **exactly Hi-Lo** — the system was not put in, it came out.
 Playing efficiency is deliberately *not* computed; see
 [Counting.md](Counting.md) for why a `None` is better than a plausible number.
 
-### 8. Native core
+### 9. Trainer and free play
+
+Both are built and usable from the terminal. The engine solving in milliseconds
+is what makes them possible: **every decision is graded against the cards
+actually left in the shoe**, not against a printed chart.
+
+```
+$ bj play --count --standard count
+[4] You: T 3 = 13   Dealer: A   RC -2  TC -0  (5.7d left)
+  [XX] Stand -- wrong, Hit was right. That cost 0.1636 of a bet, 4.09 at a
+       25 unit -- major.
+```
+
+Three grading standards, chosen explicitly rather than fudged:
+
+| standard | holds you to |
+|---|---|
+| `chart` | full-shoe basic strategy — what a beginner is learning |
+| `count` | basic strategy plus indices at the live true count |
+| `exact` | composition-perfect play — the ceiling nobody can reach |
+
+The *cost* is always priced against the exact shoe whatever the standard,
+because that is what the mistake actually cost at this table. The standard
+answers "should you have known better?"; the cost answers "what did it lose?".
+
+`bj drill` serves cells weighted by `margin x frequency x P(you miss it)`. That
+last term starts as the generic model and shrinks toward **your** measured miss
+rate as the session accumulates evidence, so the drill follows you rather than
+the alphabet.
+
+Sessions end with the leaks named:
+
+```
+  Decisions      : 40
+  Accuracy       : 72.5%  (11 errors)
+  Lost to errors : 1.4820 units  (37.05 at a 25 unit)
+  Table result   : -6.00 units (-150.00) over 25 hands
+  Note: table result is mostly variance. The number above it, what your
+        mistakes cost, is the part you control.
+
+  Biggest leaks (of 7 cells missed):
+    12 v 4         3/4 missed, 0.4180 units (10.45)
+```
+
+### 10. Native core
 
 The Rust accelerator in `crates/blackjack-core` is implemented and validated. It
 ports the two hot recursions — dealer probabilities and player EVs — and
@@ -166,9 +210,6 @@ silently falls back — that would make a benchmark measure the wrong thing.
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
 - **Web application.** `apps/api` and `apps/web` are scaffolds.
-- **Trainer and free play.** Designed (see [ToDo.md](ToDo.md)) but not built. The
-  grading engine it needs — `mistake_cost` and `DecisionAnalysis.explain` — is
-  done and tested.
 - **Exact variance.** The solver computes expectations, not full outcome
   distributions, so per-round variance comes from simulation or a documented
   constant. This is flagged everywhere it is used.
@@ -205,6 +246,9 @@ See [environment/README.md](../environment/README.md).
 | `bj sim` | Monte Carlo simulation |
 | `bj sidebet` | Side-bet house edge and outcome distribution |
 | `bj explain` | Full breakdown of one decision, with the cost of each alternative |
+| `bj systems` | Counting-system correlations from derived effect-of-removal |
+| `bj drill` | Strategy drill, weighted by what you personally get wrong |
+| `bj play` | Free play with live grading against the real shoe |
 | `bj list` | Available configuration files |
 
 ---
@@ -238,6 +282,7 @@ Every claim above is reproducible. The invariants the test suite enforces:
   count requested.
 - Simulation converges on the solver's EV within its own error bars.
 - The Rust core reproduces the Python reference bit for bit.
+- The trainer's table, the simulator and the solver all agree on the same game.
 - The engine imports nothing outside the standard library.
 
 The last two caught real bugs during development — resplit-aces being
