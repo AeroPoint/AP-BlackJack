@@ -41,7 +41,7 @@ where its own edges are.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from blackjack.actions import Action
 from blackjack.cards import ACE, RANKS
@@ -54,7 +54,7 @@ SURRENDER_EV = -0.5
 """Surrender always returns exactly half the wager, whatever else is true."""
 
 
-class DealerModel(str, Enum):
+class DealerModel(StrEnum):
     """How dealer probabilities respond to the player's draws."""
 
     FROZEN = "frozen"
@@ -77,9 +77,7 @@ class Context:
         default_factory=dict
     )
     _stand: dict[tuple[Composition, int], float] = field(default_factory=dict, repr=False)
-    _hit: dict[tuple[Composition, int, bool, int], float] = field(
-        default_factory=dict, repr=False
-    )
+    _hit: dict[tuple[Composition, int, bool, int], float] = field(default_factory=dict, repr=False)
 
     @property
     def hit_soft_17(self) -> bool:

@@ -33,7 +33,7 @@ against the live shoe would have been unthinkable at 1.3 seconds a hand.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from blackjack.actions import Action
 from blackjack.ev.importance import DecisionAnalysis, analyse, classify
@@ -43,7 +43,7 @@ from blackjack.rules import RuleSet
 from blackjack.shoe import Composition, remove_many
 
 
-class Standard(str, Enum):
+class Standard(StrEnum):
     """What the player is being held to."""
 
     CHART = "chart"
@@ -143,11 +143,7 @@ def legal_actions(
         actions.add(Action.DOUBLE)
     if len(cards) == 2 and cards[0] == cards[1] and rules.max_splits >= 1:
         actions.add(Action.SPLIT)
-    if (
-        len(cards) == 2
-        and not after_split
-        and rules.surrender is not SurrenderRule.NONE
-    ):
+    if len(cards) == 2 and not after_split and rules.surrender is not SurrenderRule.NONE:
         actions.add(Action.SURRENDER)
     return actions
 

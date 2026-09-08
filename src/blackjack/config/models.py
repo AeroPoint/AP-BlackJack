@@ -164,7 +164,7 @@ def _parse_fraction(value: Any) -> Fraction:
     return Fraction(value).limit_denominator(1000)
 
 
-def system_from_dict(data: dict[str, Any]) -> CountSystem:
+def system_from_dict(data: dict[str, Any] | str) -> CountSystem:
     """Build a :class:`~blackjack.counting.CountSystem` from parsed config data.
 
     A bare string is treated as the key of a built-in system, so a config can say

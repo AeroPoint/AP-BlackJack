@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import TypeAlias
 
 from blackjack.cards import NUM_RANKS, RANKS, SINGLE_DECK_COUNTS, rank_name
@@ -51,7 +51,7 @@ TagVector: TypeAlias = tuple[float, ...]
 """Ten tag values, index ``rank - 1``."""
 
 
-class TrueCountRounding(str, Enum):
+class TrueCountRounding(StrEnum):
     """How a fractional true count is reduced to the integer used for indices.
 
     This is not a detail. Truncating toward zero versus flooring changes every
@@ -116,6 +116,7 @@ class CountSystem:
     # -- validation / derived -------------------------------------------------
 
     def __post_init__(self) -> None:
+        """Reject a tag vector of the wrong length."""
         if len(self.tags) != NUM_RANKS:
             raise ValueError(f"{self.name}: expected {NUM_RANKS} tags, got {len(self.tags)}")
 
@@ -285,6 +286,7 @@ class CountState:
     seen: int = field(init=False, default=0)
 
     def __post_init__(self) -> None:
+        """Start the count at the system's IRC for this shoe."""
         self.running = self.system.initial_running_count(self.decks)
 
     def reset(self) -> None:

@@ -119,7 +119,11 @@ def pick(
     return Drill(cell=cell, cards=(min(cards), max(cards)))
 
 
-def curriculum(chart: StrategyChart, session: Session | None = None, limit: int = 20) -> list[ChartCell]:
+def curriculum(
+    chart: StrategyChart,
+    session: Session | None = None,
+    limit: int = 20,
+) -> list[ChartCell]:
     """The cells worth studying, in order, without the randomness.
 
     What ``bj chart --importance`` shows, but personalised once a session has

@@ -128,11 +128,7 @@ class Session:
             )
 
         leaks = sorted(
-            (
-                (key, cell)
-                for key, cell in self.stats.items()
-                if cell.errors
-            ),
+            ((key, cell) for key, cell in self.stats.items() if cell.errors),
             key=lambda kv: kv[1].cost,
             reverse=True,
         )

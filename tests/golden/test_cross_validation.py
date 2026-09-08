@@ -39,7 +39,7 @@ ROUNDS = 3_000_000
 SEEDS = (11, 22, 33, 44)
 
 
-def _simulate_flat(rules, rounds: int = ROUNDS, seeds=SEEDS):  # noqa: ANN001, ANN202
+def _simulate_flat(rules, rounds: int = ROUNDS, seeds=SEEDS):
     """Flat-bet basic strategy across several seeds, pooled."""
     chart = solve(rules).chart
     strategy = compile_strategy(chart, name="basic")
@@ -81,7 +81,7 @@ def test_simulator_matches_solver_off_the_top() -> None:
 
 
 @pytest.mark.parametrize("rules", [VEGAS_6D_H17, VEGAS_6D_S17_LS, DOUBLE_DECK_H17])
-def test_simulator_matches_solver_with_penetration(rules) -> None:  # noqa: ANN001
+def test_simulator_matches_solver_with_penetration(rules) -> None:
     """At realistic penetration, allowing for the small cut-card effect.
 
     The cut-card effect biases a fixed-penetration shoe game slightly against the

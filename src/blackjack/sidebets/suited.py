@@ -62,9 +62,7 @@ class Card:
         return self.suit in RED_SUITS
 
 
-DECK: tuple[Card, ...] = tuple(
-    Card(rank, suit) for rank in range(1, 14) for suit in range(4)
-)
+DECK: tuple[Card, ...] = tuple(Card(rank, suit) for rank in range(1, 14) for suit in range(4))
 """One standard 52-card deck as card types."""
 
 
@@ -80,6 +78,7 @@ class SuitedSideBet(ABC):
     cards_seen: int = 3
 
     def __init__(self, paytable: Paytable) -> None:
+        """Bind the bet to a paytable."""
         self.paytable = paytable
 
     @abstractmethod
@@ -132,9 +131,7 @@ class SuitedSideBet(ABC):
         )
 
 
-def _multisets(
-    live: list[Card], counts: dict[Card, int], k: int
-) -> list[tuple[Card, ...]]:
+def _multisets(live: list[Card], counts: dict[Card, int], k: int) -> list[tuple[Card, ...]]:
     """Every multiset of ``k`` card types available in the shoe.
 
     A card type can repeat only up to its count, which is what makes single-deck

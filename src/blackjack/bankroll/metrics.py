@@ -126,7 +126,12 @@ def kelly_fraction(edge: float, variance_per_unit: float) -> float:
     return edge / variance_per_unit
 
 
-def kelly_bankroll(max_bet: float, edge: float, variance_per_unit: float, fraction: float = 1.0) -> float:
+def kelly_bankroll(
+    max_bet: float,
+    edge: float,
+    variance_per_unit: float,
+    fraction: float = 1.0,
+) -> float:
     """Bankroll required to justify ``max_bet`` at the given Kelly fraction."""
     f = kelly_fraction(edge, variance_per_unit) * fraction
     if f <= 0:

@@ -59,6 +59,7 @@ class BetRamp:
     max_bet_units: float = math.inf
 
     def __post_init__(self) -> None:
+        """Reject a ramp whose thresholds and units do not line up."""
         if len(self.thresholds) != len(self.units):
             raise ValueError("thresholds and units must be the same length")
         if list(self.thresholds) != sorted(self.thresholds):
@@ -165,11 +166,7 @@ class SimResult:
     @property
     def sd_per_hour(self) -> float:
         """Standard deviation per hour in currency."""
-        return (
-            self.sd_per_round
-            * math.sqrt(self.config.rounds_per_hour)
-            * self.config.unit
-        )
+        return self.sd_per_round * math.sqrt(self.config.rounds_per_hour) * self.config.unit
 
     @property
     def standard_error(self) -> float:
@@ -179,9 +176,7 @@ class SimResult:
         typical 1.15 standard deviation per round it leaves roughly a thousandth
         of a unit of noise, which is the same size as the entire edge.
         """
-        return (
-            self.sd_per_round / math.sqrt(self.rounds_dealt) if self.rounds_dealt else 0.0
-        )
+        return self.sd_per_round / math.sqrt(self.rounds_dealt) if self.rounds_dealt else 0.0
 
     def summary(self) -> str:
         """A readable report with honest error bars."""
@@ -249,9 +244,7 @@ def simulate(config: SimConfig) -> SimResult:
             counter.reset()
             shoes += 1
 
-        true_count = counter.true_count(
-            estimation=config.deck_estimation, rounding=config.rounding
-        )
+        true_count = counter.true_count(estimation=config.deck_estimation, rounding=config.rounding)
         bet = config.ramp.bet(true_count)
         rounds_dealt += 1
         hist[true_count] = hist.get(true_count, 0) + 1
@@ -334,7 +327,7 @@ def _play_round(
     if up == ACE and strategy.takes_insurance(true_count):
         insurance = 0.5 * bet
 
-    player_total, player_soft = add_card(*add_card(0, False, p1), p2)
+    player_total, _ = add_card(*add_card(0, False, p1), p2)
     player_natural = player_total == 21
     dealer_natural = hand_value((up, hole)).total == 21
 

@@ -38,7 +38,7 @@ from blackjack.actions import Action
 from blackjack.counting import SYSTEMS, CountSystem
 from blackjack.ev.importance import DecisionAnalysis, Importance, analyse, mistake_cost
 from blackjack.ev.solver import Category, SolveResult, solve
-from blackjack.rules import PRESETS, RuleSet, VEGAS_6D_H17
+from blackjack.rules import PRESETS, VEGAS_6D_H17, RuleSet
 from blackjack.version import __version__
 
 __all__ = [

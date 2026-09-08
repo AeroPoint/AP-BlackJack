@@ -155,7 +155,7 @@ def solve_cells(
             the two implementations disagree about which deals are possible,
             which is a defect rather than something to paper over.
     """
-    from blackjack.ev.solver import CellResult, _natural_probability  # noqa: PLC0415
+    from blackjack.ev.solver import CellResult, _natural_probability
 
     module = ACTIVE.module
     if module is None:  # pragma: no cover - guarded by callers

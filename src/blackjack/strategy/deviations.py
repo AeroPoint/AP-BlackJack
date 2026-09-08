@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from itertools import pairwise
 
 from blackjack.actions import Action
 from blackjack.bankroll.counts import TrueCountDistribution, true_count_distribution
@@ -137,9 +138,7 @@ def tilted_composition(
 
 def running_count_of(comp: Composition, system: CountSystem, decks: int) -> float:
     """Running count implied by a composition -- the inverse of the tilt."""
-    full_tag_sum = sum(
-        t * c * decks for t, c in zip(system.tags, SINGLE_DECK_COUNTS, strict=True)
-    )
+    full_tag_sum = sum(t * c * decks for t, c in zip(system.tags, SINGLE_DECK_COUNTS, strict=True))
     remaining = sum(t * c for t, c in zip(system.tags, comp, strict=True))
     return system.initial_running_count(decks) + (full_tag_sum - remaining)
 
@@ -243,8 +242,10 @@ def cell_action_at_count(
     this thousands of times, so it is the hottest caller in the project after the
     solver itself.
     """
-    shoe = comp if comp is not None else tilted_composition(
-        system, rules.decks, decks_remaining, true_count
+    shoe = (
+        comp
+        if comp is not None
+        else tilted_composition(system, rules.decks, decks_remaining, true_count)
     )
     after = remove_many(shoe, [cards[0], cards[1], upcard])
     if native.available():
@@ -275,8 +276,10 @@ def row_action_at_count(
     aggregation :func:`blackjack.ev.solver.build_chart` performs, so an index
     generated here is consistent with the chart it deviates from.
     """
-    shoe = comp if comp is not None else tilted_composition(
-        system, rules.decks, decks_remaining, true_count
+    shoe = (
+        comp
+        if comp is not None
+        else tilted_composition(system, rules.decks, decks_remaining, true_count)
     )
     allow_split = category is Category.PAIR
     totals: dict[Action, list[float]] = {}
@@ -285,8 +288,14 @@ def row_action_at_count(
         if weight <= 0.0:
             continue
         _, evs = cell_action_at_count(
-            hand, upcard, rules, system, true_count, decks_remaining,
-            allow_split=allow_split, comp=shoe,
+            hand,
+            upcard,
+            rules,
+            system,
+            true_count,
+            decks_remaining,
+            allow_split=allow_split,
+            comp=shoe,
         )
         for action, ev in evs.items():
             slot = totals.setdefault(action, [0.0, 0.0])
@@ -374,7 +383,7 @@ def generate_indices(
         except ValueError:
             continue
         basic = next((a for tc, a in samples if abs(tc) < 1e-9), samples[len(samples) // 2][1])
-        for (tc_lo, act_lo), (tc_hi, act_hi) in zip(samples, samples[1:], strict=False):
+        for (tc_lo, act_lo), (tc_hi, act_hi) in pairwise(samples):
             if act_lo is act_hi:
                 continue
             index = _bisect_crossover(
@@ -384,8 +393,17 @@ def generate_indices(
                 continue
             deviation = act_lo if act_hi is basic else act_hi
             value = _index_value(
-                category, row, upcard, rules, system, dr, index,
-                deviation=deviation, basic=basic, above=act_hi is not basic, freq=freq,
+                category,
+                row,
+                upcard,
+                rules,
+                system,
+                dr,
+                index,
+                deviation=deviation,
+                basic=basic,
+                above=act_hi is not basic,
+                freq=freq,
             )
             out.append(
                 Index(
@@ -480,10 +498,23 @@ def _index_value(
     elegant index at +6 is usually not worth learning.
 
     Args:
+        category: Chart table the cell belongs to.
+        row: Hand total, or paired rank for pair rows.
+        upcard: Dealer upcard.
+        rules: Table rules.
+        system: Counting system.
+        dr: Decks remaining at which to evaluate.
+        index: The crossover count.
+        deviation: The play that departs from the chart.
+        basic: What the chart says at a neutral count.
         above: Whether the deviation applies at or above ``index``. A negative
             index almost always means the opposite: the departure from the chart
             happens on the *low* side, and valuing the high side instead makes
             deep-negative indices look falsely important.
+        freq: True-count frequency model used to weight the counts.
+
+    Returns:
+        Units per 100 rounds.
     """
     total = 0.0
     for tc, p_count in zip(freq.counts, freq.probabilities, strict=True):
@@ -495,9 +526,7 @@ def _index_value(
             continue
         try:
             comp = tilted_composition(system, rules.decks, dr, tc)
-            _, evs = row_action_at_count(
-                category, row, upcard, rules, system, tc, dr, comp=comp
-            )
+            _, evs = row_action_at_count(category, row, upcard, rules, system, tc, dr, comp=comp)
         except ValueError:  # pragma: no cover - extreme counts only
             continue
         if deviation not in evs or basic not in evs:

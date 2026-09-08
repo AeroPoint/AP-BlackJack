@@ -21,6 +21,13 @@ installed system-wide. Dramatically faster than pip. MIT/Apache-2.0.
 
 **Bad.** Contributors need uv, installed by `environment/bootstrap.ps1`.
 
+**One thing this cost.** Development tooling started life in
+`[project.optional-dependencies]` as a `dev` extra, which uv rejects when it is
+also named in `tool.uv.default-groups` — those refer to PEP 735
+`[dependency-groups]`. Moving it was the right answer anyway: dev tools are not
+a feature of the installed package, and nobody should be able to
+`pip install blackjack[dev]` into production.
+
 **Why 3.13 and not 3.14.** Wheel availability. At the time of writing, 3.14
 wheels are still patchy across the scientific and UI stack, and PyO3/maturin
 support is newer. The engine itself runs on 3.11 through 3.13; the pin only fixes

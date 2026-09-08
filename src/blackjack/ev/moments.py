@@ -2,8 +2,7 @@
 
 The solver computes what a hand is *worth*. Risk of ruin, N0, SCORE and Kelly
 all need what a hand *varies by*, and until now that came from a measured
-constant (``DEFAULT_VARIANCE_PER_UNIT = 1.32``) with a note attached. This
-module removes the note.
+constant with a note attached. This module removes the note.
 
 Why it is harder than the expectation
 -------------------------------------
@@ -35,16 +34,22 @@ player can see -- they do not know the dealer's total. So this recursion asks
 vector for that action. The two must agree about the strategy or the variance
 would belong to a game nobody plays.
 
-Cost, and where this should live eventually
--------------------------------------------
+Cost
+----
 Fourteen floats per state instead of one, so this is roughly an order of
-magnitude slower than the EV recursion and is Python-only for now. Porting it to
-the native core is the obvious follow-up; the Python here is the reference
-implementation either way (ADR-0006).
+magnitude heavier than the EV recursion: 2.1 seconds in pure Python, 30
+milliseconds on the native core. Both paths are maintained, and the Python one
+is the reference implementation (ADR-0006).
+
+Parity with the native core is to a few ulp rather than bit for bit, because the
+round total is reduced across threads and floating-point addition is not
+associative. That is the only place in the project where bit equality does not
+hold, and ``tests/golden/test_moments.py`` says so explicitly.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from blackjack.actions import Action
@@ -192,8 +197,13 @@ def _hand_moments(
             acc2,
             p,
             _hand_moments(
-                new_total, new_soft, comp2, ctx, cache,
-                num_cards=cards, after_split=after_split,
+                new_total,
+                new_soft,
+                comp2,
+                ctx,
+                cache,
+                num_cards=cards,
+                after_split=after_split,
             ),
         )
 
@@ -255,9 +265,7 @@ def _split_slot_moments(
             acc1,
             acc2,
             p,
-            _hand_moments(
-                total, soft, comp2, ctx, cache, num_cards=2, after_split=True
-            ),
+            _hand_moments(total, soft, comp2, ctx, cache, num_cards=2, after_split=True),
         )
 
     result = (tuple(acc1), tuple(acc2))
@@ -297,7 +305,7 @@ def hand_moments(
 
     if rules.surrender is SurrenderRule.LATE:
         surrender = ((-0.5,) * NUM_SLOTS, (0.25,) * NUM_SLOTS)
-        if -0.5 > best_v:
+        if best_v < -0.5:
             best = surrender
 
     return best
@@ -307,7 +315,7 @@ def _collapse_first(moments: MomentPair, ctx: Context) -> float:
     """Unconditional first moment, weighting by the dealer distribution."""
     m1, _ = moments
     dealer = ctx.dealer
-    return sum(dealer[s] * m1[s] for s in range(NUM_SLOTS))
+    return float(sum(dealer[s] * m1[s] for s in range(NUM_SLOTS)))
 
 
 def _collapse(moments: MomentPair, ctx: Context) -> tuple[float, float]:
@@ -316,7 +324,7 @@ def _collapse(moments: MomentPair, ctx: Context) -> tuple[float, float]:
     dealer = ctx.dealer
     first = sum(dealer[s] * m1[s] for s in range(NUM_SLOTS))
     second = sum(dealer[s] * m2[s] for s in range(NUM_SLOTS))
-    return first, second
+    return float(first), float(second)
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,7 +345,7 @@ class RoundMoments:
     @property
     def standard_deviation(self) -> float:
         """Standard deviation per round, in units."""
-        return self.variance**0.5
+        return math.sqrt(self.variance)
 
     def summary(self) -> str:
         """A readable line."""
@@ -358,6 +366,8 @@ def round_moments(
     Args:
         rules: Table rules.
         comp: Shoe composition. Defaults to a full shoe.
+        backend: ``"auto"`` uses the native core when one is loaded, ``"python"``
+            forces the reference implementation, ``"rust"`` demands the core.
 
     Returns:
         The moments. ``mean`` reproduces the solver's ``optimal_ev``, which is

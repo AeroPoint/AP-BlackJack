@@ -31,7 +31,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from blackjack.actions import Action
@@ -53,7 +53,7 @@ from blackjack.shoe import Composition, full_shoe, remove_many
 from blackjack.version import __version__
 
 
-class Category(str, Enum):
+class Category(StrEnum):
     """Which table of a strategy chart a hand belongs to."""
 
     HARD = "hard"
