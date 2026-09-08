@@ -47,6 +47,16 @@ pub struct Rules {
 }
 
 impl Rules {
+    /// Public to the crate so the moments recursion can ask the same question
+    /// the EV recursion does, rather than re-deriving the rule.
+    #[inline]
+    pub(crate) fn can_double_for(&self, total: i32, after_split: bool, num_cards: u8) -> bool {
+        if num_cards != 2 {
+            return false;
+        }
+        self.can_double(total, after_split)
+    }
+
     #[inline]
     fn can_double(&self, total: i32, after_split: bool) -> bool {
         if after_split && !self.double_after_split {
@@ -82,7 +92,7 @@ impl Ctx {
 
 /// EV of standing on `total`.
 #[inline]
-fn stand_value(total: i32, ctx: &Ctx) -> f64 {
+pub(crate) fn stand_value(total: i32, ctx: &Ctx) -> f64 {
     if total > 21 {
         return -1.0;
     }
@@ -94,7 +104,13 @@ fn stand_value(total: i32, ctx: &Ctx) -> f64 {
 /// Doubling is unavailable after a hit, so the continuation is a pure
 /// stand-or-hit decision. That is what keeps the state down to
 /// `(composition, total, soft)` and makes an exact treatment affordable.
-fn hit_value(total: i32, soft: bool, comp: &Composition, ctx: &mut Ctx, num_cards: u8) -> f64 {
+pub(crate) fn hit_value(
+    total: i32,
+    soft: bool,
+    comp: &Composition,
+    ctx: &mut Ctx,
+    num_cards: u8,
+) -> f64 {
     let charlie = ctx.rules.charlie;
     let k = (
         key(comp),
@@ -145,7 +161,7 @@ fn hit_value(total: i32, soft: bool, comp: &Composition, ctx: &mut Ctx, num_card
 }
 
 /// EV of doubling: exactly one card, forced stand, twice the wager.
-fn double_value(total: i32, soft: bool, comp: &Composition, ctx: &Ctx) -> f64 {
+pub(crate) fn double_value(total: i32, soft: bool, comp: &Composition, ctx: &Ctx) -> f64 {
     let n = total_cards(comp);
     let inv = 1.0 / n;
     let mut ev = 0.0f64;
