@@ -110,14 +110,55 @@ caught this way.
 
 ---
 
+## The native core
+
+`crates/blackjack-core` implements the two hot recursions in Rust. Rules for
+working on it:
+
+**It is a transliteration, not a reimplementation.** Same recursion, same memo
+keys, same accumulation order as the Python. That discipline is why parity came
+out *bit-identical* on the first run rather than merely close. Where the Rust
+looks like it could be simplified, it usually could — and the Python beside it
+would then have to change too.
+
+**Python is the oracle.** Where the two disagree, Python is right until proven
+otherwise ([ADR-0006](markdown/adr/ADR-0006-python-reference-implementation.md)).
+Never "fix" a parity failure by loosening the tolerance.
+
+**Change both or neither.** An algorithmic change to `ev/dealer.py` or
+`ev/player.py` that is not mirrored in Rust will fail `tests/parity/`. That is
+the point, not an inconvenience.
+
+**Only these two modules are ported.** Chart assembly, index generation,
+bet-spread analysis and the importance model stay in Python. They are not hot,
+and they are where the judgement lives.
+
+Build and check:
+
+```bash
+cargo clippy --manifest-path crates/blackjack-core/Cargo.toml --release -- -D warnings
+uv run maturin develop --release --manifest-path crates/blackjack-core/Cargo.toml
+uv run pytest -m parity -q
+bj --version          # confirms which backend is actually loaded
+```
+
+`tests/parity/` **skips itself** when no core is built, so a green suite does not
+mean parity was checked. CI builds the core and asserts it is loaded before
+running those tests, for exactly that reason.
+
+---
+
 ## Performance
 
 Current hot spots, in order:
 
 1. `ev/dealer.py::_draw` — the dealer recursion. Memoised on
-   `(composition, total, soft)`.
-2. `ev/player.py::hit_value` — the player draw recursion.
-3. `strategy/deviations.py` — solves once per count per cell.
+   `(composition, total, soft)`. **Ported to Rust.**
+2. `ev/player.py::hit_value` — the player draw recursion. **Ported to Rust.**
+3. `ev/solver.py::build_chart` — now the largest remaining Python cost in a
+   solve: 20 of the 31 ms.
+4. `sim/engine.py` — ~160k rounds/s, pure Python. Not ported; its bottleneck is
+   the round loop rather than the mathematics.
 
 Optimise by *measuring*, and never at the cost of clarity in the Python
 reference implementation — that implementation's job is to be obviously correct
@@ -137,7 +178,7 @@ src/blackjack/       the engine (stdlib only)
   sidebets/  paytable-driven side-bet analysis
   config/    config models and loading
   cli.py     argparse CLI
-crates/blackjack-core/   Rust accelerator (PyO3)
+crates/blackjack-core/   Rust accelerator (PyO3); ev/native.py is the bridge
 apps/api/                FastAPI service
 apps/web/                React front end
 configs/                 rules, counting systems, spreads, paytables, profiles

@@ -12,16 +12,18 @@ Status key: `[ ]` not started · `[~]` partially done · `[x]` done
 These gate everything else. Nothing built on top of a wrong or slow core is
 worth building twice.
 
-- [ ] **Rust core: dealer probabilities and player EV recursion.**
-  `crates/blackjack-core` is scaffolded with the PyO3 boundary defined and no
-  implementation. Port `ev/dealer.py` and `ev/player.py` first — they are 90% of
-  the runtime.
-  *Done when:* `tests/parity/` shows the Rust and Python paths agreeing to 1e-12
-  on a full solve, and a full solve drops below 50 ms.
-  *Why first:* a full index sweep is 30 s and a spread analysis 20 s. Every
-  interactive feature in the app is unusable at those speeds.
+- [x] **Rust core: dealer probabilities and player EV recursion.** *Done.*
+  `ev/dealer.py` and `ev/player.py` ported; `solve_all_cells` parallelised with
+  rayon. Full solve 1352 ms → 10.8 ms (125x), and 31 ms end to end through
+  `solve()`. Parity is *exact*, not 1e-12: `tests/parity/` asserts bit
+  equality on a full solve across four rule sets.
+  Index generation 34.5 s → 1.72 s, edge curve 20 s → 0.29 s.
+  Follow-ups worth doing, none urgent:
+  - port the `EXACT` dealer model so it stops being the slow path nobody runs;
+  - move `enumerate_deals` into the core to drop the last Python loop in `solve`;
+  - publish wheels in CI so `uv sync --extra native` needs no Rust toolchain.
 
-- [ ] **Exact variance from the solver.**
+- [ ] **Exact variance from the solver.** *Now the top item.*
   Propagate the full outcome distribution (win/lose/push at each stake) through
   the play tree instead of only the expectation. Removes the last hardcoded
   constant (`DEFAULT_VARIANCE_PER_UNIT = 1.32`) from the risk maths.
@@ -95,14 +97,24 @@ The engine is ready for these; they need UI and session state.
 
 ## P3 — Depth in the maths
 
-- [ ] **Effect-of-removal module (`ev/eor.py`).** Compute EOR vectors from the
-  solver, then derive betting correlation, playing efficiency and insurance
-  correlation for any tag vector. Currently `counting.py` documents these and
-  provides `correlation()`, but nothing computes the EOR they need.
-  *Done when:* Hi-Lo reports BC ≈ 0.97 and PE ≈ 0.51 from first principles.
+- [x] **Effect-of-removal module (`ev/eor.py`).** *Done.* Derives betting and
+  insurance EOR vectors from the solver with the strategy held fixed, and
+  correlates any tag vector against them. Hi-Lo reports BC 0.969 against a
+  published 0.97, Wong Halves 0.993 against 0.99, and Hi-Lo IC lands exactly on
+  0.76. Exposed as `bj systems`.
 
-- [ ] **Custom counting system designer.** Search tag vectors for the best BC/PE
-  trade-off at a given level. Falls straight out of the EOR module.
+- [ ] **Playing efficiency.** The one part of the above deliberately left
+  undone: PE needs the EOR of every close decision weighted by how often it
+  arises near its index. `system_metrics` returns `None` rather than an
+  approximation that looks authoritative.
+  *Done when:* Hi-Lo reports PE ≈ 0.51 and Hi-Opt II ≈ 0.67 from first
+  principles, and the method is written up in Math.md.
+
+- [x] **Custom counting system designer.** *Partly done.* `optimal_tags` scales
+  the EOR vector to a level and rounds; `bj systems --derive` shows the result.
+  At level 1 it returns exactly Hi-Lo. What remains is a *search* rather than a
+  rounding — the best integer vector at a level is not always the rounded one,
+  and constraints like "leave the ace neutral" should be expressible.
 
 - [ ] **Side-bet counting.** EOR per side bet exists in `sidebets/base.py`;
   needs the index generation and a dedicated side-count recommendation.
@@ -139,7 +151,6 @@ The engine is ready for these; they need UI and session state.
 
 ## Known issues
 
-- `bj spread` and `bj indices` are slow (20–35 s). Blocked on the Rust core.
 - YAML configs require `pip install blackjack[cli]`. Without PyYAML, the CLI
   falls back to built-in presets whose keys match the config filenames, so the
   shipped rule sets still resolve. Custom YAML files do not.
