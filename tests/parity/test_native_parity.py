@@ -21,7 +21,13 @@ from blackjack.backend import ACTIVE
 from blackjack.ev.dealer import dealer_probabilities
 from blackjack.ev.player import action_evs, make_context
 from blackjack.ev.solver import enumerate_deals
-from blackjack.rules import DOUBLE_DECK_H17, SINGLE_DECK_S17, VEGAS_6D_H17, VEGAS_6D_S17_LS
+from blackjack.rules import (
+    DOUBLE_DECK_H17,
+    SINGLE_DECK_S17,
+    VEGAS_6D_H17,
+    VEGAS_6D_S17_LS,
+    SurrenderRule,
+)
 from blackjack.shoe import full_shoe, remove, remove_many
 
 pytestmark = [
@@ -37,8 +43,22 @@ TOLERANCE = 1e-12
 RULE_SETS = [VEGAS_6D_H17, VEGAS_6D_S17_LS, DOUBLE_DECK_H17, SINGLE_DECK_S17]
 
 
+#: Surrender encoding shared with the Rust core. Kept as a literal mapping here
+#: rather than an ordinal of the Python enum, so reordering the enum cannot
+#: silently change what the core is told.
+_SURRENDER_CODE = {
+    SurrenderRule.NONE: 0,
+    SurrenderRule.LATE: 1,
+    SurrenderRule.EARLY: 2,
+}
+
+
 def _core_rules(rules):  # noqa: ANN001, ANN202
-    """Translate a RuleSet into the flat struct the native core takes."""
+    """Translate a RuleSet into the flat struct the native core takes.
+
+    The double rule crosses the boundary as a bitmask over totals rather than an
+    enum, so adding a new doubling variant to Python needs no change here.
+    """
     import blackjack_core  # type: ignore[import-not-found]
 
     double_mask = 0
@@ -54,6 +74,7 @@ def _core_rules(rules):  # noqa: ANN001, ANN202
         resplit_aces=rules.resplit_aces,
         hit_split_aces=rules.hit_split_aces,
         charlie=rules.charlie or 0,
+        surrender=_SURRENDER_CODE[rules.surrender],
     )
 
 
@@ -127,8 +148,60 @@ def test_solve_all_cells_preserves_enumeration_order() -> None:
     rules = VEGAS_6D_H17
     shoe = full_shoe(rules.decks)
     expected_keys = [(a, b, up) for (a, b), up, _ in enumerate_deals(shoe)]
-    rows = blackjack_core.solve_all_cells(list(shoe), _core_rules(rules))
-    assert [(r[0], r[1], r[2]) for r in rows] == expected_keys
+    keys, evs, dealers = blackjack_core.solve_all_cells(list(shoe), _core_rules(rules))
+    assert keys == expected_keys
+    assert len(evs) == len(keys)
+    assert len(dealers) == len(keys)
+
+
+@pytest.mark.parametrize("rules", RULE_SETS, ids=lambda r: r.slug())
+def test_full_solve_is_bit_identical(rules) -> None:  # noqa: ANN001
+    """End-to-end: the two backends must produce the same solve, exactly.
+
+    Not `approx`. Equality. A transliterated recursion accumulating floats in the
+    same order lands on the same bits, and anything looser would let a genuine
+    divergence hide behind a tolerance. If this ever needs relaxing, the reason
+    belongs in an ADR, not in a wider epsilon.
+    """
+    from blackjack.ev.solver import solve
+
+    py = solve(rules, backend="python")
+    rs = solve(rules, backend="rust")
+
+    assert rs.backend == "rust"
+    assert py.backend == "python"
+    assert rs.basic_strategy_ev == py.basic_strategy_ev
+    assert rs.optimal_ev == py.optimal_ev
+    assert rs.insurance_ev == py.insurance_ev
+    assert len(rs.cell_results) == len(py.cell_results)
+
+    for a, b in zip(py.cell_results, rs.cell_results, strict=True):
+        assert a.cards == b.cards
+        assert a.upcard == b.upcard
+        assert a.probability == b.probability
+        assert a.evs == b.evs, f"{a.cards} vs {a.upcard}"
+        assert a.dealer_natural == b.dealer_natural
+        assert tuple(a.dealer) == pytest.approx(tuple(b.dealer), abs=TOLERANCE)
+
+    # And the derived chart, which is what a user actually sees.
+    assert set(py.chart.cells) == set(rs.chart.cells)
+    for key, cell in py.chart.cells.items():
+        other = rs.chart.cells[key]
+        assert cell.action is other.action, key
+        assert cell.analysis.margin == pytest.approx(other.analysis.margin, abs=TOLERANCE)
+
+
+def test_demanding_an_unavailable_backend_fails_loudly() -> None:
+    """A forced backend must never silently fall back.
+
+    Falling back would make a benchmark measure the wrong thing and a parity
+    test pass without testing anything.
+    """
+    from blackjack.ev.player import DealerModel
+    from blackjack.ev.solver import solve
+
+    with pytest.raises(RuntimeError, match="frozen dealer model"):
+        solve(VEGAS_6D_H17, backend="rust", model=DealerModel.EXACT)
 
 
 def test_native_core_reports_itself_honestly() -> None:

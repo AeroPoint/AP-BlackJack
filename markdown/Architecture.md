@@ -107,6 +107,17 @@ numbers out, no I/O, no config, no policy. The Python reference implementation
 stays as the correctness oracle. See
 [ADR-0006](adr/ADR-0006-python-reference-implementation.md).
 
+`ev/native.py` is the only module that knows the core exists. It translates a
+`RuleSet` into the flat struct the core takes — the doubling rule crosses as a
+bitmask over totals rather than an enum, so adding a doubling variant to Python
+needs no Rust change — and rebuilds the core's output into the same
+`CellResult` list the Python path produces. Nothing downstream can tell which
+backend ran.
+
+`solve(..., backend=...)` accepts `"auto"` (default), `"python"` or `"rust"`. A
+forced backend never silently falls back: that would make a benchmark measure
+the wrong thing and let a parity test pass without testing anything.
+
 ---
 
 ## Data flow
@@ -149,20 +160,26 @@ what makes the analysis fast, exact where it can be, and honest where it cannot.
 
 ## Performance
 
-Pure Python, measured on this machine:
+Measured on this machine, 16 cores:
 
-| operation | time |
-|---|---|
-| Full solve (550 cells, 6 decks) | 1.2 s |
-| Single decision (`bj explain`) | ~10 ms |
-| Side bet, 3-card suited enumeration | 0.1 s |
-| Monte Carlo | ~160,000 rounds/s |
-| Index sweep (190 cells) | 30 s |
-| Bet-spread analysis (17 counts) | 20 s |
+| operation | Python | with native core |
+|---|---|---|
+| Full solve (550 cells, 6 decks) | 1352 ms | 31 ms |
+| Raw cell sweep (no chart assembly) | 1352 ms | 10.8 ms |
+| Index generation (71 indices) | 34.5 s | 1.72 s |
+| Bet-spread analysis (17 counts) | 20.0 s | 0.29 s |
+| Single decision (`bj explain`) | ~10 ms | ~1 ms |
+| Side bet, 3-card suited enumeration | 0.1 s | n/a (Python only) |
+| Monte Carlo | ~160,000 rounds/s | n/a (Python only) |
 
-The last two are the reason for the native core. An interactive rule-delta
-explorer needs the full solve under 50 ms, which is roughly a 25× gap — well
-within what Rust plus rayon delivers.
+The native core ports only the two hot recursions. The simulator and the side-bet
+enumerator remain pure Python: the simulator is fast enough for its purpose and
+its bottleneck is the round loop rather than the mathematics, and the side-bet
+enumeration is already a rounding error of compute.
+
+Interactive use needed a full solve under 50 ms. It landed at 31 ms end to end,
+of which 10.8 ms is the solve and the remainder is Python-side chart assembly —
+which is now the thing to optimise if this ever needs to be faster.
 
 Memoisation is shared where it helps: one dealer cache is threaded through an
 entire solve, so cells whose removals produce the same composition reuse work.
@@ -188,7 +205,6 @@ development were caught by it and by nothing else.
 
 ## What is scaffolded but not implemented
 
-- `crates/blackjack-core` — PyO3 boundary defined, no implementation.
 - `apps/api` — module layout and route stubs.
 - `apps/web` — project skeleton.
 

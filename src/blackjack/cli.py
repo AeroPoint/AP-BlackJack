@@ -10,7 +10,8 @@ available and quietly skipped when it is not.
     bj spread --profile default
     bj sim --profile default --rounds 5000000
     bj sidebet 21+3 --decks 6
-    bj explain 16 10 --rules vegas6-h17
+    bj explain T6 T --rules vegas6-h17
+    bj systems --derive
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import argparse
 import sys
 from typing import TYPE_CHECKING
 
+from blackjack.backend import describe
 from blackjack.version import __version__
 
 if TYPE_CHECKING:
@@ -339,6 +341,48 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_systems(args: argparse.Namespace) -> int:
+    """Score counting systems against effect-of-removal vectors we derive."""
+    from blackjack.counting import SYSTEMS
+    from blackjack.ev.eor import effect_of_removal, rank_systems
+
+    rules = _load_rules(args.rules)
+    eor = effect_of_removal(rules, decks=args.decks)
+
+    print(f"{rules.name}, {args.decks} deck(s) -- effect of removal")
+    print("Derived from this solver, not copied from a published table.")
+    print()
+    print(eor.table())
+    print()
+    print(
+        f"  baseline EV {eor.baseline_ev * 100:+.4f}%   "
+        f"mean removal effect {eor.mean_removal_effect() * 100:+.4f}%"
+    )
+    print()
+    print("Counting systems, ranked by betting correlation:")
+    print()
+    for metrics in rank_systems(SYSTEMS, eor):
+        print("  " + metrics.summary())
+    print()
+    print("  BC predicts how well a system sizes bets; IC how well it calls")
+    print("  insurance. Playing efficiency is deliberately not computed --")
+    print("  see markdown/ToDo.md.")
+
+    if args.derive:
+        from blackjack.counting import CountSystem
+        from blackjack.ev.eor import optimal_tags, system_metrics
+
+        print()
+        print("Best integer tags for these rules, by level:")
+        print()
+        for level in (1, 2, 3):
+            tags = optimal_tags(eor, level=level)
+            system = CountSystem(name=f"derived L{level}", tags=tags, level=level)
+            print(f"  {system.describe()}")
+            print(f"    -> {system_metrics(system, eor).summary()}")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     """List the available configuration files."""
     from blackjack.config.loader import list_available
@@ -358,7 +402,13 @@ def build_parser() -> argparse.ArgumentParser:
         prog="bj",
         description="Blackjack solver, simulator and trainer.",
     )
-    parser.add_argument("--version", action="version", version=f"blackjack {__version__}")
+    # The backend is part of the version: a number should always be traceable
+    # to the code that produced it, and "which solver ran" is part of that.
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"blackjack {__version__} ({describe()})",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("solve", help="solve a rule set and report the house edge")
@@ -402,6 +452,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rules", default="vegas6-h17")
     p.add_argument("--unit", type=float, default=25.0)
     p.set_defaults(func=cmd_explain)
+
+    p = sub.add_parser("systems", help="score counting systems from derived EORs")
+    p.add_argument("--rules", default="vegas6-h17")
+    p.add_argument("--decks", type=int, default=1, help="reference shoe (published tables use 1)")
+    p.add_argument("--derive", action="store_true", help="also derive optimal tag vectors")
+    p.set_defaults(func=cmd_systems)
 
     p = sub.add_parser("list", help="list available configuration files")
     p.set_defaults(func=cmd_list)

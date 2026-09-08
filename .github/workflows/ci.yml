@@ -68,17 +68,37 @@ jobs:
       - run: uv sync
       - run: uv run pytest -m slow -q
 
+  # Builds the accelerator and proves it agrees with the Python reference. The
+  # parity suite skips itself when no core is present, so without this job it
+  # would go green having tested nothing -- which is why the build and the
+  # parity run belong in the same job.
   native:
-    name: native core
-    runs-on: ubuntu-latest
+    name: native core + parity
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
       - name: Format
         run: cargo fmt --manifest-path crates/blackjack-core/Cargo.toml --check
       - name: Clippy
-        run: cargo clippy --manifest-path crates/blackjack-core/Cargo.toml -- -D warnings
-      - name: Build
-        run: cargo build --manifest-path crates/blackjack-core/Cargo.toml --release
+        run: cargo clippy --manifest-path crates/blackjack-core/Cargo.toml --release -- -D warnings
+      - name: Build and install the accelerator
+        run: |
+          uv sync --extra cli
+          uv run maturin develop --release --manifest-path crates/blackjack-core/Cargo.toml
+      - name: Confirm the core is actually loaded
+        run: uv run python -c "from blackjack.backend import ACTIVE; assert ACTIVE.is_native, ACTIVE.reason; print(ACTIVE.reason)"
+      - name: Parity against the Python reference
+        run: uv run pytest -m parity -q
+      - name: Full fast suite on the native backend
+        run: uv run pytest -m "not slow" -q
