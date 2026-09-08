@@ -23,12 +23,15 @@ What this module computes, and what it does not
 exactly. Both are honest Pearson correlations between a tag vector and an EOR
 vector this code derives from the solver, weighted by rank multiplicity.
 
-**Playing efficiency (PE)** is *not* computed. PE is the fraction of the total
-gain available from strategy variation that a system actually captures, which
-requires the EOR of every close decision weighted by how often it arises near
-its index -- a substantially bigger computation than BC and one where a plausible-looking
-wrong answer is easy to produce. Rather than ship a number that looks right and
-is not, :func:`system_metrics` reports ``None`` for it. See markdown/ToDo.md.
+**Playing efficiency (PE)** lives in :mod:`blackjack.ev.efficiency`, because it
+needs the EOR of every close *decision* rather than of the game as a whole. Pass
+``decisions=`` to :func:`system_metrics` to get it; it is ``None`` otherwise,
+because it costs a couple of seconds and most callers want BC and IC.
+
+Read that module's docstring before quoting the number. It ranks systems in
+almost exactly the published order -- Spearman 0.98 across the ten shipped
+systems -- but sits about 0.13 above Griffin's normalisation, and that gap is
+stated there rather than fudged away.
 
 Why this became cheap
 ---------------------
@@ -158,8 +161,10 @@ class SystemMetrics:
             Predicts how well the system sizes bets. Hi-Lo is about 0.97.
         insurance_correlation: Correlation with the insurance EOR. Hi-Lo is about
             0.76.
-        playing_efficiency: Always ``None``. See the module docstring -- this is
-            deliberately not computed rather than approximated.
+        playing_efficiency: Fraction of the available strategy-variation gain
+            the system captures, or ``None`` if it was not requested. See
+            :mod:`blackjack.ev.efficiency` for the definition and its offset
+            from published figures.
     """
 
     system: CountSystem
@@ -180,31 +185,46 @@ class SystemMetrics:
         )
 
 
-def system_metrics(system: CountSystem, eor: EorVectors) -> SystemMetrics:
+def system_metrics(
+    system: CountSystem,
+    eor: EorVectors,
+    decisions: list[object] | None = None,
+) -> SystemMetrics:
     """Score a counting system against a set of EOR vectors.
 
     Args:
         system: The system to score.
         eor: EOR vectors from :func:`effect_of_removal`. Compute these once and
             score many systems against them.
+        decisions: Per-decision EORs from
+            :func:`blackjack.ev.efficiency.collect_decisions`. Supply them to
+            get playing efficiency; omit for BC and IC alone, which are cheaper.
 
     Returns:
-        Its correlations. Playing efficiency is ``None`` by design.
+        Its correlations.
     """
+    pe: float | None = None
+    if decisions:
+        from blackjack.ev.efficiency import playing_efficiency  # noqa: PLC0415
+
+        pe = playing_efficiency(system, decisions)  # type: ignore[arg-type]
+
     return SystemMetrics(
         system=system,
         betting_correlation=correlation(system.tags, eor.betting),
         insurance_correlation=correlation(system.tags, eor.insurance),
+        playing_efficiency=pe,
     )
 
 
 def rank_systems(
     systems: dict[str, CountSystem] | list[CountSystem],
     eor: EorVectors,
+    decisions: list[object] | None = None,
 ) -> list[SystemMetrics]:
     """Score several systems and order them by betting correlation."""
     values = systems.values() if isinstance(systems, dict) else systems
-    scored = [system_metrics(s, eor) for s in values]
+    scored = [system_metrics(s, eor, decisions) for s in values]
     scored.sort(key=lambda m: m.betting_correlation, reverse=True)
     return scored
 

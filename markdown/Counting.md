@@ -131,7 +131,7 @@ Three published correlation numbers describe a system:
 | metric | meaning | Hi-Lo |
 |---|---|---|
 | **BC** betting correlation | Correlation of the tags with the EOR of full-shoe EV. Predicts bet sizing. | ≈ 0.97 |
-| **PE** playing efficiency | Share of the available deviation gain the system captures. | ≈ 0.51 |
+| **PE** playing efficiency | Share of the available deviation gain the system captures. | ≈ 0.51 published, 0.68 on this project's scale — see below |
 | **IC** insurance correlation | Correlation with the EOR of the insurance bet. | ≈ 0.76 |
 
 BC and IC are **computed**, not quoted. `ev/eor.py` derives the effect-of-removal
@@ -167,10 +167,41 @@ asserted:
   non-ten — because insurance depends on nothing but ten density. That is what
   makes it the cleanest index in the game.
 
-**PE is deliberately not computed.** It needs the EOR of every close decision
-weighted by how often it arises near its index, which is a much larger
-computation than BC and one where a plausible-looking wrong answer is easy to
-produce. `system_metrics` returns `None` rather than a number that looks right.
+### Playing efficiency, and an honest caveat
+
+PE is computed too — `bj systems --playing-efficiency` — but read this before
+quoting it.
+
+It needs the EOR of every close *decision* rather than of the game as a whole.
+For a decision taken at its index, the fraction of the available gain a system
+captures is the correlation between its tags and that decision's EOR vector, so
+PE is that correlation averaged over close decisions, weighted by how often each
+occurs and by how much its margin actually moves as cards leave.
+
+The result **ranks systems in almost exactly the published order** — Spearman
+0.98 across the ten shipped systems, with the only inversions between pairs the
+literature itself publishes as ties:
+
+| system | this project | published |
+|---|---|---|
+| Uston APC | 0.777 | 0.69 |
+| Hi-Opt II | 0.773 | 0.67 |
+| Omega II | 0.764 | 0.67 |
+| Zen Count | 0.740 | 0.63 |
+| Hi-Opt I | 0.735 | 0.61 |
+| Wong Halves | 0.700 | 0.56 |
+| Hi-Lo | 0.676 | 0.51 |
+
+But it sits a consistent **+0.13 above** Griffin's normalisation. That gap is
+not noise — the spread of the offset across systems is under 0.05 — and it is
+not something to tune away. Published PE figures already vary by source (Hi-Lo
+is quoted anywhere from 0.51 to 0.63) because the definition varies: which
+decisions are included, how many decks, whether an ace side count is assumed.
+
+So the tests assert the **ranking**, not the levels. Asserting levels would mean
+adjusting a constant until it matched one author's table, which is fitting, not
+computing. Use these numbers to compare systems against each other — which is
+what PE is actually for — and use a published table if you need Griffin's scale.
 
 Weighting by rank multiplicity matters: there are sixteen ten-cards per deck and
 four of everything else, so an unweighted correlation systematically understates
