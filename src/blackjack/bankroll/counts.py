@@ -91,16 +91,15 @@ class TrueCountDistribution:
         The workhorse behind bet-spread analysis: pass ``ramp.bet`` for the
         average wager, or a bet-times-edge lambda for the win rate.
         """
-        return sum(
-            p * f(c) for c, p in zip(self.counts, self.probabilities, strict=True)
-        )
+        return sum(p * f(c) for c, p in zip(self.counts, self.probabilities, strict=True))
 
     def table(self, lo: float = -6, hi: float = 10) -> str:
         """A readable frequency table for reports."""
         lines = [f"{'TC':>5} {'freq':>8}  {'>= TC':>8}"]
         for c, p in zip(self.counts, self.probabilities, strict=True):
             if lo <= c <= hi:
-                lines.append(f"{c:>5g} {p * 100:7.3f}% {self.probability_at_or_above(c) * 100:7.3f}%")
+                cumulative = self.probability_at_or_above(c) * 100
+                lines.append(f"{c:>5g} {p * 100:7.3f}% {cumulative:7.3f}%")
         return "\n".join(lines)
 
 

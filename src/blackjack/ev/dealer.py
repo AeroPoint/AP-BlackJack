@@ -214,7 +214,7 @@ def dealer_probabilities(
         acc = [x * scale for x in acc]
         p_natural = 0.0
 
-    return DealerOutcome(*acc, p_natural)
+    return DealerOutcome(acc[0], acc[1], acc[2], acc[3], acc[4], acc[5], p_natural)
 
 
 def dealer_probabilities_all_upcards(
@@ -299,4 +299,4 @@ def dealer_probabilities_infinite(
         scale = 1.0 / (1.0 - p_natural)
         acc = [x * scale for x in acc]
         p_natural = 0.0
-    return DealerOutcome(*acc, p_natural)
+    return DealerOutcome(acc[0], acc[1], acc[2], acc[3], acc[4], acc[5], p_natural)

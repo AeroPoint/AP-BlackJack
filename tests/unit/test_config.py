@@ -30,7 +30,6 @@ from blackjack.config.models import (
 from blackjack.counting import HI_LO
 from blackjack.rules import DoubleRule, HoleCardRule, RuleSet, SurrenderRule
 
-
 # --- Schema enforcement -------------------------------------------------------
 
 
@@ -53,7 +52,12 @@ def test_bad_enum_value_is_an_error() -> None:
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [("3/2", Fraction(3, 2)), ("6/5", Fraction(6, 5)), (1.5, Fraction(3, 2)), ([3, 2], Fraction(3, 2))],
+    [
+        ("3/2", Fraction(3, 2)),
+        ("6/5", Fraction(6, 5)),
+        (1.5, Fraction(3, 2)),
+        ([3, 2], Fraction(3, 2)),
+    ],
 )
 def test_payout_parsing(value: object, expected: Fraction) -> None:
     assert rules_from_dict({"blackjack_payout": value}).blackjack_payout == expected

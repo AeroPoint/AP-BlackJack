@@ -32,7 +32,7 @@ RULE_SETS = [VEGAS_6D_H17, VEGAS_6D_S17_LS, DOUBLE_DECK_H17, SINGLE_DECK_S17]
 
 
 @pytest.mark.parametrize("rules", RULE_SETS, ids=lambda r: r.slug())
-def test_mean_reproduces_the_solver(rules) -> None:  # noqa: ANN001
+def test_mean_reproduces_the_solver(rules) -> None:
     """The moment recursion must agree with the EV recursion to machine precision.
 
     Not approximately. These are two different traversals of the same tree
@@ -66,7 +66,7 @@ def test_fallback_constant_matches_the_exact_figure() -> None:
 
 
 @pytest.mark.parametrize("rules", RULE_SETS, ids=lambda r: r.slug())
-def test_variance_is_plausible(rules) -> None:  # noqa: ANN001
+def test_variance_is_plausible(rules) -> None:
     """A blackjack round varies by roughly 1.1 to 1.2 standard deviations.
 
     A wide band, deliberately: this catches a variance that has gone structurally
@@ -109,7 +109,7 @@ def test_six_five_raises_variance_and_lowers_ev() -> None:
 
 @pytest.mark.skipif(not ACTIVE.is_native, reason="native core unavailable")
 @pytest.mark.parametrize("rules", RULE_SETS, ids=lambda r: r.slug())
-def test_native_and_python_moments_agree(rules) -> None:  # noqa: ANN001
+def test_native_and_python_moments_agree(rules) -> None:
     """Parity for the moment recursion, to a few ulp rather than bit for bit.
 
     This is the one place in the project that does *not* achieve bit equality,

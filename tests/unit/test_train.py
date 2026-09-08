@@ -17,26 +17,26 @@ from blackjack.train.table import Phase, Table
 
 
 @pytest.fixture(scope="module")
-def chart():  # noqa: ANN201
+def chart():
     return solve(VEGAS_6D_H17).chart
 
 
 @pytest.fixture(scope="module")
-def shoe():  # noqa: ANN201
+def shoe():
     return full_shoe(6)
 
 
 # --- Grading ------------------------------------------------------------------
 
 
-def test_correct_play_costs_nothing(shoe) -> None:  # noqa: ANN001
+def test_correct_play_costs_nothing(shoe) -> None:
     verdict = grade((1, 7), 6, shoe, VEGAS_6D_H17, Action.DOUBLE, expected=Action.DOUBLE)
     assert verdict.correct
     assert verdict.cost == 0.0
     assert "correct" in verdict.message()
 
 
-def test_wrong_play_is_priced(shoe) -> None:  # noqa: ANN001
+def test_wrong_play_is_priced(shoe) -> None:
     """Standing on soft 18 against a six instead of doubling."""
     verdict = grade((1, 7), 6, shoe, VEGAS_6D_H17, Action.STAND, expected=Action.DOUBLE)
     assert not verdict.correct
@@ -46,7 +46,7 @@ def test_wrong_play_is_priced(shoe) -> None:  # noqa: ANN001
     assert "3.38" in message  # 0.1353 x 25
 
 
-def test_cost_is_measured_against_the_best_play(shoe) -> None:  # noqa: ANN001
+def test_cost_is_measured_against_the_best_play(shoe) -> None:
     """A third choice can cost far more than the cell's own margin.
 
     Standing on 5,5 against a nine is worse than hitting, which is itself worse
@@ -60,7 +60,7 @@ def test_cost_is_measured_against_the_best_play(shoe) -> None:  # noqa: ANN001
     assert "picked neither" in verdict.message()
 
 
-def test_beating_the_chart_is_recognised(shoe) -> None:  # noqa: ANN001
+def test_beating_the_chart_is_recognised(shoe) -> None:
     """Playing better than the standard is not an error.
 
     It happens on composition-dependent exceptions, and marking it wrong would
@@ -73,7 +73,7 @@ def test_beating_the_chart_is_recognised(shoe) -> None:  # noqa: ANN001
     assert "better than the chart" in verdict.message()
 
 
-def test_illegal_choice_is_rejected(shoe) -> None:  # noqa: ANN001
+def test_illegal_choice_is_rejected(shoe) -> None:
     with pytest.raises(ValueError, match="not legal"):
         grade((10, 6), 10, shoe, VEGAS_6D_H17, Action.SPLIT)
 
@@ -89,16 +89,14 @@ def test_legal_actions_track_the_rules() -> None:
 # --- Session ------------------------------------------------------------------
 
 
-def test_session_tracks_cost_and_leaks(shoe) -> None:  # noqa: ANN001
+def test_session_tracks_cost_and_leaks(shoe) -> None:
     session = Session(unit=100)
     key = (Category.SOFT, 18, 6)
     for _ in range(3):
         session.record(
             key, grade((1, 7), 6, shoe, VEGAS_6D_H17, Action.STAND, expected=Action.DOUBLE)
         )
-    session.record(
-        key, grade((1, 7), 6, shoe, VEGAS_6D_H17, Action.DOUBLE, expected=Action.DOUBLE)
-    )
+    session.record(key, grade((1, 7), 6, shoe, VEGAS_6D_H17, Action.DOUBLE, expected=Action.DOUBLE))
     assert session.decisions == 4
     assert session.errors == 3
     assert session.accuracy == pytest.approx(0.25)
@@ -131,7 +129,7 @@ def test_describe_cell_labels() -> None:
 # --- Drill weighting ----------------------------------------------------------
 
 
-def test_drill_prefers_expensive_mistakes(chart) -> None:  # noqa: ANN001
+def test_drill_prefers_expensive_mistakes(chart) -> None:
     """Stiffs against a ten should outweigh standing on twenty."""
     stiff = chart.cell(Category.HARD, 13, 10)
     twenty = chart.cell(Category.HARD, 20, 10)
@@ -139,7 +137,7 @@ def test_drill_prefers_expensive_mistakes(chart) -> None:  # noqa: ANN001
     assert drill_weight(stiff, None) > drill_weight(twenty, None)
 
 
-def test_measured_errors_raise_a_cell_weight(chart) -> None:  # noqa: ANN001
+def test_measured_errors_raise_a_cell_weight(chart) -> None:
     """Missing a cell repeatedly must make the drill serve it more."""
     cell = chart.cell(Category.HARD, 20, 10)
     assert cell is not None
@@ -153,7 +151,7 @@ def test_measured_errors_raise_a_cell_weight(chart) -> None:  # noqa: ANN001
     assert blended_error_rate(cell, session) > cell.analysis.error_rate
 
 
-def test_getting_a_cell_right_lowers_its_weight(chart) -> None:  # noqa: ANN001
+def test_getting_a_cell_right_lowers_its_weight(chart) -> None:
     cell = chart.cell(Category.HARD, 13, 10)
     assert cell is not None
     key = (cell.category, cell.row, cell.upcard)
@@ -162,7 +160,7 @@ def test_getting_a_cell_right_lowers_its_weight(chart) -> None:  # noqa: ANN001
     assert drill_weight(cell, session) < drill_weight(cell, None)
 
 
-def test_drill_picks_a_real_hand(chart) -> None:  # noqa: ANN001
+def test_drill_picks_a_real_hand(chart) -> None:
     import random
 
     rng = random.Random(1)
@@ -172,7 +170,7 @@ def test_drill_picks_a_real_hand(chart) -> None:  # noqa: ANN001
         assert drill.cards in [tuple(sorted(m)) for m in drill.cell.members]
 
 
-def test_drill_avoids_immediate_repeats(chart) -> None:  # noqa: ANN001
+def test_drill_avoids_immediate_repeats(chart) -> None:
     import random
 
     rng = random.Random(3)
@@ -256,21 +254,29 @@ def test_table_composition_shrinks_as_cards_are_dealt() -> None:
 # --- The loops ----------------------------------------------------------------
 
 
-def test_drill_loop_runs_headless(chart) -> None:  # noqa: ANN001
+def test_drill_loop_runs_headless(chart) -> None:
     answers = iter(["s"] * 8)
     session = run_drill(
-        VEGAS_6D_H17, rounds=8, unit=10, seed=1,
-        reader=lambda _: next(answers), chart=chart,
+        VEGAS_6D_H17,
+        rounds=8,
+        unit=10,
+        seed=1,
+        reader=lambda _: next(answers),
+        chart=chart,
     )
     assert session.decisions == 8
     assert session.total_cost >= 0.0
 
 
-def test_drill_loop_stops_on_quit(chart) -> None:  # noqa: ANN001
+def test_drill_loop_stops_on_quit(chart) -> None:
     answers = iter(["s", "q"])
     session = run_drill(
-        VEGAS_6D_H17, rounds=10, unit=10, seed=1,
-        reader=lambda _: next(answers), chart=chart,
+        VEGAS_6D_H17,
+        rounds=10,
+        unit=10,
+        seed=1,
+        reader=lambda _: next(answers),
+        chart=chart,
     )
     assert session.decisions == 1
 
@@ -281,8 +287,14 @@ def test_free_play_loop_runs_headless() -> None:
     strategy = compile_strategy(solve(VEGAS_6D_H17).chart)
     answers = iter(["n", "s"] * 200)
     session = run_free_play(
-        VEGAS_6D_H17, HI_LO, rounds=25, unit=25, seed=13,
-        standard=Standard.CHART, reader=lambda _: next(answers), strategy=strategy,
+        VEGAS_6D_H17,
+        HI_LO,
+        rounds=25,
+        unit=25,
+        seed=13,
+        standard=Standard.CHART,
+        reader=lambda _: next(answers),
+        strategy=strategy,
     )
     assert session.hands == 25
     assert session.decisions > 0

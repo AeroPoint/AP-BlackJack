@@ -108,8 +108,13 @@ def run_drill(
             break
 
         verdict = grade(
-            cards, upcard, shoe, rules, chosen,
-            standard=Standard.CHART, expected=drill.cell.action,
+            cards,
+            upcard,
+            shoe,
+            rules,
+            chosen,
+            standard=Standard.CHART,
+            expected=drill.cell.action,
         )
         session.record(drill.key, verdict)
         mark = "[ok]" if verdict.correct else "[XX]"
@@ -183,10 +188,7 @@ def run_free_play(
                 else ""
             )
             label = "  (split hand)" if hand.from_split else ""
-            print(
-                f"[{i}] You: {hand.label()}{label}   "
-                f"Dealer: {rank_name(state.upcard)}{count}"
-            )
+            print(f"[{i}] You: {hand.label()}{label}   Dealer: {rank_name(state.upcard)}{count}")
 
             legal = table.legal()
             chosen = _prompt(legal, reader)
@@ -196,9 +198,7 @@ def run_free_play(
                 return session
 
             if len(hand.cards) == 2:
-                verdict = _grade_here(
-                    table, play, hand, state, chosen, rules, standard
-                )
+                verdict = _grade_here(table, play, hand, state, chosen, rules, standard)
                 if verdict is not None:
                     key = _cell_key(hand, state.upcard)
                     session.record(key, verdict)
@@ -207,7 +207,7 @@ def run_free_play(
 
             state = table.act(chosen)
 
-        if not state.hands or state.phase is Phase.SETTLED and session.decisions == _before:
+        if not state.hands or (state.phase is Phase.SETTLED and session.decisions == _before):
             # Settled with no decision to make: someone had a natural.
             who = "Dealer had blackjack" if state.dealer_natural else "Blackjack!"
             print(f"[{i}] {who}")
@@ -217,8 +217,7 @@ def run_free_play(
         session.net += net
         dealer = " ".join(rank_name(c) for c in state.dealer_cards)
         outcome = "push" if net == 0 else ("won" if net > 0 else "lost")
-        print(f"  Dealer: {dealer}   You {outcome} {abs(net):g} units. "
-              f"Session {session.net:+g}\n")
+        print(f"  Dealer: {dealer}   You {outcome} {abs(net):g} units. Session {session.net:+g}\n")
 
     print()
     print(session.report())

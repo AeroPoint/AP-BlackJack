@@ -53,7 +53,7 @@ _SURRENDER_CODE = {
 }
 
 
-def _core_rules(rules):  # noqa: ANN001, ANN202
+def _core_rules(rules):
     """Translate a RuleSet into the flat struct the native core takes.
 
     The double rule crosses the boundary as a bitmask over totals rather than an
@@ -80,23 +80,21 @@ def _core_rules(rules):  # noqa: ANN001, ANN202
 
 @pytest.mark.parametrize("rules", RULE_SETS, ids=lambda r: r.slug())
 @pytest.mark.parametrize("upcard", range(1, 11))
-def test_dealer_probabilities_match(rules, upcard: int) -> None:  # noqa: ANN001
+def test_dealer_probabilities_match(rules, upcard: int) -> None:
     """Every dealer distribution must agree slot by slot."""
     import blackjack_core  # type: ignore[import-not-found]
 
     comp = remove(full_shoe(rules.decks), upcard)
-    expected = dealer_probabilities(
-        comp, upcard, hit_soft_17=rules.hit_soft_17, peek=rules.peeks
-    )
+    expected = dealer_probabilities(comp, upcard, hit_soft_17=rules.hit_soft_17, peek=rules.peeks)
     got = blackjack_core.dealer_probabilities(list(comp), upcard, _core_rules(rules))
     for name in ("p17", "p18", "p19", "p20", "p21", "bust", "blackjack"):
-        assert getattr(got, name) == pytest.approx(
-            getattr(expected, name), abs=TOLERANCE
-        ), f"{rules.slug()} up={upcard} {name}"
+        assert getattr(got, name) == pytest.approx(getattr(expected, name), abs=TOLERANCE), (
+            f"{rules.slug()} up={upcard} {name}"
+        )
 
 
 @pytest.mark.parametrize("rules", RULE_SETS, ids=lambda r: r.slug())
-def test_action_evs_match_across_every_cell(rules) -> None:  # noqa: ANN001
+def test_action_evs_match_across_every_cell(rules) -> None:
     """The full 550-cell sweep, not a spot check.
 
     A port that gets the common cases right and one corner wrong is the likely
@@ -104,6 +102,7 @@ def test_action_evs_match_across_every_cell(rules) -> None:  # noqa: ANN001
     every cell the solver would.
     """
     import blackjack_core  # type: ignore[import-not-found]
+
     from blackjack.actions import Action
 
     shoe = full_shoe(rules.decks)
@@ -155,7 +154,7 @@ def test_solve_all_cells_preserves_enumeration_order() -> None:
 
 
 @pytest.mark.parametrize("rules", RULE_SETS, ids=lambda r: r.slug())
-def test_full_solve_is_bit_identical(rules) -> None:  # noqa: ANN001
+def test_full_solve_is_bit_identical(rules) -> None:
     """End-to-end: the two backends must produce the same solve, exactly.
 
     Not `approx`. Equality. A transliterated recursion accumulating floats in the

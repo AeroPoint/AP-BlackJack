@@ -26,6 +26,7 @@ from blackjack.backend import describe
 from blackjack.version import __version__
 
 if TYPE_CHECKING:
+    from blackjack.counting import CountSystem
     from blackjack.ev.solver import SolveResult
     from blackjack.rules import RuleSet
 
@@ -70,7 +71,7 @@ def _load_rules(name: str) -> RuleSet:
         raise
 
 
-def _load_system(name: str) -> object:
+def _load_system(name: str) -> CountSystem:
     """Load a counting system by config name or built-in key."""
     from blackjack.config.loader import load_system
 
@@ -167,11 +168,11 @@ def cmd_indices(args: argparse.Namespace) -> int:
 
     rules = _load_rules(args.rules)
     system = _load_system(args.system)
-    print(f"{rules.name}  --  {system.name} indices")  # type: ignore[attr-defined]
+    print(f"{rules.name}  --  {system.name} indices")
     print("Derived from the exact solver for these rules, not copied from a book.\n")
-    ins = insurance_index(rules, system)  # type: ignore[arg-type]
+    ins = insurance_index(rules, system)
     print(f"  Insurance: take at true count {ins:+.2f} or above\n")
-    indices = generate_indices(rules, system, decks_remaining=args.decks_remaining)  # type: ignore[arg-type]
+    indices = generate_indices(rules, system, decks_remaining=args.decks_remaining)
     print(format_index_table(indices, args.top))
     return 0
 
@@ -265,8 +266,7 @@ def cmd_sim(args: argparse.Namespace) -> int:
         )
     )
     print(result.summary())
-    print(f"\n  config fingerprint: {profile.fingerprint()}")
-    print("\n" + result.config and "")
+    print(f"\n  config fingerprint: {profile.fingerprint()}\n")
     from blackjack.bankroll.metrics import BankrollMetrics
 
     print(

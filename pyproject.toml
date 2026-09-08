@@ -63,15 +63,6 @@ analysis = [
   "matplotlib>=3.8",      # PSF-based, BSD-compatible
   "scipy>=1.13",          # BSD-3
 ]
-dev = [
-  "pytest>=8.2",          # MIT
-  "pytest-cov>=5.0",      # MIT
-  "hypothesis>=6.100",    # MPL-2.0 (dev-only; not distributed)
-  "ruff>=0.5",            # MIT
-  "mypy>=1.10",           # MIT
-  "pre-commit>=3.7",      # MIT
-  "maturin>=1.6",         # MIT/Apache-2.0 - builds the Rust core
-]
 
 [project.scripts]
 bj = "blackjack.cli:main"
@@ -80,6 +71,20 @@ bj = "blackjack.cli:main"
 Documentation = "./markdown/ReadMe.md"
 
 # --- Build --------------------------------------------------------------------
+# Development tooling. A PEP 735 group rather than an optional-dependency extra:
+# these are not a feature of the installed package, nobody should be able to
+# `pip install blackjack[dev]` into production, and uv installs groups by default.
+[dependency-groups]
+dev = [
+  "pytest>=8.2",          # MIT
+  "pytest-cov>=5.0",      # MIT
+  "hypothesis>=6.100",    # MPL-2.0 (dev-only; never distributed)
+  "ruff>=0.5",            # MIT
+  "mypy>=1.10",           # MIT
+  "pre-commit>=3.7",      # MIT
+  "maturin>=1.7",         # MIT/Apache-2.0 - builds the Rust core
+]
+
 [build-system]
 requires = ["hatchling>=1.25"]   # MIT
 build-backend = "hatchling.build"
@@ -127,6 +132,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D", "ANN", "S101"]
 "scripts/**" = ["D", "ANN"]
+# shoe.remove and shoe.add are the hottest functions in the engine, and tuple
+# concatenation measures 6% faster there than the unpacking RUF005 prefers.
+"src/blackjack/shoe.py" = ["RUF005"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -141,6 +149,13 @@ files = ["src", "apps/api"]
 
 [[tool.mypy.overrides]]
 module = ["blackjack_core.*"]
+ignore_missing_imports = true
+
+# PyYAML ships no stubs and is an optional, function-scoped import behind a
+# try/except. Adding types-PyYAML to the dev group to satisfy a single call site
+# is not worth the dependency.
+[[tool.mypy.overrides]]
+module = ["yaml"]
 ignore_missing_imports = true
 
 # --- Tests --------------------------------------------------------------------

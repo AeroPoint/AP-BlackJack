@@ -40,7 +40,7 @@ def _probe() -> Backend:
     from blackjack.version import __version__
 
     try:
-        import blackjack_core  # type: ignore[import-not-found]  # noqa: PLC0415
+        import blackjack_core
     except ImportError:
         return Backend(
             name="python",

@@ -56,7 +56,7 @@ def _read(path: Path) -> dict[str, Any]:
             raise ConfigError(f"{path}: invalid JSON: {exc}") from exc
     else:
         try:
-            import yaml  # noqa: PLC0415 - optional dependency, imported on demand
+            import yaml
         except ImportError as exc:  # pragma: no cover - depends on the environment
             raise ConfigError(
                 f"{path} is YAML but PyYAML is not installed. Either "
@@ -172,7 +172,7 @@ def save_profile(config: SessionConfig, path: Path) -> None:
         path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         return
     try:
-        import yaml  # noqa: PLC0415 - optional dependency
+        import yaml
     except ImportError:  # pragma: no cover - depends on the environment
         path.with_suffix(".json").write_text(
             json.dumps(data, indent=2, sort_keys=True), encoding="utf-8"

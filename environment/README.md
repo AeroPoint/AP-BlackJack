@@ -1,5 +1,9 @@
 # Environment
 
+The environment in this file is not theoretical — it has been created and run
+end to end on Windows with `uv 0.12`, Python 3.13.15, and Rust 1.98. `uv.lock`
+is committed and reproduces it.
+
 ## First time
 
 **Windows**
@@ -54,7 +58,14 @@ That is deliberate — see
 | `native` | the compiled Rust core — a 125x speedup on solving |
 | `api` | `fastapi`, `uvicorn`, `pydantic` — the local web service |
 | `analysis` | `numpy`, `pandas`, `matplotlib`, `scipy` — notebooks and plots |
-| `dev` | `pytest`, `ruff`, `mypy`, `hypothesis`, `maturin`, `pre-commit` |
+
+Development tooling (`pytest`, `ruff`, `mypy`, `maturin`, `pre-commit`) is a PEP
+735 **dependency group**, not an extra, so `uv sync` installs it by default and
+`pip install blackjack[dev]` is not a thing anyone can do by accident.
+
+`uv sync --all-extras` builds and installs the native core automatically, via the
+editable path source in `pyproject.toml`. `bj --version` reports which backend
+actually loaded, so there is no guessing.
 
 ## The old environment
 

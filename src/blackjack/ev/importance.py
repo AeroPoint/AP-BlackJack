@@ -45,12 +45,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from blackjack.actions import Action
 
 
-class Importance(str, Enum):
+class Importance(StrEnum):
     """Severity band for a decision, keyed off the EV margin."""
 
     CRITICAL = "critical"

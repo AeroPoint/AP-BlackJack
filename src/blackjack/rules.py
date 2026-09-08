@@ -14,14 +14,14 @@ constructed in code.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from enum import Enum
+from enum import StrEnum
 from fractions import Fraction
 from typing import Any
 
 from blackjack.cards import CARDS_PER_DECK
 
 
-class DoubleRule(str, Enum):
+class DoubleRule(StrEnum):
     """Which two-card totals may be doubled."""
 
     ANY_TWO = "any2"
@@ -30,7 +30,7 @@ class DoubleRule(str, Enum):
     NONE = "none"
 
 
-class SurrenderRule(str, Enum):
+class SurrenderRule(StrEnum):
     """Surrender availability.
 
     ``LATE`` is offered only after the dealer has checked for blackjack (the
@@ -43,7 +43,7 @@ class SurrenderRule(str, Enum):
     EARLY = "early"
 
 
-class HoleCardRule(str, Enum):
+class HoleCardRule(StrEnum):
     """How the dealer's second card is handled.
 
     ``PEEK``
