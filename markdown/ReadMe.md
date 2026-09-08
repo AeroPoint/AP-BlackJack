@@ -27,6 +27,7 @@ Vegas Strip 6D H17 DAS (6d_h17_das_sp4_rsa_any2_none_peek_bj3-2)
   Basic strategy EV : -0.5498%  (house edge 0.5498%)
   Composition-perfect: -0.5498%  (+0.0000 pts)
   Insurance off the top: -7.3955%
+  Solved in 0.031s on the rust backend (engine 0.1.0)
 ```
 
 Cross-checks: 6:5 blackjack costs **1.36 points** (published 1.36–1.39). Single
@@ -114,15 +115,56 @@ system are injected. ~160,000 rounds/second in pure Python. Used for the things
 the solver cannot reach in closed form: variance, drawdown, and behavioural
 effects like counting errors.
 
+### 7. Counting-system analysis
+
+`ev/eor.py` derives effect-of-removal vectors from the solver — strategy held
+fixed, so the betting effect is not confounded with the playing effect — and
+scores any tag vector against them.
+
+```
+$ bj systems
+  Wong Halves            BC 0.993  IC 0.725      published 0.99
+  Zen Count              BC 0.971  IC 0.850      published 0.96
+  Hi-Lo                  BC 0.969  IC 0.760      published 0.97 / 0.76
+  Hi-Opt I               BC 0.896  IC 0.850      published 0.88
+```
+
+`bj systems --derive` builds the best integer tag vector at each level. At level
+one it returns **exactly Hi-Lo** — the system was not put in, it came out.
+
+Playing efficiency is deliberately *not* computed; see
+[Counting.md](Counting.md) for why a `None` is better than a plausible number.
+
+### 8. Native core
+
+The Rust accelerator in `crates/blackjack-core` is implemented and validated. It
+ports the two hot recursions — dealer probabilities and player EVs — and
+nothing else; chart assembly, index generation and the importance model stay in
+Python, where the judgement lives.
+
+| operation | Python | Rust | speedup |
+|---|---|---|---|
+| Full solve, 550 cells | 1352 ms | 10.8 ms | **125x** |
+| Full solve via `solve()` | 1352 ms | 31 ms | 44x |
+| Edge curve, 17 counts | 20.0 s | 0.29 s | 69x |
+| Index generation, 71 indices | 34.5 s | 1.72 s | 20x |
+
+Results are **bit-identical**, not merely close. `tests/parity/` asserts exact
+equality on a full solve across four rule sets and 1e-12 on every dealer
+distribution. The Python implementation remains the correctness oracle
+([ADR-0006](adr/ADR-0006-python-reference-implementation.md)); it is not
+scaffolding to be deleted.
+
+The engine falls back to Python automatically when no core is built, and
+`solve(..., backend="python"|"rust")` forces either path. A forced backend never
+silently falls back — that would make a benchmark measure the wrong thing.
+
 ---
 
 ## What is not built yet
 
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
-- **Native core.** Everything is pure Python. A full index sweep takes ~30s and
-  a bet-spread analysis ~20s. The Rust crate in `crates/blackjack-core` is
-  scaffolded but not implemented. See [ADR-0001](adr/ADR-0001-native-core.md).
 - **Web application.** `apps/api` and `apps/web` are scaffolds.
 - **Trainer and free play.** Designed (see [ToDo.md](ToDo.md)) but not built. The
   grading engine it needs — `mistake_cost` and `DecisionAnalysis.explain` — is
@@ -146,7 +188,7 @@ python -m blackjack.cli solve --rules vegas6-h17     # with src/ on PYTHONPATH
 For the full environment (locked deps, dev tools, native core):
 
 ```powershell
-.\environment\bootstrap.ps1     # installs uv, pins Python 3.13, syncs the lock
+.\environment\bootstrap.ps1 -WithRust   # installs uv + rustup, builds the core
 uv run bj chart --rules vegas6-h17 --importance
 ```
 
@@ -195,6 +237,7 @@ Every claim above is reproducible. The invariants the test suite enforces:
 - The count tilt round-trips: the count recovered from a tilted shoe equals the
   count requested.
 - Simulation converges on the solver's EV within its own error bars.
+- The Rust core reproduces the Python reference bit for bit.
 - The engine imports nothing outside the standard library.
 
 The last two caught real bugs during development — resplit-aces being

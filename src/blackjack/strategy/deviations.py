@@ -44,10 +44,11 @@ from blackjack.actions import Action
 from blackjack.bankroll.counts import TrueCountDistribution, true_count_distribution
 from blackjack.cards import CARDS_PER_DECK, NUM_RANKS, RANKS, SINGLE_DECK_COUNTS, rank_name
 from blackjack.counting import CountSystem
+from blackjack.ev import native
 from blackjack.ev.player import action_evs, insurance_ev, make_context
 from blackjack.ev.solver import Category, categorise, deal_probability
-from blackjack.rules import RuleSet
 from blackjack.hand import add_card
+from blackjack.rules import RuleSet
 from blackjack.shoe import Composition, remove_many
 
 MAX_TILT = 40.0
@@ -236,13 +237,21 @@ def cell_action_at_count(
     allow_split: bool = True,
     comp: Composition | None = None,
 ) -> tuple[Action, dict[Action, float]]:
-    """Best action for one specific hand at a given count, and every action's EV."""
+    """Best action for one specific hand at a given count, and every action's EV.
+
+    Dispatches to the native core when one is loaded. An index sweep evaluates
+    this thousands of times, so it is the hottest caller in the project after the
+    solver itself.
+    """
     shoe = comp if comp is not None else tilted_composition(
         system, rules.decks, decks_remaining, true_count
     )
     after = remove_many(shoe, [cards[0], cards[1], upcard])
-    ctx = make_context(after, upcard, rules)
-    evs = action_evs(cards, after, ctx)
+    if native.available():
+        evs = native.action_evs(cards, after, upcard, rules)
+    else:
+        ctx = make_context(after, upcard, rules)
+        evs = action_evs(cards, after, ctx)
     if not allow_split:
         evs = {a: v for a, v in evs.items() if a is not Action.SPLIT}
     return max(evs, key=lambda a: evs[a]), evs

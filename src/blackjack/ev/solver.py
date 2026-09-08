@@ -32,9 +32,12 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal
 
 from blackjack.actions import Action
+from blackjack.backend import ACTIVE
 from blackjack.cards import ACE, RANKS, TEN, rank_name
+from blackjack.ev import native
 from blackjack.ev.dealer import DealerOutcome
 from blackjack.ev.importance import DecisionAnalysis, analyse
 from blackjack.ev.player import (
@@ -293,6 +296,11 @@ class SolveResult:
     elapsed_seconds: float
     engine_version: str = __version__
 
+    backend: str = "python"
+    """Which implementation produced this. Recorded for the same reason the
+    engine version is: a number should always be traceable to the code that
+    made it."""
+
     @property
     def house_edge(self) -> float:
         """House edge as a positive percentage of the initial wager."""
@@ -312,11 +320,14 @@ class SolveResult:
             f"  Composition-perfect: {self.optimal_ev * 100:+.4f}%  "
             f"(+{self.composition_dependent_gain:.4f} pts)\n"
             f"  Insurance off the top: {self.insurance_ev * 100:+.4f}%\n"
-            f"  Solved in {self.elapsed_seconds:.2f}s with engine {self.engine_version}"
+            f"  Solved in {self.elapsed_seconds:.3f}s on the {self.backend} backend "
+            f"(engine {self.engine_version})"
         )
 
 
 ProgressCallback = Callable[[int, int], None]
+
+Backend = Literal["auto", "python", "rust"]
 
 
 def solve(
@@ -325,6 +336,7 @@ def solve(
     *,
     model: DealerModel = DealerModel.FROZEN,
     progress: ProgressCallback | None = None,
+    backend: Backend = "auto",
 ) -> SolveResult:
     """Solve a rule set against a shoe composition.
 
@@ -334,19 +346,87 @@ def solve(
             gives ordinary basic strategy. Pass a depleted composition to get
             the exact strategy at a point in the shoe -- that is how deviation
             indices are generated, not by table lookup.
-        model: Dealer model; see :mod:`blackjack.ev.player`.
-        progress: Optional ``(done, total)`` callback for the UI.
+        model: Dealer model; see :mod:`blackjack.ev.player`. The native core
+            implements only ``FROZEN``, so ``EXACT`` always runs in Python.
+        progress: Optional ``(done, total)`` callback for the UI. Largely moot
+            on the native path, which finishes in about ten milliseconds.
+        backend: ``"auto"`` uses the native core when one is loaded,
+            ``"python"`` forces the reference implementation, ``"rust"`` demands
+            the core and fails if it is missing. Tests use the explicit values;
+            everything else should leave this alone.
 
     Returns:
-        The complete solve.
+        The complete solve. Identical whichever backend ran -- parity is
+        enforced to 1e-12 by ``tests/parity/``.
+
+    Raises:
+        RuntimeError: if ``backend="rust"`` and no usable native core is loaded.
     """
     started = time.perf_counter()
     composition = comp if comp is not None else full_shoe(rules.decks)
 
     deals = list(enumerate_deals(composition))
     total_deals = len(deals)
+
+    use_native = _choose_backend(backend, model)
+    if use_native:
+        probabilities = {(a, b, up): p for (a, b), up, p in deals}
+        results = native.solve_cells(composition, rules, probabilities)
+        if progress:
+            progress(total_deals, total_deals)
+    else:
+        results = _solve_in_python(composition, rules, deals, model, progress)
+
+    chart = build_chart(rules, results)
+    basic = strategy_ev(rules, results, chart)
+    optimal = sum(r.probability * r.round_ev(rules) for r in results)
+    ins = insurance_ev(remove_many(composition, [ACE]), rules)
+
+    return SolveResult(
+        rules=rules,
+        chart=chart,
+        cell_results=results,
+        basic_strategy_ev=basic,
+        optimal_ev=optimal,
+        insurance_ev=ins,
+        decks=rules.decks,
+        elapsed_seconds=time.perf_counter() - started,
+        backend="rust" if use_native else "python",
+    )
+
+
+def _choose_backend(backend: Backend, model: DealerModel) -> bool:
+    """Decide whether to run the native core.
+
+    Raises:
+        RuntimeError: if the core was demanded and is unavailable, or demanded
+            alongside a dealer model it does not implement. Silently falling
+            back would make a benchmark or a parity test measure the wrong thing.
+    """
+    if backend == "python":
+        return False
+    if backend == "rust":
+        if not native.available():
+            raise RuntimeError(f"native core demanded but unavailable: {ACTIVE.reason}")
+        if model is not DealerModel.FROZEN:
+            raise RuntimeError(
+                f"native core implements only the frozen dealer model, not {model.value}"
+            )
+        return True
+    return native.available() and model is DealerModel.FROZEN
+
+
+def _solve_in_python(
+    composition: Composition,
+    rules: RuleSet,
+    deals: list[tuple[tuple[int, int], int, float]],
+    model: DealerModel,
+    progress: ProgressCallback | None,
+) -> list[CellResult]:
+    """The reference implementation. See ADR-0006 for why it stays."""
     dealer_cache: dict[tuple[Composition, int, bool], tuple[float, ...]] = {}
     contexts: dict[tuple[Composition, int], Context] = {}
+    total_deals = len(deals)
 
     results: list[CellResult] = []
     for i, (cards, up, prob) in enumerate(deals):
@@ -368,22 +448,7 @@ def solve(
         )
         if progress and (i % 64 == 0 or i == total_deals - 1):
             progress(i + 1, total_deals)
-
-    chart = build_chart(rules, results)
-    basic = _strategy_ev(rules, results, chart)
-    optimal = sum(r.probability * r.round_ev(rules) for r in results)
-    ins = insurance_ev(remove_many(composition, [ACE]), rules)
-
-    return SolveResult(
-        rules=rules,
-        chart=chart,
-        cell_results=results,
-        basic_strategy_ev=basic,
-        optimal_ev=optimal,
-        insurance_ev=ins,
-        decks=rules.decks,
-        elapsed_seconds=time.perf_counter() - started,
-    )
+    return results
 
 
 def _natural_probability(comp: Composition, upcard: int) -> float:
@@ -472,8 +537,23 @@ def build_chart(rules: RuleSet, results: list[CellResult]) -> StrategyChart:
     return StrategyChart(rules=rules, cells=cells)
 
 
-def _strategy_ev(rules: RuleSet, results: list[CellResult], chart: StrategyChart) -> float:
-    """EV of playing the aggregated chart, weighted over every possible deal."""
+def strategy_ev(rules: RuleSet, results: list[CellResult], chart: StrategyChart) -> float:
+    """EV of playing ``chart`` against a set of solved cells.
+
+    Public because holding the strategy *fixed* while the shoe changes is exactly
+    what effect-of-removal analysis needs: an EOR computed while also re-solving
+    the strategy would conflate the betting effect with the playing effect, and
+    those are two different numbers with two different uses.
+
+    Args:
+        rules: Table rules.
+        results: Solved cells, which may come from a different composition than
+            the one ``chart`` was built for.
+        chart: The strategy to price.
+
+    Returns:
+        EV in units of the initial wager.
+    """
     total = 0.0
     for cell in results:
         if cell.is_natural:

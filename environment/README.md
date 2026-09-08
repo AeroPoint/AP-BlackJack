@@ -51,7 +51,7 @@ That is deliberate — see
 | extra | adds |
 |---|---|
 | `cli` | `rich`, `pyyaml` — colour output and YAML config files |
-| `native` | the compiled Rust core |
+| `native` | the compiled Rust core — a 125x speedup on solving |
 | `api` | `fastapi`, `uvicorn`, `pydantic` — the local web service |
 | `analysis` | `numpy`, `pandas`, `matplotlib`, `scipy` — notebooks and plots |
 | `dev` | `pytest`, `ruff`, `mypy`, `hypothesis`, `maturin`, `pre-commit` |
@@ -88,8 +88,13 @@ supported range.
 **`uv: command not found` after bootstrap.** The installer adds
 `%USERPROFILE%\.local\bin` to PATH for new shells. Open a new terminal.
 
-**Native core fails to build.** The engine works without it, only slower.
-`uv sync` without `--extra native` skips it entirely.
+**Native core fails to build.** The engine works without it, only slower --
+`bj --version` reports which backend is active and why. `uv sync` without
+`--extra native` skips it entirely.
+
+Building it needs a C++ linker. On Windows that means Visual Studio Build Tools
+with the "Desktop development with C++" workload; `rustup` will say so if it is
+missing. On macOS, `xcode-select --install`; on Linux, `build-essential`.
 
 **`bj: command not found`.** Use `uv run bj ...`, or activate the environment
 first. The bare-Python fallback is `PYTHONPATH=src python -m blackjack.cli ...`.

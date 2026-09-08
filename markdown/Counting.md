@@ -134,14 +134,62 @@ Three published correlation numbers describe a system:
 | **PE** playing efficiency | Share of the available deviation gain the system captures. | ≈ 0.51 |
 | **IC** insurance correlation | Correlation with the EOR of the insurance bet. | ≈ 0.76 |
 
-`counting.py` provides the weighted-correlation machinery and documents these,
-but **the effect-of-removal vectors they need are not yet computed** — a P3 item
-in [ToDo.md](ToDo.md). When `ev/eor.py` lands these become derived rather than
-quoted, and a custom-system designer falls straight out of it.
+BC and IC are **computed**, not quoted. `ev/eor.py` derives the effect-of-removal
+vectors from the solver and correlates the tags against them:
+
+```
+$ bj systems
+ rank   betting EOR   insurance EOR
+    A      -0.5447%         1.8824%
+    2       0.4056%         1.8824%
+    5       0.7571%         1.8824%
+    8       0.0092%         1.8824%
+    T      -0.5538%        -4.1176%
+
+  Wong Halves            BC 0.993  IC 0.725
+  Knock-Out (KO)         BC 0.974  IC 0.783
+  Zen Count              BC 0.971  IC 0.850
+  Hi-Lo                  BC 0.969  IC 0.760
+  Hi-Opt II              BC 0.930  IC 0.909
+  Hi-Opt I               BC 0.896  IC 0.850
+```
+
+Against published figures: Hi-Lo 0.97, Wong Halves 0.99, Zen 0.96, Hi-Opt I
+0.88. Hi-Lo's insurance correlation of 0.76 is exact.
+
+Two structural results worth noticing, both of which fall out rather than being
+asserted:
+
+- **The five has the largest effect of removal of any card**, and the eight is
+  almost exactly neutral. That is why simplified systems count fives, and why
+  nearly every system tags the eight zero.
+- **Insurance EOR takes only two values** — one for tens, one shared by every
+  non-ten — because insurance depends on nothing but ten density. That is what
+  makes it the cleanest index in the game.
+
+**PE is deliberately not computed.** It needs the EOR of every close decision
+weighted by how often it arises near its index, which is a much larger
+computation than BC and one where a plausible-looking wrong answer is easy to
+produce. `system_metrics` returns `None` rather than a number that looks right.
 
 Weighting by rank multiplicity matters: there are sixteen ten-cards per deck and
 four of everything else, so an unweighted correlation systematically understates
 how much the ten tag matters.
+
+### Deriving a system from scratch
+
+`bj systems --derive` scales the EOR vector to a given level and rounds:
+
+```
+  derived L1  A:-1 2:+1 3:+1 4:+1 5:+1 6:+1 7:+0 8:+0 9:+0 T:-1   BC 0.969
+  derived L2  A:-1 2:+1 3:+1 4:+2 5:+2 6:+1 7:+1 8:+0 9:-1 T:-1   BC 0.973
+  derived L3  A:-2 2:+2 3:+2 4:+2 5:+3 6:+2 7:+1 8:+0 9:-1 T:-2   BC 0.994
+```
+
+The level-1 answer is **exactly Hi-Lo**. The system was not put in — it came
+out. That is the strongest evidence available that the EOR chain is correct, and
+it means a house rule set you actually play can have a system derived for it
+rather than borrowed.
 
 ---
 
