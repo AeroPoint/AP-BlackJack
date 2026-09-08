@@ -102,6 +102,13 @@ computed rather than quoted. Combined with a true-count frequency model and a be
 ramp, this gives EV/hour, SD/hour, N0, SCORE and risk of ruin analytically, plus
 a breakdown of *where the money comes from*.
 
+**Variance is exact too, and exact per count.** It runs 1.24 at true count −6 and
+1.67 at +10, because high counts mean more doubles and splits — and a ramp bets
+most exactly where variance is highest. Treating it as a constant understated a
+1-12 spread's lifetime risk of ruin as 3.77% when the true figure is **4.42%**,
+and the bankroll it needs by about $2,000. Nothing in the risk maths is a
+fitted constant any more.
+
 ### 5. Side bets
 
 Exact combinatorial evaluation over all 52 card types, driven by paytables in
@@ -210,9 +217,6 @@ silently falls back — that would make a benchmark measure the wrong thing.
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
 - **Web application.** `apps/api` and `apps/web` are scaffolds.
-- **Exact variance.** The solver computes expectations, not full outcome
-  distributions, so per-round variance comes from simulation or a documented
-  constant. This is flagged everywhere it is used.
 - **Multi-spot play.** The solver assumes heads-up.
 
 ---

@@ -29,7 +29,11 @@ from blackjack.rules import DoubleRule, HoleCardRule, RuleSet, SurrenderRule
 
 SCHEMA_VERSION = 1
 """Bumped whenever a config field is removed or changes meaning. Adding an
-optional field does not require a bump."""
+optional field does not require a bump.
+
+Every config file may carry a ``schema_version`` key and every ``*_from_dict``
+below must tolerate it. Forgetting that in one of them is exactly the kind of
+bug that hides until someone installs PyYAML."""
 
 
 class ConfigError(ValueError):
@@ -175,10 +179,11 @@ def system_from_dict(data: dict[str, Any]) -> CountSystem:
             ) from exc
 
     known = {f.name for f in fields(CountSystem)}
-    unknown = set(data) - known
+    unknown = set(data) - known - {"schema_version"}
     if unknown:
         raise ConfigError(f"unknown counting-system fields: {sorted(unknown)}")
     kwargs = dict(data)
+    kwargs.pop("schema_version", None)
     if "tags" in kwargs:
         kwargs["tags"] = tuple(float(t) for t in kwargs["tags"])
     if "rounding" in kwargs:
@@ -189,10 +194,11 @@ def system_from_dict(data: dict[str, Any]) -> CountSystem:
 def ramp_from_dict(data: dict[str, Any]) -> RampConfig:
     """Build a :class:`RampConfig` from parsed config data."""
     known = {f.name for f in fields(RampConfig)}
-    unknown = set(data) - known
+    unknown = set(data) - known - {"schema_version"}
     if unknown:
         raise ConfigError(f"unknown ramp fields: {sorted(unknown)}")
     kwargs = dict(data)
+    kwargs.pop("schema_version", None)
     for key in ("thresholds", "units"):
         if key in kwargs:
             kwargs[key] = tuple(float(v) for v in kwargs[key])

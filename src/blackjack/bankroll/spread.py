@@ -19,10 +19,17 @@ what makes the analysis fast, exact where it can be, and honest where it cannot:
 ``bet(count)``
     The ramp under test.
 
-The one thing this cannot do analytically is variance, because the solver
-computes expectations and not the full outcome distribution.  Per-round variance
-is therefore taken from a measured constant or from a simulation run, and that
-is stated wherever it is used rather than buried.
+Variance used to be the gap here -- the solver computed expectations, not the
+full outcome distribution, so per-round variance came from a measured constant.
+:mod:`blackjack.ev.moments` closes it: variance is now exact too, computed per
+count, and the constant survives only as a fallback for callers who do not want
+to pay for it.
+
+That matters more than it sounds. Variance is not flat across the count: it runs
+about 1.24 at a true count of -6 and 1.67 at +10, because high counts mean more
+doubles and more splits. A bet ramp puts its *largest* bets exactly where
+variance is highest, and bets enter the variance squared -- so a flat constant
+understates risk of ruin precisely where it matters.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ from dataclasses import dataclass, field
 from blackjack.bankroll.counts import TrueCountDistribution, true_count_distribution
 from blackjack.bankroll.metrics import BankrollMetrics
 from blackjack.counting import CountSystem
+from blackjack.ev.moments import round_moments
 from blackjack.ev.player import insurance_ev
 from blackjack.ev.solver import solve
 from blackjack.rules import RuleSet
@@ -40,13 +48,16 @@ from blackjack.shoe import remove_many
 from blackjack.sim.engine import BetRamp
 from blackjack.strategy.deviations import tilted_composition
 
-DEFAULT_VARIANCE_PER_UNIT = 1.32
-"""Variance of a one-unit blackjack round, including doubles and splits.
+DEFAULT_VARIANCE_PER_UNIT = 1.349
+"""Fallback variance of a one-unit round, for callers that skip the exact path.
 
-A measured constant for typical multi-deck rules, not a derived one. Flat-betting
-simulations in this project reproduce it to about 1.16 standard deviation, i.e.
-1.35 variance, and the simulator reports the exact figure for any given rule set.
-Override it with a measured value whenever one is available.
+Now a *derived* number rather than a folk constant: it is what
+:func:`blackjack.ev.moments.round_moments` reports for six-deck H17 off the top,
+and a twelve-million-round simulation independently measures the matching
+standard deviation of 1.1619 against the exact 1.16150.
+
+Prefer ``exact_variance=True``, which computes it per count. This exists for
+speed-sensitive callers and as a sanity anchor.
 """
 
 
@@ -61,6 +72,12 @@ class CountEdge:
     insurance_edge: float
     """EV per unit of insurance at that count. Positive means take it."""
 
+    variance: float | None = None
+    """Exact variance of a one-unit round at this count, if computed.
+
+    ``None`` means the caller asked to skip it and a fallback constant will be
+    used instead."""
+
 
 def count_edge_curve(
     rules: RuleSet,
@@ -68,18 +85,22 @@ def count_edge_curve(
     counts: list[float],
     *,
     decks_remaining: float | None = None,
+    exact_variance: bool = True,
 ) -> list[CountEdge]:
-    """Exact player edge at each true count.
+    """Exact player edge, and optionally variance, at each true count.
 
-    This is the expensive call in the whole product -- one full solve per count
-    -- and the first thing the native core will accelerate. Results depend only
-    on ``(rules, system, count, decks remaining)``, so they cache well.
+    Results depend only on ``(rules, system, count, decks remaining)``, so they
+    cache well.
 
     Args:
         rules: Table rules.
         system: Counting system defining the count.
         counts: True counts to evaluate.
         decks_remaining: Undealt decks. Defaults to half the shoe.
+        exact_variance: Also compute the exact per-count variance. Roughly
+            doubles the cost and is worth it: a flat variance understates risk
+            of ruin for any ramp, because the biggest bets sit at the counts
+            where variance is highest.
 
     Returns:
         One :class:`CountEdge` per requested count, in the order given.
@@ -89,11 +110,13 @@ def count_edge_curve(
     for tc in counts:
         comp = tilted_composition(system, rules.decks, dr, tc)
         result = solve(rules, comp)
+        variance = round_moments(rules, comp).variance if exact_variance else None
         out.append(
             CountEdge(
                 true_count=tc,
                 edge=result.optimal_ev,
                 insurance_edge=insurance_ev(remove_many(comp, [1]), rules),
+                variance=variance,
             )
         )
     return out
@@ -117,8 +140,11 @@ class SpreadResult:
     edge_on_action: float
     """Net win as a fraction of total money wagered."""
 
-    detail: list[tuple[float, float, float, float]] = field(default_factory=list)
-    """Per-count ``(true count, probability, bet units, edge)`` rows."""
+    detail: list[tuple[float, float, float, float, float]] = field(default_factory=list)
+    """Per-count ``(true count, probability, bet units, edge, variance)`` rows."""
+
+    exact_variance: bool = False
+    """Whether the variance came from the solver rather than the fallback."""
 
     @property
     def sd_per_round_units(self) -> float:
@@ -140,14 +166,16 @@ class SpreadResult:
     def table(self) -> str:
         """Per-count contribution breakdown -- where the money actually comes from."""
         lines = [
-            f"{'TC':>5} {'freq':>8} {'bet':>7} {'edge':>9} {'contrib':>10}",
-            "----- -------- ------- --------- ----------",
+            f"{'TC':>5} {'freq':>8} {'bet':>7} {'edge':>9} {'contrib':>10} {'var':>8}",
+            "----- -------- ------- --------- ---------- --------",
         ]
-        for tc, p, bet, edge in self.detail:
+        for tc, p, bet, edge, variance in self.detail:
             lines.append(
                 f"{tc:>5g} {p * 100:7.3f}% {bet:7.2f} {edge * 100:+8.3f}% "
-                f"{p * bet * edge * 100:+9.5f}"
+                f"{p * bet * edge * 100:+9.5f} {variance:8.4f}"
             )
+        source = "exact, per count" if self.exact_variance else "fallback constant"
+        lines.append(f"(variance: {source})")
         return "\n".join(lines)
 
 
@@ -169,8 +197,8 @@ def evaluate_ramp(
         system: Counting system.
         edges: Precomputed edge curve. Computed if omitted, which is slow.
         distribution: True-count frequencies. Built from the rules if omitted.
-        variance_per_unit: Variance of a one-unit round. See
-            :data:`DEFAULT_VARIANCE_PER_UNIT` -- this is measured, not derived.
+        variance_per_unit: Fallback variance of a one-unit round, used only for
+            counts whose :class:`CountEdge` carries no exact figure.
         counts: True counts to evaluate when ``edges`` is not supplied.
 
     Returns:
@@ -180,6 +208,7 @@ def evaluate_ramp(
     grid = counts or [c for c in freq.counts if -6 <= c <= 10]
     curve = edges or count_edge_curve(rules, system, grid)
     edge_by_count = {e.true_count: e.edge for e in curve}
+    variance_by_count = {e.true_count: e.variance for e in curve if e.variance is not None}
 
     def edge_at(tc: float) -> float:
         """Edge at ``tc``, linearly interpolated between solved points."""
@@ -198,6 +227,20 @@ def evaluate_ramp(
                 return edge_by_count[a] * (1 - w) + edge_by_count[b] * w
         return 0.0  # pragma: no cover - covered by the bounds above
 
+    def variance_at(tc: float) -> float:
+        """Exact variance at ``tc`` when available, nearest solved point otherwise.
+
+        Nearest rather than interpolated: variance moves smoothly and slowly
+        across the count, so the nearest solved value is within a percent, and
+        pretending to more precision than the grid supports would be false.
+        """
+        if not variance_by_count:
+            return variance_per_unit
+        if tc in variance_by_count:
+            return variance_by_count[tc]
+        nearest = min(variance_by_count, key=lambda k: abs(k - tc))
+        return variance_by_count[nearest]
+
     ev = 0.0
     second_moment = 0.0
     total_bet = 0.0
@@ -209,12 +252,14 @@ def evaluate_ramp(
         edge = edge_at(tc)
         contribution = p * bet * edge
         ev += contribution
-        # E[X^2] for a round: bet^2 * (variance per unit + edge^2).
-        second_moment += p * bet * bet * (variance_per_unit + edge * edge)
+        # E[X^2] for a round: bet^2 * (variance per unit + edge^2). The variance
+        # term is exact per count where the curve supplies it, which matters
+        # because the largest bets land where variance is highest.
+        second_moment += p * bet * bet * (variance_at(tc) + edge * edge)
         total_bet += p * bet
         if bet > 0:
             played += p
-        detail.append((tc, p, bet, edge))
+        detail.append((tc, p, bet, edge, variance_at(tc)))
 
     variance = max(0.0, second_moment - ev * ev)
     return SpreadResult(
@@ -227,6 +272,7 @@ def evaluate_ramp(
         rounds_dealt_fraction=played,
         edge_on_action=ev / total_bet if total_bet else 0.0,
         detail=detail,
+        exact_variance=bool(variance_by_count),
     )
 
 

@@ -25,6 +25,7 @@ use rayon::prelude::*;
 
 mod dealer;
 mod hand;
+mod moments;
 mod player;
 mod shoe;
 
@@ -315,6 +316,76 @@ pub fn solve_all_cells(
     Ok((cells, evs, dealers))
 }
 
+/// Exact mean and second moment of a round, playing composition-perfect strategy.
+///
+/// Returns `(mean, second_moment)` in units of the initial wager; the caller
+/// takes the variance. Parallelised the same way as `solve_all_cells`, because
+/// the moment recursion carries fourteen floats per state instead of one and is
+/// the slowest thing in the project without it.
+#[pyfunction]
+#[pyo3(signature = (comp, rules, blackjack_multiplier))]
+pub fn round_moments(
+    py: Python<'_>,
+    comp: Vec<f64>,
+    rules: CoreRules,
+    blackjack_multiplier: f64,
+) -> PyResult<(f64, f64)> {
+    let comp = to_composition(comp)?;
+    let core: player::Rules = rules.into();
+
+    let mut cells: Vec<(usize, usize, usize, f64)> = Vec::with_capacity(600);
+    for a in 1..=10usize {
+        if comp[a - 1] == 0.0 {
+            continue;
+        }
+        for b in 1..=10usize {
+            if b < a || comp[b - 1] == 0.0 {
+                continue;
+            }
+            for up in 1..=10usize {
+                if comp[up - 1] == 0.0 {
+                    continue;
+                }
+                let p = deal_probability(&comp, (a, b), up);
+                if p > 0.0 {
+                    cells.push((a, b, up, p));
+                }
+            }
+        }
+    }
+
+    let totals = py.detach(|| {
+        cells
+            .par_iter()
+            .map(|&(a, b, up, probability)| {
+                let after = remove_many(&comp, &[a, b, up]);
+                let mut draw_cache = DrawCache::default();
+                let p_natural = dealer::natural_probability(&after, up);
+
+                let (first, second) = if (a == 1 && b == 10) || (a == 10 && b == 1) {
+                    // A natural is paid before any decision exists.
+                    let m = blackjack_multiplier;
+                    ((1.0 - p_natural) * m, (1.0 - p_natural) * m * m)
+                } else {
+                    let (hf, hs) = moments::hand_moments((a, b), &after, up, core, &mut draw_cache);
+                    if core.peek {
+                        // Conditional on no natural; that branch loses one unit.
+                        (
+                            (1.0 - p_natural) * hf - p_natural,
+                            (1.0 - p_natural) * hs + p_natural,
+                        )
+                    } else {
+                        (hf, hs)
+                    }
+                };
+                (probability * first, probability * second)
+            })
+            .reduce(|| (0.0, 0.0), |a, b| (a.0 + b.0, a.1 + b.1))
+    });
+
+    Ok(totals)
+}
+
 /// Build version, so Python can report which accelerator it loaded.
 #[pyfunction]
 pub fn version() -> &'static str {
@@ -337,6 +408,7 @@ fn blackjack_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dealer_probabilities, m)?)?;
     m.add_function(wrap_pyfunction!(action_evs, m)?)?;
     m.add_function(wrap_pyfunction!(solve_all_cells, m)?)?;
+    m.add_function(wrap_pyfunction!(round_moments, m)?)?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(is_implemented, m)?)?;
     Ok(())
