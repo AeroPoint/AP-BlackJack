@@ -27,7 +27,7 @@ pytestmark = pytest.mark.golden
 
 
 @pytest.fixture(scope="module")
-def eor():  # noqa: ANN201
+def eor():
     """Single-deck EOR vectors, the convention published tables use."""
     return effect_of_removal(VEGAS_6D_H17, decks=1)
 
@@ -35,7 +35,7 @@ def eor():  # noqa: ANN201
 # --- The EOR vector itself ----------------------------------------------------
 
 
-def test_small_cards_help_the_player(eor) -> None:  # noqa: ANN001
+def test_small_cards_help_the_player(eor) -> None:
     """Removing a small card must raise the player's expectation.
 
     This is the entire premise of card counting. If the sign is wrong here,
@@ -45,13 +45,13 @@ def test_small_cards_help_the_player(eor) -> None:  # noqa: ANN001
         assert eor.betting[rank - 1] > 0, f"removing a {rank} should help the player"
 
 
-def test_tens_and_aces_hurt_the_player(eor) -> None:  # noqa: ANN001
+def test_tens_and_aces_hurt_the_player(eor) -> None:
     """Removing a ten or an ace must lower the player's expectation."""
     assert eor.betting[9] < 0  # tens
     assert eor.betting[0] < 0  # aces
 
 
-def test_the_five_matters_most(eor) -> None:  # noqa: ANN001
+def test_the_five_matters_most(eor) -> None:
     """The five has the largest effect of removal of any card.
 
     A well-known result and a good structural check: it is why some simplified
@@ -61,14 +61,14 @@ def test_the_five_matters_most(eor) -> None:  # noqa: ANN001
     assert max(magnitudes, key=lambda r: magnitudes[r]) == 5
 
 
-def test_eight_is_nearly_neutral(eor) -> None:  # noqa: ANN001
+def test_eight_is_nearly_neutral(eor) -> None:
     """The eight sits closest to zero, which is why most systems tag it 0."""
     magnitudes = {r: abs(eor.betting[r - 1]) for r in RANKS}
     assert min(magnitudes, key=lambda r: magnitudes[r]) == 8
     assert abs(eor.betting[7]) < 0.001
 
 
-def test_insurance_eor_is_a_ten_density_measure(eor) -> None:  # noqa: ANN001
+def test_insurance_eor_is_a_ten_density_measure(eor) -> None:
     """Insurance depends on nothing but the density of tens.
 
     So its EOR takes exactly two values: one for tens, another shared by every
@@ -81,7 +81,7 @@ def test_insurance_eor_is_a_ten_density_measure(eor) -> None:  # noqa: ANN001
     assert next(iter(non_tens)) > 0
 
 
-def test_mean_removal_effect_is_small_and_positive(eor) -> None:  # noqa: ANN001
+def test_mean_removal_effect_is_small_and_positive(eor) -> None:
     """Removing any card at all helps slightly -- the floating advantage."""
     mean = eor.mean_removal_effect()
     assert 0 < mean < 0.001
@@ -107,7 +107,7 @@ PUBLISHED_BC = {
     [HI_LO, WONG_HALVES, ZEN_COUNT, KO, HI_OPT_I, HI_OPT_II],
     ids=lambda s: s.name,
 )
-def test_betting_correlation_matches_published(system, eor) -> None:  # noqa: ANN001
+def test_betting_correlation_matches_published(system, eor) -> None:
     """Derived BC must land on the published figure."""
     got = system_metrics(system, eor).betting_correlation
     assert got == pytest.approx(PUBLISHED_BC[system.name], abs=0.04), (
@@ -115,12 +115,12 @@ def test_betting_correlation_matches_published(system, eor) -> None:  # noqa: AN
     )
 
 
-def test_hi_lo_insurance_correlation(eor) -> None:  # noqa: ANN001
+def test_hi_lo_insurance_correlation(eor) -> None:
     """Hi-Lo's published insurance correlation is 0.76."""
     assert system_metrics(HI_LO, eor).insurance_correlation == pytest.approx(0.76, abs=0.02)
 
 
-def test_ace_neutral_systems_have_better_insurance_correlation(eor) -> None:  # noqa: ANN001
+def test_ace_neutral_systems_have_better_insurance_correlation(eor) -> None:
     """Tagging the ace zero improves insurance and costs betting accuracy.
 
     That trade-off is the reason ace side counts exist, and it should fall out
@@ -132,7 +132,7 @@ def test_ace_neutral_systems_have_better_insurance_correlation(eor) -> None:  # 
     assert hi_opt.betting_correlation < hi_lo.betting_correlation
 
 
-def test_every_shipped_system_correlates_strongly(eor) -> None:  # noqa: ANN001
+def test_every_shipped_system_correlates_strongly(eor) -> None:
     """No system in the catalogue should score below 0.85 for betting.
 
     A low score means either a typo in the tag vector or a system nobody should
@@ -158,7 +158,7 @@ def test_correlations_are_deck_count_insensitive() -> None:
 # --- Deriving a system from scratch -------------------------------------------
 
 
-def test_optimal_level_one_tags_resemble_hi_lo(eor) -> None:  # noqa: ANN001
+def test_optimal_level_one_tags_resemble_hi_lo(eor) -> None:
     """A level-1 system derived from the EOR should look like Hi-Lo.
 
     Not identical -- Hi-Lo rounds a few borderline ranks for teachability -- but
@@ -180,7 +180,7 @@ def test_optimal_level_one_tags_resemble_hi_lo(eor) -> None:  # noqa: ANN001
     )
 
 
-def test_higher_level_tracks_the_eor_more_closely(eor) -> None:  # noqa: ANN001
+def test_higher_level_tracks_the_eor_more_closely(eor) -> None:
     """More granularity should buy correlation. That is the whole trade."""
     from blackjack.counting import CountSystem
 
@@ -200,7 +200,7 @@ def test_higher_level_tracks_the_eor_more_closely(eor) -> None:  # noqa: ANN001
 
 
 @pytest.fixture(scope="module")
-def decisions():  # noqa: ANN201
+def decisions():
     """Per-decision EOR vectors, single deck."""
     from blackjack.ev.efficiency import collect_decisions
 
@@ -224,7 +224,7 @@ PUBLISHED_PE = {
 }
 
 
-def test_playing_efficiency_ranks_systems_as_published(decisions) -> None:  # noqa: ANN001
+def test_playing_efficiency_ranks_systems_as_published(decisions) -> None:
     """The defensible claim: the *ordering* matches the literature.
 
     Absolute PE is definition-dependent -- which decisions are included, how many
@@ -251,7 +251,7 @@ def test_playing_efficiency_ranks_systems_as_published(decisions) -> None:  # no
     assert spearman > 0.95, f"rank correlation only {spearman:.3f}"
 
 
-def test_playing_efficiency_offset_is_stable(decisions) -> None:  # noqa: ANN001
+def test_playing_efficiency_offset_is_stable(decisions) -> None:
     """The gap to published figures is a consistent shift, not noise.
 
     If it ever stops being consistent, the construction has changed meaning and
@@ -270,7 +270,7 @@ def test_playing_efficiency_offset_is_stable(decisions) -> None:  # noqa: ANN001
     assert spread < 0.12, f"offset is no longer a consistent shift (spread {spread:.3f})"
 
 
-def test_ace_neutral_systems_have_higher_playing_efficiency(decisions) -> None:  # noqa: ANN001
+def test_ace_neutral_systems_have_higher_playing_efficiency(decisions) -> None:
     """Tagging the ace zero frees the vector to track playing decisions better.
 
     This is the trade the whole ace-side-count tradition exists to exploit, and
@@ -282,14 +282,14 @@ def test_ace_neutral_systems_have_higher_playing_efficiency(decisions) -> None: 
     assert playing_efficiency(HI_OPT_II, decisions) > playing_efficiency(HI_LO, decisions)
 
 
-def test_higher_level_systems_beat_level_one_on_playing(decisions) -> None:  # noqa: ANN001
+def test_higher_level_systems_beat_level_one_on_playing(decisions) -> None:
     """More granularity tracks per-decision EOR more closely."""
     from blackjack.ev.efficiency import playing_efficiency
 
     assert playing_efficiency(HI_OPT_II, decisions) > playing_efficiency(KO, decisions)
 
 
-def test_decisions_exclude_the_ones_nobody_varies_on(decisions) -> None:  # noqa: ANN001
+def test_decisions_exclude_the_ones_nobody_varies_on(decisions) -> None:
     """Standing on twenty is not a decision a count changes."""
     from blackjack.ev.solver import Category
 
@@ -301,7 +301,7 @@ def test_decisions_exclude_the_ones_nobody_varies_on(decisions) -> None:  # noqa
     assert (Category.HARD, 12, 3) in keys
 
 
-def test_insurance_efficiency_matches_the_eor_derived_figure(eor) -> None:  # noqa: ANN001
+def test_insurance_efficiency_matches_the_eor_derived_figure(eor) -> None:
     """Two routes to the same number: the analytic ten-density vector, and the
     EOR vector derived from the solver. They must agree."""
     from blackjack.ev.efficiency import insurance_efficiency
@@ -312,7 +312,7 @@ def test_insurance_efficiency_matches_the_eor_derived_figure(eor) -> None:  # no
         ), system.name
 
 
-def test_system_metrics_reports_pe_only_when_asked(eor, decisions) -> None:  # noqa: ANN001
+def test_system_metrics_reports_pe_only_when_asked(eor, decisions) -> None:
     assert system_metrics(HI_LO, eor).playing_efficiency is None
     with_pe = system_metrics(HI_LO, eor, decisions)
     assert with_pe.playing_efficiency is not None

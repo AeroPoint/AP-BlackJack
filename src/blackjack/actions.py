@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class Action(str, Enum):
+class Action(StrEnum):
     """A single player decision.
 
     Ordering note: the solver never relies on enum order, it always compares EVs.

@@ -47,8 +47,11 @@ def rank_name(rank: int) -> str:
 
 
 def rank_value(rank: int) -> int:
-    """Return the hard point value of ``rank``. Aces count as 1 here; softness is
-    resolved by :func:`blackjack.hand.hand_value`."""
+    """Return the hard point value of ``rank``.
+
+    Aces count as 1 here; softness is resolved by
+    :func:`blackjack.hand.hand_value`.
+    """
     return rank
 
 

@@ -22,18 +22,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 #: Licences that keep every commercial option open.
+#:
+#: Both spellings of everything, because a package may declare an SPDX
+#: expression ("MPL-2.0") or a trove classifier ("Mozilla Public License 2.0
+#: (MPL 2.0)"), and the two differ by a hyphen. Matching only one spelling makes
+#: the checker reject licences the policy allows -- which is how this list grew
+#: the second half of its entries.
 ALLOWED = {
     "MIT",
     "MIT-0",
     "BSD",
     "BSD-2-CLAUSE",
     "BSD-3-CLAUSE",
+    "BSD LICENSE",
     "APACHE-2.0",
+    "APACHE 2.0",
     "APACHE SOFTWARE LICENSE",
     "PSF",
     "PYTHON SOFTWARE FOUNDATION LICENSE",
     "ISC",
+    "ISC LICENSE",
     "MPL-2.0",
+    "MPL 2.0",
+    "MOZILLA PUBLIC LICENSE",
     "UNLICENSE",
     "0BSD",
 }
@@ -41,6 +52,7 @@ ALLOWED = {
 #: Substrings that mean "stop", whatever else the metadata claims.
 FORBIDDEN_MARKERS = (
     "GPL",
+    "GENERAL PUBLIC LICENSE",
     "AGPL",
     "LGPL",
     "COMMONS CLAUSE",
@@ -64,7 +76,13 @@ def _normalise(text: str) -> str:
 
 
 def _is_allowed(licence: str) -> bool:
-    """Whether a licence string is acceptable."""
+    """Whether a licence string is acceptable.
+
+    Forbidden markers win over allowed ones. A package declaring both -- dual
+    licensed, or a classifier list that includes a copyleft option -- is a
+    decision for a human, not something to wave through because one recognised
+    token appeared.
+    """
     upper = _normalise(licence)
     if any(marker in upper for marker in FORBIDDEN_MARKERS):
         # "LGPL" contains "GPL", and both are forbidden, so no special case.
@@ -75,9 +93,13 @@ def _is_allowed(licence: str) -> bool:
 def check_declared() -> int:
     """Check the licence comments beside each dependency in pyproject.toml.
 
-    Every dependency line carries its licence in a trailing comment. This is the
-    cheap check: it runs with nothing installed and catches a dependency added
-    without a licence note, which is the failure mode that actually happens.
+    Covers ``[project] dependencies``, every ``[project.optional-dependencies]``
+    extra, and PEP 735 ``[dependency-groups]``. Every dependency line carries its
+    licence in a trailing comment.
+
+    This is the cheap check: it runs with nothing installed and catches a
+    dependency added without a licence note, which is the failure mode that
+    actually happens.
     """
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     problems: list[str] = []
@@ -99,8 +121,13 @@ def check_declared() -> int:
 
         if re.match(r"^[A-Za-z0-9_.\-]+\s*=\s*\[\s*$", stripped):
             key = stripped.split("=")[0].strip()
-            in_deps = (table == "project" and key == "dependencies") or (
-                table == "project.optional-dependencies"
+            in_deps = (
+                (table == "project" and key == "dependencies")
+                or table == "project.optional-dependencies"
+                # PEP 735 groups too: dev dependencies are not distributed, but
+                # they are still installed on developer machines and in CI, and
+                # a licence note costs nothing.
+                or table == "dependency-groups"
             )
             continue
 
@@ -139,32 +166,67 @@ def check_declared() -> int:
     return 0
 
 
+#: A License field longer than this is licence *prose*, not an identifier.
+#: matplotlib and scipy both ship their entire licence agreement there.
+PROSE_THRESHOLD = 200
+
+
+def _declared_licence(meta: object) -> tuple[str, str]:
+    """Best available licence identifier for a distribution, and where it came from.
+
+    Order matters. Structured metadata first -- a PEP 639 ``License-Expression``,
+    then trove classifiers -- and the free-text ``License`` field only as a last
+    resort.
+
+    Pattern-matching the free-text field is how this checker first "found" that
+    matplotlib and scipy were non-permissive: both ship their entire licence
+    agreement in it, and a few thousand words of legal prose will contain almost
+    any token you care to grep for. A licence *text* is not a licence
+    *identifier* and must not be treated as one.
+    """
+    expression = meta.get("License-Expression")  # type: ignore[attr-defined]
+    if expression:
+        return str(expression), "expression"
+
+    classifiers = [
+        c
+        for c in (meta.get_all("Classifier") or [])  # type: ignore[attr-defined]
+        if c.startswith("License ::")
+    ]
+    if classifiers:
+        return " ".join(classifiers), "classifier"
+
+    licence = str(meta.get("License") or "")  # type: ignore[attr-defined]
+    if len(licence) > PROSE_THRESHOLD:
+        return licence, "prose"
+    return licence, "field"
+
+
 def check_installed() -> int:
     """Check the licence metadata of everything actually installed."""
     from importlib.metadata import distributions
 
     problems: list[str] = []
+    review: list[str] = []
     checked = 0
     for dist in distributions():
         name = (dist.metadata["Name"] or "").lower()
         if not name or name in EXEMPT:
             continue
-        # Three places a licence can live, and modern packages use the last one:
-        # PEP 639 moved licences to License-Expression and deprecated the
-        # classifiers. A checker that reads only License and Classifier reports
-        # "no licence metadata" for pytest, which is not a licensing problem.
-        meta = dist.metadata
-        licence = meta.get("License-Expression") or meta.get("License") or ""
-        classifiers = [
-            c for c in meta.get_all("Classifier") or [] if c.startswith("License ::")
-        ]
-        blob = " ".join([licence, *classifiers])
         checked += 1
-        if not blob.strip():
-            problems.append(f"{name}: no licence metadata")
-        elif not _is_allowed(blob):
-            problems.append(f"{name}: {blob.strip()[:90]!r}")
+        licence, source = _declared_licence(dist.metadata)
 
+        if not licence.strip():
+            problems.append(f"{name}: no licence metadata")
+        elif source == "prose":
+            # Neither an expression nor a classifier. Flag for a human rather
+            # than guessing from the prose in either direction.
+            review.append(f"{name}: only free-text licence, needs a look")
+        elif not _is_allowed(licence):
+            problems.append(f"{name}: {licence.strip()[:90]!r}")
+
+    for item in review:
+        print(f"REVIEW {item}", file=sys.stderr)
     for problem in problems:
         print(f"FAIL {problem}", file=sys.stderr)
     if problems:
@@ -173,7 +235,8 @@ def check_installed() -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"OK: {checked} installed distributions, all permissively licensed.")
+    suffix = f" ({len(review)} need a manual look)" if review else ""
+    print(f"OK: {checked} installed distributions, all permissively licensed{suffix}.")
     return 0
 
 

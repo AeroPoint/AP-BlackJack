@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from blackjack.actions import Action
 from blackjack.cards import ACE, rank_name
@@ -31,7 +31,7 @@ from blackjack.shoe import Composition, DealingShoe
 from blackjack.train.grading import legal_actions
 
 
-class Phase(str, Enum):
+class Phase(StrEnum):
     """Where a round is."""
 
     BETTING = "betting"
@@ -117,10 +117,10 @@ class Table:
     """
 
     __slots__ = (
+        "_active",
         "_bet",
         "_dealer",
         "_hands",
-        "_active",
         "_insurance",
         "_phase",
         "_rng",
@@ -139,6 +139,7 @@ class Table:
         seed: int | None = None,
         unit: float = 25.0,
     ) -> None:
+        """Open a table. See the class docstring for the arguments."""
         self.rules = rules
         self.unit = unit
         self._rng = random.Random(seed)
@@ -252,9 +253,7 @@ class Table:
         hand = self._hands[self._active] if self._active >= 0 else None
         if hand is None:
             return set()
-        actions = legal_actions(
-            tuple(hand.cards), self.rules, after_split=hand.from_split
-        )
+        actions = legal_actions(tuple(hand.cards), self.rules, after_split=hand.from_split)
         if Action.SPLIT in actions and self._splits_used() >= self.rules.max_splits:
             actions.discard(Action.SPLIT)
         if (
@@ -324,11 +323,7 @@ class Table:
         actions = legal_actions(tuple(hand.cards), self.rules, after_split=hand.from_split)
         if self._splits_used() >= self.rules.max_splits:
             actions.discard(Action.SPLIT)
-        if (
-            hand.cards and hand.cards[0] == ACE
-            and hand.from_split
-            and not self.rules.resplit_aces
-        ):
+        if hand.cards and hand.cards[0] == ACE and hand.from_split and not self.rules.resplit_aces:
             actions.discard(Action.SPLIT)
         return actions
 
@@ -385,7 +380,8 @@ class Table:
             running_count=self.counter.running,
             decks_remaining=self.shoe.decks_remaining,
             net=self._settled if settled else 0.0,
-            dealer_natural=settled and hand_value(tuple(self._dealer)).total == 21
+            dealer_natural=settled
+            and hand_value(tuple(self._dealer)).total == 21
             and len(self._dealer) == 2,
             insurance_bet=self._insurance,
         )

@@ -36,9 +36,7 @@ try:
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
 except ImportError as exc:  # pragma: no cover - the api extra is optional
-    raise SystemExit(
-        "The API needs the 'api' extra: uv sync --extra api"
-    ) from exc
+    raise SystemExit("The API needs the 'api' extra: uv sync --extra api") from exc
 
 from blackjack.backend import describe
 from blackjack.version import __version__

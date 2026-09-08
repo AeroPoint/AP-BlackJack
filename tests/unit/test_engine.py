@@ -14,17 +14,26 @@ from blackjack.counting import HI_LO, KO, SYSTEMS, TrueCountRounding, apply_roun
 from blackjack.ev.importance import Importance, analyse, closeness, mistake_cost
 from blackjack.ev.solver import Category, categorise, enumerate_deals, solve
 from blackjack.hand import add_card, hand_value, is_blackjack, is_pair
-from blackjack.rules import DoubleRule, RuleSet, VEGAS_6D_H17
+from blackjack.rules import VEGAS_6D_H17, DoubleRule, RuleSet
 from blackjack.shoe import DealingShoe, full_shoe, remove
 from blackjack.strategy.deviations import running_count_of, tilted_composition, verify_tilt
-
 
 # --- Primitives ---------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     ("token", "expected"),
-    [("A", 1), ("a", 1), ("2", 2), ("9", 9), ("T", 10), ("J", 10), ("Q", 10), ("K", 10), ("10", 10)],
+    [
+        ("A", 1),
+        ("a", 1),
+        ("2", 2),
+        ("9", 9),
+        ("T", 10),
+        ("J", 10),
+        ("Q", 10),
+        ("K", 10),
+        ("10", 10),
+    ],
 )
 def test_parse_rank(token: str, expected: int) -> None:
     assert parse_rank(token) == expected

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 from blackjack.bankroll.counts import TrueCountDistribution, true_count_distribution
 from blackjack.bankroll.metrics import BankrollMetrics
@@ -151,9 +152,7 @@ class SpreadResult:
         """Standard deviation per round, in units."""
         return math.sqrt(max(0.0, self.variance_per_round_units))
 
-    def metrics(
-        self, unit: float, bankroll: float, rounds_per_hour: int = 100
-    ) -> BankrollMetrics:
+    def metrics(self, unit: float, bankroll: float, rounds_per_hour: int = 100) -> BankrollMetrics:
         """Convert to currency and attach the risk numbers."""
         return BankrollMetrics(
             unit=unit,
@@ -221,7 +220,7 @@ def evaluate_ramp(
             return edge_by_count[known[0]]
         if tc >= known[-1]:
             return edge_by_count[known[-1]]
-        for a, b in zip(known, known[1:], strict=False):
+        for a, b in pairwise(known):
             if a <= tc <= b:
                 w = (tc - a) / (b - a) if b != a else 0.0
                 return edge_by_count[a] * (1 - w) + edge_by_count[b] * w
@@ -245,7 +244,7 @@ def evaluate_ramp(
     second_moment = 0.0
     total_bet = 0.0
     played = 0.0
-    detail: list[tuple[float, float, float, float]] = []
+    detail: list[tuple[float, float, float, float, float]] = []
 
     for tc, p in zip(freq.counts, freq.probabilities, strict=True):
         bet = ramp.bet(tc)
@@ -315,7 +314,7 @@ def optimise_ramp(
         A ramp whose bets are rounded to whole units, since that is what a
         player can actually make at a table.
     """
-    curve = edges or count_edge_curve(rules, system, list(thresholds[1:]) + [0.0])
+    curve = edges or count_edge_curve(rules, system, [*thresholds[1:], 0.0])
     edge_by_count = {e.true_count: e.edge for e in curve}
     _ = distribution  # accepted for symmetry with evaluate_ramp; not needed here
 

@@ -89,7 +89,7 @@ class CellEor:
         total = sum(weights)
         mean = sum(e * w for e, w in zip(self.eor, weights, strict=True)) / total
         var = sum(w * (e - mean) ** 2 for e, w in zip(self.eor, weights, strict=True)) / total
-        return var**0.5
+        return float(var**0.5)
 
 
 def decision_eor(

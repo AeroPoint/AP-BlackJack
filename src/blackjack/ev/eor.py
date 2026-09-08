@@ -43,6 +43,7 @@ now and did not before.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from blackjack.cards import NUM_RANKS, RANKS, rank_name
 from blackjack.counting import CountSystem, TagVector, correlation
@@ -50,6 +51,9 @@ from blackjack.ev.player import insurance_ev
 from blackjack.ev.solver import solve, strategy_ev
 from blackjack.rules import RuleSet
 from blackjack.shoe import Composition, full_shoe, remove
+
+if TYPE_CHECKING:
+    from blackjack.ev.efficiency import CellEor
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +192,7 @@ class SystemMetrics:
 def system_metrics(
     system: CountSystem,
     eor: EorVectors,
-    decisions: list[object] | None = None,
+    decisions: list[CellEor] | None = None,
 ) -> SystemMetrics:
     """Score a counting system against a set of EOR vectors.
 
@@ -205,9 +209,9 @@ def system_metrics(
     """
     pe: float | None = None
     if decisions:
-        from blackjack.ev.efficiency import playing_efficiency  # noqa: PLC0415
+        from blackjack.ev.efficiency import playing_efficiency
 
-        pe = playing_efficiency(system, decisions)  # type: ignore[arg-type]
+        pe = playing_efficiency(system, decisions)
 
     return SystemMetrics(
         system=system,
@@ -220,7 +224,7 @@ def system_metrics(
 def rank_systems(
     systems: dict[str, CountSystem] | list[CountSystem],
     eor: EorVectors,
-    decisions: list[object] | None = None,
+    decisions: list[CellEor] | None = None,
 ) -> list[SystemMetrics]:
     """Score several systems and order them by betting correlation."""
     values = systems.values() if isinstance(systems, dict) else systems

@@ -107,9 +107,7 @@ class SideBetResult:
             f"  SD        : {self.standard_deviation:.3f} per unit",
             "  Outcome distribution:",
         ]
-        for category, p in sorted(
-            self.probabilities.items(), key=lambda kv: kv[1], reverse=True
-        ):
+        for category, p in sorted(self.probabilities.items(), key=lambda kv: kv[1], reverse=True):
             if p > 0:
                 lines.append(f"    {category:<22} {p * 100:8.4f}%   1 in {1 / p:,.0f}")
         return "\n".join(lines)
@@ -127,6 +125,7 @@ class SideBet(ABC):
     """Number of cards the bet resolves on."""
 
     def __init__(self, paytable: Paytable) -> None:
+        """Bind the bet to a paytable."""
         self.paytable = paytable
 
     @abstractmethod
@@ -188,6 +187,7 @@ class SideBet(ABC):
             out[category] = out.get(category, 0.0) + p
         return out
 
+
 def _falling_factorial(n: float, k: int) -> float:
     """``n * (n-1) * ... * (n-k+1)``, the number of ordered k-card deals."""
     result = 1.0
@@ -230,6 +230,6 @@ def effect_of_removal(bet: SideBet, decks: int = 6) -> tuple[float, ...]:
     shoe = full_shoe(decks)
     out: list[float] = []
     for rank in range(1, NUM_RANKS + 1):
-        depleted = shoe[: rank - 1] + (shoe[rank - 1] - 1,) + shoe[rank:]
+        depleted = (*shoe[: rank - 1], shoe[rank - 1] - 1, *shoe[rank:])
         out.append(bet.evaluate(depleted, decks).edge - base)
     return tuple(out)
