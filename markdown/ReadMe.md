@@ -139,8 +139,11 @@ $ bj systems
 `bj systems --derive` builds the best integer tag vector at each level. At level
 one it returns **exactly Hi-Lo** — the system was not put in, it came out.
 
-Playing efficiency is deliberately *not* computed; see
-[Counting.md](Counting.md) for why a `None` is better than a plausible number.
+Playing efficiency is computed too (`--playing-efficiency`), with a caveat
+stated plainly: it ranks systems in almost exactly the published order (Spearman
+0.98) but sits a consistent +0.13 above Griffin's normalisation. The tests assert
+the ranking, not the levels — matching levels would mean tuning a constant to one
+author's table. See [Counting.md](Counting.md).
 
 ### 9. Trainer and free play
 

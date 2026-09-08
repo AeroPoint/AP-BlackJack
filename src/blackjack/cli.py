@@ -374,10 +374,15 @@ def cmd_play(args: argparse.Namespace) -> int:
 def cmd_systems(args: argparse.Namespace) -> int:
     """Score counting systems against effect-of-removal vectors we derive."""
     from blackjack.counting import SYSTEMS
+    from blackjack.ev.efficiency import collect_decisions
     from blackjack.ev.eor import effect_of_removal, rank_systems
 
     rules = _load_rules(args.rules)
     eor = effect_of_removal(rules, decks=args.decks)
+    decisions = None
+    if args.playing_efficiency:
+        print("Collecting per-decision effect of removal...")
+        decisions = collect_decisions(rules, decks=args.decks)
 
     print(f"{rules.name}, {args.decks} deck(s) -- effect of removal")
     print("Derived from this solver, not copied from a published table.")
@@ -391,12 +396,17 @@ def cmd_systems(args: argparse.Namespace) -> int:
     print()
     print("Counting systems, ranked by betting correlation:")
     print()
-    for metrics in rank_systems(SYSTEMS, eor):
+    for metrics in rank_systems(SYSTEMS, eor, decisions):
         print("  " + metrics.summary())
     print()
     print("  BC predicts how well a system sizes bets; IC how well it calls")
-    print("  insurance. Playing efficiency is deliberately not computed --")
-    print("  see markdown/ToDo.md.")
+    print("  insurance.")
+    if decisions:
+        print(f"  PE is over {len(decisions)} close decisions. It ranks systems in")
+        print("  the published order but sits ~0.13 above Griffin's scale --")
+        print("  read markdown/Counting.md before quoting it.")
+    else:
+        print("  Pass --playing-efficiency to add PE (a couple of seconds more).")
 
     if args.derive:
         from blackjack.counting import CountSystem
@@ -509,6 +519,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rules", default="vegas6-h17")
     p.add_argument("--decks", type=int, default=1, help="reference shoe (published tables use 1)")
     p.add_argument("--derive", action="store_true", help="also derive optimal tag vectors")
+    p.add_argument(
+        "--playing-efficiency",
+        action="store_true",
+        help="also compute playing efficiency (a couple of seconds more)",
+    )
     p.set_defaults(func=cmd_systems)
 
     p = sub.add_parser("list", help="list available configuration files")

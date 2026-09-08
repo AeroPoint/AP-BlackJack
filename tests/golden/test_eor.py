@@ -194,3 +194,127 @@ def test_higher_level_tracks_the_eor_more_closely(eor) -> None:  # noqa: ANN001
     assert scores[1] >= scores[0] - 1e-9
     assert scores[2] >= scores[1] - 1e-9
     assert scores[2] > 0.99
+
+
+# --- Playing efficiency -------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def decisions():  # noqa: ANN201
+    """Per-decision EOR vectors, single deck."""
+    from blackjack.ev.efficiency import collect_decisions
+
+    return collect_decisions(VEGAS_6D_H17, decks=1)
+
+
+#: Published playing efficiencies. Sources vary on the absolute scale -- Hi-Lo is
+#: quoted anywhere from 0.51 to 0.63 -- but they agree closely on the *ordering*,
+#: which is what the tests below assert.
+PUBLISHED_PE = {
+    "Uston APC": 0.69,
+    "Hi-Opt II": 0.67,
+    "Omega II": 0.67,
+    "Zen Count": 0.63,
+    "Hi-Opt I": 0.61,
+    "Wong Halves": 0.56,
+    "Knock-Out (KO)": 0.55,
+    "Revere Point Count": 0.55,
+    "Red 7": 0.54,
+    "Hi-Lo": 0.51,
+}
+
+
+def test_playing_efficiency_ranks_systems_as_published(decisions) -> None:  # noqa: ANN001
+    """The defensible claim: the *ordering* matches the literature.
+
+    Absolute PE is definition-dependent -- which decisions are included, how many
+    decks, whether an ace side count is assumed -- so this project's figures sit
+    about 0.13 above Griffin's normalisation. The ranking does not have that
+    freedom, and Spearman correlation against the published order is above 0.95.
+
+    Asserting the ranking rather than the levels is the honest test. Asserting
+    levels would mean tuning a constant until it matched one author's table.
+    """
+    from blackjack.ev.efficiency import playing_efficiency
+
+    names = sorted(PUBLISHED_PE)
+    mine = {s.name: playing_efficiency(s, decisions) for s in SYSTEMS.values()}
+
+    def ranks(values: dict[str, float]) -> dict[str, int]:
+        order = sorted(names, key=lambda n: values[n])
+        return {n: i for i, n in enumerate(order)}
+
+    published, computed = ranks(PUBLISHED_PE), ranks(mine)
+    n = len(names)
+    d_squared = sum((published[x] - computed[x]) ** 2 for x in names)
+    spearman = 1 - 6 * d_squared / (n * (n * n - 1))
+    assert spearman > 0.95, f"rank correlation only {spearman:.3f}"
+
+
+def test_playing_efficiency_offset_is_stable(decisions) -> None:  # noqa: ANN001
+    """The gap to published figures is a consistent shift, not noise.
+
+    If it ever stops being consistent, the construction has changed meaning and
+    the documentation claiming a fixed offset is no longer true.
+    """
+    from blackjack.ev.efficiency import playing_efficiency
+
+    offsets = [
+        playing_efficiency(s, decisions) - PUBLISHED_PE[s.name]
+        for s in SYSTEMS.values()
+        if s.name in PUBLISHED_PE
+    ]
+    mean = sum(offsets) / len(offsets)
+    spread = max(offsets) - min(offsets)
+    assert 0.08 < mean < 0.18, f"offset drifted to {mean:.3f}"
+    assert spread < 0.12, f"offset is no longer a consistent shift (spread {spread:.3f})"
+
+
+def test_ace_neutral_systems_have_higher_playing_efficiency(decisions) -> None:  # noqa: ANN001
+    """Tagging the ace zero frees the vector to track playing decisions better.
+
+    This is the trade the whole ace-side-count tradition exists to exploit, and
+    it should fall out of the numbers rather than be asserted.
+    """
+    from blackjack.ev.efficiency import playing_efficiency
+
+    assert playing_efficiency(HI_OPT_I, decisions) > playing_efficiency(HI_LO, decisions)
+    assert playing_efficiency(HI_OPT_II, decisions) > playing_efficiency(HI_LO, decisions)
+
+
+def test_higher_level_systems_beat_level_one_on_playing(decisions) -> None:  # noqa: ANN001
+    """More granularity tracks per-decision EOR more closely."""
+    from blackjack.ev.efficiency import playing_efficiency
+
+    assert playing_efficiency(HI_OPT_II, decisions) > playing_efficiency(KO, decisions)
+
+
+def test_decisions_exclude_the_ones_nobody_varies_on(decisions) -> None:  # noqa: ANN001
+    """Standing on twenty is not a decision a count changes."""
+    from blackjack.ev.solver import Category
+
+    keys = {(d.category, d.row, d.upcard) for d in decisions}
+    assert (Category.HARD, 20, 10) not in keys
+    assert (Category.PAIR, 10, 6) not in keys
+    # But the genuinely close ones must be there.
+    assert (Category.HARD, 16, 10) in keys
+    assert (Category.HARD, 12, 3) in keys
+
+
+def test_insurance_efficiency_matches_the_eor_derived_figure(eor) -> None:  # noqa: ANN001
+    """Two routes to the same number: the analytic ten-density vector, and the
+    EOR vector derived from the solver. They must agree."""
+    from blackjack.ev.efficiency import insurance_efficiency
+
+    for system in SYSTEMS.values():
+        assert insurance_efficiency(system) == pytest.approx(
+            system_metrics(system, eor).insurance_correlation, abs=1e-9
+        ), system.name
+
+
+def test_system_metrics_reports_pe_only_when_asked(eor, decisions) -> None:  # noqa: ANN001
+    assert system_metrics(HI_LO, eor).playing_efficiency is None
+    with_pe = system_metrics(HI_LO, eor, decisions)
+    assert with_pe.playing_efficiency is not None
+    assert 0.0 < with_pe.playing_efficiency < 1.0
+    assert "PE 0." in with_pe.summary()

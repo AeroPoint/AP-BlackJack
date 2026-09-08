@@ -106,12 +106,17 @@ The terminal versions are built. What remains is depth and a UI.
   published 0.97, Wong Halves 0.993 against 0.99, and Hi-Lo IC lands exactly on
   0.76. Exposed as `bj systems`.
 
-- [ ] **Playing efficiency.** The one part of the above deliberately left
-  undone: PE needs the EOR of every close decision weighted by how often it
-  arises near its index. `system_metrics` returns `None` rather than an
-  approximation that looks authoritative.
-  *Done when:* Hi-Lo reports PE ≈ 0.51 and Hi-Opt II ≈ 0.67 from first
-  principles, and the method is written up in Math.md.
+- [~] **Playing efficiency.** *Computed, with a documented caveat.*
+  `ev/efficiency.py` derives the per-decision EOR for every close cell and
+  correlates tags against it. The ranking matches published PE almost exactly
+  (Spearman 0.98) but the levels sit a consistent +0.13 above Griffin's
+  normalisation.
+  Tests assert the ranking rather than the levels, because matching levels would
+  mean tuning a constant to one author's table.
+  *Remaining:* work out the normalisation difference. Most likely candidates are
+  Griffin's specific decision set and his treatment of the available-gain
+  weight. Until then the number is comparative, not absolute, and the docs say
+  so.
 
 - [x] **Custom counting system designer.** *Partly done.* `optimal_tags` scales
   the EOR vector to a level and rounds; `bj systems --derive` shows the result.
