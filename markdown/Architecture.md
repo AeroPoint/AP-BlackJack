@@ -1,0 +1,196 @@
+# Architecture
+
+## Shape
+
+Four layers, each depending only on those above it. The dependency direction is
+the whole design: the engine cannot know about the app, so the engine can be
+tested, embedded and ported without dragging anything along.
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  apps/web        React + TypeScript                           │  presentation
+│  apps/api        FastAPI service                              │
+├───────────────────────────────────────────────────────────────┤
+│  blackjack.cli   argparse CLI      blackjack.config           │  interface
+├───────────────────────────────────────────────────────────────┤
+│  ev/  strategy/  sim/  bankroll/  sidebets/                   │  analysis
+├───────────────────────────────────────────────────────────────┤
+│  cards  rules  hand  shoe  counting  actions                  │  primitives
+└───────────────────────────────────────────────────────────────┘
+                              ↕ optional
+                  crates/blackjack-core (Rust, PyO3)
+```
+
+`src/blackjack/` imports **nothing outside the standard library**. Enforced by
+test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
+
+---
+
+## Modules
+
+### Primitives
+
+| module | responsibility |
+|---|---|
+| `cards.py` | Rank encoding. `1` = ace, `10` = any ten-value card (16 per deck). Parsing. |
+| `rules.py` | `RuleSet`: frozen, hashable, complete. Usable as a cache key. |
+| `hand.py` | Hand evaluation. `add_card` is the hottest function in the codebase. |
+| `shoe.py` | `Composition` (immutable float 10-tuple, for the solver) and `DealingShoe` (mutable, ordered, for the simulator). Two different things deliberately named apart. |
+| `counting.py` | Counting systems as *data*: a tag vector plus flags. |
+| `actions.py` | The decision space. |
+
+### Analysis
+
+| module | responsibility |
+|---|---|
+| `ev/dealer.py` | Exact dealer outcome distributions. Everything is downstream of this. |
+| `ev/player.py` | Per-action EVs: stand, hit, double, split, surrender. |
+| `ev/solver.py` | Enumerates deals, aggregates into a chart, computes the house edge. |
+| `ev/importance.py` | Turns per-action EVs into margin, closeness, frequency, expected leak. |
+| `strategy/deviations.py` | The count tilt and index generation. |
+| `sim/strategy.py` | Compiles a solved chart plus indices into flat lookup tables. |
+| `sim/engine.py` | Monte Carlo round loop. |
+| `bankroll/counts.py` | True-count frequency model. |
+| `bankroll/metrics.py` | RoR, N0, Kelly, SCORE, certainty equivalent. |
+| `bankroll/spread.py` | Bet-ramp evaluation and Kelly-optimal ramp construction. |
+| `sidebets/base.py` | Rank-only side-bet framework. |
+| `sidebets/suited.py` | 52-card-type framework, for bets that see suits. |
+
+### Interface
+
+| module | responsibility |
+|---|---|
+| `config/models.py` | Config objects, serialisation, fingerprinting. |
+| `config/loader.py` | YAML/JSON loading and name resolution. |
+| `cli.py` | argparse CLI. Thin — all logic lives in the analysis layer. |
+
+---
+
+## Key design decisions
+
+### Composition as a plain tuple
+
+The solver's shoe is `tuple[float, ...]` of length 10, not a class. It hashes
+cheaply, works as a memo key, and a solver that only ever sees a composition
+*cannot* accidentally depend on card order.
+
+Floats rather than ints so that expected shoes — the maximum-entropy composition
+consistent with a count — are first-class objects the solver runs against
+directly. That single choice is what makes index generation fall out of the same
+code path as basic strategy, instead of needing a parallel implementation.
+
+### Two shoe types, deliberately
+
+`Composition` is what the solver reasons about. `DealingShoe` is an ordered,
+shuffled stack with a cut card, which is what the simulator and trainer deal
+from. Conflating them is how order-dependence sneaks into a solver.
+
+### Free functions in the hot path
+
+`shoe.remove`, `hand.add_card` and the recursion bodies are module-level
+functions taking primitives. Attribute lookup on a class is measurable overhead
+in CPython at these call counts, and the flat form is also what ports cleanly to
+Rust.
+
+### Strategy is compiled, not interpreted
+
+`sim/strategy.py` flattens the solver's object graph into
+`hard[total][upcard]` arrays with a small overlay of count-dependent indices.
+The simulator asks the same object the trainer grades against, so the two can
+never drift apart: there is one definition of "correct play".
+
+### Native core boundary
+
+The Rust crate replaces `ev/dealer.py` and `ev/player.py` — nothing else. Those
+are ~90% of the runtime and have the narrowest interface: composition in,
+numbers out, no I/O, no config, no policy. The Python reference implementation
+stays as the correctness oracle. See
+[ADR-0006](adr/ADR-0006-python-reference-implementation.md).
+
+---
+
+## Data flow
+
+**Solving a chart**
+
+```
+RuleSet + Composition
+   → enumerate_deals()          every (hand, upcard, probability)
+   → make_context()             frozen dealer distribution per cell
+   → action_evs()               per-action EVs, composition-dependent
+   → build_chart()              aggregate to total-dependent rows
+   → analyse()                  margin, closeness, frequency, leak
+   → SolveResult
+```
+
+**Generating indices**
+
+```
+RuleSet + CountSystem
+   → tilted_composition(tc)     max-entropy shoe for that count
+   → row_action_at_count()      full solve of one row against it
+   → coarse sweep + bisection   locate the crossover
+   → _index_value()             weight by frequency and hand probability
+   → [Index]
+```
+
+**Evaluating a spread**
+
+```
+true_count_distribution()   ─┐
+count_edge_curve()          ─┼→ evaluate_ramp() → SpreadResult → BankrollMetrics
+BetRamp                     ─┘
+```
+
+Three independent inputs, combined by a weighted sum. Keeping them separate is
+what makes the analysis fast, exact where it can be, and honest where it cannot.
+
+---
+
+## Performance
+
+Pure Python, measured on this machine:
+
+| operation | time |
+|---|---|
+| Full solve (550 cells, 6 decks) | 1.2 s |
+| Single decision (`bj explain`) | ~10 ms |
+| Side bet, 3-card suited enumeration | 0.1 s |
+| Monte Carlo | ~160,000 rounds/s |
+| Index sweep (190 cells) | 30 s |
+| Bet-spread analysis (17 counts) | 20 s |
+
+The last two are the reason for the native core. An interactive rule-delta
+explorer needs the full solve under 50 ms, which is roughly a 25× gap — well
+within what Rust plus rayon delivers.
+
+Memoisation is shared where it helps: one dealer cache is threaded through an
+entire solve, so cells whose removals produce the same composition reuse work.
+
+---
+
+## Testing strategy
+
+Three defences, in increasing order of what they catch:
+
+1. **Unit tests.** Structure and edge cases.
+2. **Golden tests.** Published reference values — infinite-deck dealer
+   probabilities, known house edges, known side-bet edges. These fail loudly if a
+   refactor changes a number.
+3. **Cross-validation.** The solver and the simulator compute the same quantity
+   by completely different routes. When they disagree beyond error bars, one is
+   wrong.
+
+The third is the one that earns its keep. Both bugs found during initial
+development were caught by it and by nothing else.
+
+---
+
+## What is scaffolded but not implemented
+
+- `crates/blackjack-core` — PyO3 boundary defined, no implementation.
+- `apps/api` — module layout and route stubs.
+- `apps/web` — project skeleton.
+
+Each carries a README stating exactly what is missing. Nothing in the engine
+depends on them.

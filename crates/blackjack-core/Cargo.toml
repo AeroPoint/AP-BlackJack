@@ -1,0 +1,26 @@
+[package]
+name         = "blackjack-core"
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.75"
+description  = "Native accelerator for the blackjack solver: dealer probabilities and player EV."
+license      = "UNLICENSED"
+publish      = false
+
+[lib]
+name       = "blackjack_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# PyO3 is Apache-2.0/MIT. abi3-py311 builds one wheel for 3.11+ rather than one
+# per interpreter version -- see markdown/adr/ADR-0005-licensing.md for the
+# licence policy this satisfies.
+pyo3   = { version = "0.22", features = ["extension-module", "abi3-py311"] }
+rayon  = "1.10"        # MIT/Apache-2.0 - cells are independent, so this is free speed
+rustc-hash = "2.0"     # MIT/Apache-2.0 - much faster hashing than SipHash for our keys
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"

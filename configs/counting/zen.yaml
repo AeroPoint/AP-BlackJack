@@ -1,0 +1,7 @@
+schema_version: 1
+name: "Zen Count"
+tags: [-1, 1, 1, 2, 2, 2, 1, 0, 0, -2]
+balanced: true
+level: 2
+rounding: truncate
+notes: Balances betting and playing without needing a side count.

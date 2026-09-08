@@ -1,0 +1,17 @@
+# A profile is the unit you actually work with. Sections may either be inlined
+# or named, in which case they are resolved from the sibling config folders.
+schema_version: 1
+name: "default"
+rules: vegas6-h17
+system: hi-lo
+ramp: 1-8
+unit: 25
+bankroll: 20000
+rounds: 1000000
+rounds_per_hour: 100
+seed: 20260907
+deck_estimation: 0.5
+rounding: truncate
+use_indices: true
+index_count: 18
+take_insurance: true

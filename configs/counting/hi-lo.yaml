@@ -1,0 +1,13 @@
+# Tags are ordered (A, 2, 3, 4, 5, 6, 7, 8, 9, T) -- ace first, all ten-value
+# cards collapsed into the last slot.
+schema_version: 1
+name: "Hi-Lo"
+tags: [-1, 1, 1, 1, 1, 1, 0, 0, 0, -1]
+balanced: true
+level: 1
+side_count_aces: false
+rounding: truncate         # none | floor | truncate | round
+notes: >
+  The default. Best effort-to-return ratio of any system and the one every
+  published index table is quoted for. Betting correlation about 0.97,
+  playing efficiency about 0.51.

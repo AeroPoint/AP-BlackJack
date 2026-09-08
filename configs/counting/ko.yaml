@@ -1,0 +1,12 @@
+schema_version: 1
+name: "Knock-Out (KO)"
+tags: [-1, 1, 1, 1, 1, 1, 1, 0, 0, -1]
+balanced: false
+level: 1
+irc_per_deck: -4
+pivot: 4
+rounding: none
+notes: >
+  Unbalanced, so there is no true-count division: you play off the running count
+  and the IRC does the work. IRC = 4 - 4*decks. Indices are quoted relative to
+  the pivot at +4. Easier at the table, slightly weaker in the maths.

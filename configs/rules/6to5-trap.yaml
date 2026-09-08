@@ -1,0 +1,14 @@
+# The tourist trap. Kept as a config so the damage can be quantified rather
+# than asserted: solve this against vegas6-h17 and read the difference.
+schema_version: 1
+name: "6D H17 6:5 (do not play)"
+decks: 6
+hit_soft_17: true
+blackjack_payout: "6/5"
+double_rule: any2
+double_after_split: true
+max_split_hands: 4
+resplit_aces: true
+surrender: none
+hole_card: peek
+penetration: 0.75
