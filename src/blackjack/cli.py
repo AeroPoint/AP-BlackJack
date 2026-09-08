@@ -12,6 +12,8 @@ available and quietly skipped when it is not.
     bj sidebet 21+3 --decks 6
     bj explain T6 T --rules vegas6-h17
     bj systems --derive
+    bj drill --rounds 20
+    bj play --count --standard count
 """
 
 from __future__ import annotations
@@ -341,6 +343,34 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_drill(args: argparse.Namespace) -> int:
+    """Drill strategy cells, weighted by what they actually cost you."""
+    from blackjack.train.loop import run_drill
+
+    rules = _load_rules(args.rules)
+    run_drill(rules, rounds=args.rounds, unit=args.unit, seed=args.seed)
+    return 0
+
+
+def cmd_play(args: argparse.Namespace) -> int:
+    """Play hands and be told what every decision cost."""
+    from blackjack.train.grading import Standard
+    from blackjack.train.loop import run_free_play
+
+    rules = _load_rules(args.rules)
+    system = _load_system(args.system)
+    run_free_play(
+        rules,
+        system,
+        rounds=args.rounds,
+        unit=args.unit,
+        seed=args.seed,
+        standard=Standard(args.standard),
+        show_count=args.count,
+    )
+    return 0
+
+
 def cmd_systems(args: argparse.Namespace) -> int:
     """Score counting systems against effect-of-removal vectors we derive."""
     from blackjack.counting import SYSTEMS
@@ -452,6 +482,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rules", default="vegas6-h17")
     p.add_argument("--unit", type=float, default=25.0)
     p.set_defaults(func=cmd_explain)
+
+    p = sub.add_parser("drill", help="drill strategy cells in expected-leak order")
+    p.add_argument("--rules", default="vegas6-h17")
+    p.add_argument("--rounds", type=int, default=20)
+    p.add_argument("--unit", type=float, default=25.0)
+    p.add_argument("--seed", type=int, default=None)
+    p.set_defaults(func=cmd_drill)
+
+    p = sub.add_parser("play", help="free play with live grading")
+    p.add_argument("--rules", default="vegas6-h17")
+    p.add_argument("--system", default="hi-lo")
+    p.add_argument("--rounds", type=int, default=50)
+    p.add_argument("--unit", type=float, default=25.0)
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument(
+        "--standard",
+        default="chart",
+        choices=["chart", "count", "exact"],
+        help="chart = basic strategy, count = with indices, exact = composition-perfect",
+    )
+    p.add_argument("--count", action="store_true", help="show the running and true count")
+    p.set_defaults(func=cmd_play)
 
     p = sub.add_parser("systems", help="score counting systems from derived EORs")
     p.add_argument("--rules", default="vegas6-h17")
