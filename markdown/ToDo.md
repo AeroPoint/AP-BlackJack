@@ -68,24 +68,20 @@ worth building twice.
 
 ## P2 — Training and free play
 
-The engine is ready for these; they need UI and session state.
+The terminal versions are built. What remains is depth and a UI.
 
-- [ ] **Drill mode.** Serve cells in expected-leak order, adapt to the player's
-  measured error rate, and replace the modelled `error_likelihood` with the real
-  one. That turns the drill order from generic to personal — see
-  `ev/importance.py`.
-  *Done when:* a session records per-cell attempts and the ordering demonstrably
-  shifts toward the cells that player misses.
+- [x] **Drill mode.** *Done.* `bj drill`. Cells are sampled in proportion to
+  `margin x frequency x P(miss)`, where the miss probability shrinks from the
+  generic model toward the player's measured rate as evidence accumulates.
+  Blended rather than switched, so one wrong answer does not make a cell the
+  only thing you see.
 
-- [ ] **Free play with live grading.** Play real hands; on every decision report
-  what it cost:
-  > You hit 12 against a 4. That is worth −0.024 of a bet — at your $25 unit,
-  > −$0.60 this hand, and this spot comes up on 0.4% of rounds.
-
-  All of the machinery exists (`mistake_cost`, `DecisionAnalysis.explain`); it
-  needs a game loop and a UI.
-  *Done when:* a session ends with total EV lost to mistakes, broken down by
-  cell, and the biggest three leaks named.
+- [x] **Free play with live grading.** *Done.* `bj play`. Real dealt hands from
+  a real shoe with a cut card and a live count; every two-card decision priced
+  against the cards actually remaining. Three grading standards (chart, count,
+  exact). Sessions end with total cost and the biggest leaks named.
+  Remaining: post-split decisions are played but not graded, because a single
+  chart cell does not capture the split context. Worth fixing.
 
 - [ ] **Counting drills.** Running-count speed, true-count conversion under a
   clock, deck estimation from a discard tray image or slider.

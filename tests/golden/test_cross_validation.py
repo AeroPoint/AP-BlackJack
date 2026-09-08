@@ -195,3 +195,72 @@ def test_analytic_spread_and_simulation_agree_in_sign_and_scale() -> None:
 
     assert analytic > 0 and measured > 0
     assert 0.4 < measured / analytic < 2.0, f"analytic {analytic:.5f} vs sim {measured:.5f}"
+
+
+def test_free_play_table_matches_the_solver() -> None:
+    """The trainer's table is a *third* implementation of the rules.
+
+    The solver enumerates, the simulator deals, and now the trainer's table
+    deals again through a completely different state machine built for
+    interactive play. All three must agree on the same game.
+
+    This is not redundancy for its own sake. The table was written to be driven
+    one action at a time by a UI, which is a different shape of code from the
+    simulator's round loop, and different shapes of code fail differently. If
+    this drifts, the trainer would be teaching a game nobody is playing.
+    """
+    from blackjack.actions import Action
+    from blackjack.train.table import Phase, Table
+
+    rules = VEGAS_6D_H17
+    expected = solve(rules).basic_strategy_ev
+    strategy = compile_strategy(solve(rules).chart)
+
+    total = 0.0
+    dealt = 0
+    squares = 0.0
+    for seed in (1, 2, 3, 4):
+        table = Table(rules, HI_LO, seed=seed)
+        for _ in range(200_000):
+            state = table.deal(1.0)
+            if state.phase is Phase.INSURANCE:
+                state = table.take_insurance(False)
+            while state.phase is Phase.PLAYER:
+                hand = state.hand
+                assert hand is not None
+                legal = table.legal()
+                pair = (
+                    hand.cards[0]
+                    if len(hand.cards) == 2 and hand.cards[0] == hand.cards[1]
+                    else None
+                )
+                action = strategy.action(
+                    hand.total,
+                    hand.soft,
+                    state.upcard,
+                    pair_rank=pair,
+                    num_cards=len(hand.cards),
+                    after_split=hand.from_split,
+                )
+                if action not in legal:
+                    action = Action.HIT if Action.HIT in legal else Action.STAND
+                state = table.act(action)
+            result = table.finish()
+            total += result
+            squares += result * result
+            dealt += 1
+
+    mean = total / dealt
+    sd = math.sqrt(squares / dealt - mean * mean)
+    se = sd / math.sqrt(dealt)
+
+    # The table plays a real shoe with a cut card, so allow the same modest
+    # cut-card allowance the penetrated simulation comparison uses.
+    allowance = 0.0008
+    sigma = max(0.0, abs(mean - expected) - allowance) / se
+    assert sigma < TOLERANCE_SIGMA, (
+        f"table {mean * 100:+.4f}% vs solver {expected * 100:+.4f}% "
+        f"= {sigma:.2f} sigma beyond allowance (se {se * 100:.4f}%)"
+    )
+    # And the variance must match the simulator's independently measured figure.
+    assert 1.10 <= sd <= 1.22, f"table SD {sd:.4f} disagrees with the simulator"
