@@ -1,64 +1,104 @@
 """FastAPI service.
 
-# Status: scaffold
+A thin adapter. Request parsing, error mapping and nothing else -- every
+operation lives in :mod:`apps.api.app.service`, so the API and the CLI stay two
+clients of one implementation rather than two implementations that drift.
 
-Route shapes and response models are defined; the long-running endpoints return
-``501``. What exists is the *structure* — the decisions that are expensive to
-change later — rather than a half-working implementation.
+Fast and slow
+-------------
+Operations that finish in milliseconds are plain requests. A full solve is 31 ms
+on the native core, so ``GET /api/solve/{rules}`` returns the whole annotated
+chart directly.
 
-## Design commitments
+Operations that take seconds are **jobs**: ``POST`` starts one and returns an id,
+``GET /api/jobs/{id}`` polls it. Holding a connection open for an index sweep is
+wrong even when it works -- the client cannot show progress, a refresh restarts
+the work, and a slow request is indistinguishable from a hung one. See
+:mod:`apps.api.app.jobs`.
 
-**The service is a thin adapter.** All logic lives in the engine. When a route
-needs behaviour the engine does not have, it goes in the engine, not here. The
-CLI and the API must be two clients of one implementation, or they will drift
-and only one of them will be right.
-
-**Long solves are jobs, not requests.** A full index sweep is ~30 seconds in pure
-Python. Blocking an HTTP worker for that is wrong even once the Rust core makes
-it fast, because the sweep grows with the work asked of it. `POST` starts a job,
-`GET` polls it, and the progress callback the solver already accepts feeds the
-poll response.
-
-**Results carry their fingerprint.** Every response includes the config
-fingerprint and engine version that produced it, for the same reason every other
-result in this project does — see markdown/ConfigControl.md.
-
-**Local-first.** CORS is restricted to the dev server. There is no auth because
-there are no accounts; if this ever becomes hosted, auth arrives before anything
-is exposed beyond localhost.
+Local-first
+-----------
+CORS is restricted to the Vite dev server and there is no authentication,
+because there are no accounts. If this is ever hosted, auth arrives before
+anything is exposed beyond localhost -- and the job runner's in-process state
+becomes the next thing to reconsider.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from contextlib import asynccontextmanager
+from typing import Any, ParamSpec, TypeVar
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, Query
     from fastapi.middleware.cors import CORSMiddleware
 except ImportError as exc:  # pragma: no cover - the api extra is optional
     raise SystemExit("The API needs the 'api' extra: uv sync --extra api") from exc
 
+from apps.api.app import service
+from apps.api.app.jobs import JobRunner
 from blackjack.backend import describe
 from blackjack.version import __version__
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+runner = JobRunner()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> Any:
+    """Stop the job pool cleanly on shutdown rather than leaking threads."""
+    yield
+    runner.shutdown()
+
 
 app = FastAPI(
     title="Blackjack Solver",
     version=__version__,
     description="Exact solver, simulator and trainer.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+
+def _handle(fn: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
+    """Call a service function, mapping its exceptions onto HTTP status codes.
+
+    The service layer raises domain errors and knows nothing about HTTP; this is
+    the single place the two vocabularies meet.
+
+    Generic over the wrapped signature so the route's own return type survives
+    the wrapping -- a helper typed ``Any -> Any`` would silently turn every
+    endpoint into an unchecked one.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except service.NotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except service.BadRequestError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+# --- Fast endpoints -----------------------------------------------------------
 
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     """Liveness, version, and which compute backend is active."""
-    return {"status": "ok", "version": __version__, "backend": describe()}
+    return {
+        "status": "ok",
+        "version": __version__,
+        "backend": describe(),
+        "jobs": len(runner.list()),
+    }
 
 
 @app.get("/api/configs")
@@ -73,122 +113,86 @@ def configs() -> dict[str, list[str]]:
 
 
 @app.get("/api/solve/{rules_name}")
-def solve_rules(rules_name: str) -> dict[str, Any]:
-    """Solve a rule set and return the headline numbers plus the chart.
-
-    Fast enough to be a plain request today (~1.2 s) and much faster once the
-    native core lands, so this one does not need the job machinery.
-    """
-    from blackjack.config.loader import load_rules
-    from blackjack.config.models import ConfigError
-    from blackjack.ev.solver import solve
-    from blackjack.rules import PRESETS
-
-    try:
-        rules = load_rules(rules_name)
-    except ConfigError:
-        if rules_name not in PRESETS:
-            raise HTTPException(404, f"unknown rule set: {rules_name}") from None
-        rules = PRESETS[rules_name]
-
-    result = solve(rules)
-    return {
-        "rules": {"name": rules.name, "slug": rules.slug()},
-        "basic_strategy_ev": result.basic_strategy_ev,
-        "optimal_ev": result.optimal_ev,
-        "house_edge": result.house_edge,
-        "insurance_ev": result.insurance_ev,
-        "engine_version": result.engine_version,
-        "elapsed_seconds": result.elapsed_seconds,
-        "chart": [
-            {
-                "category": cell.category.value,
-                "row": cell.row,
-                "upcard": cell.upcard,
-                "label": cell.label,
-                "action": cell.action.value,
-                "margin": cell.analysis.margin,
-                "closeness": cell.analysis.closeness,
-                "frequency": cell.analysis.frequency,
-                "importance": cell.analysis.importance.value,
-                "expected_leak_per_100": cell.analysis.expected_leak_per_100,
-                "evs": {a.value: v for a, v in cell.analysis.all_evs.items()},
-            }
-            for cell in result.chart.cells.values()
-        ],
-    }
+def solve(rules_name: str) -> dict[str, Any]:
+    """Solve a rule set: headline numbers plus the full annotated chart."""
+    return _handle(service.solve, rules_name)
 
 
 @app.get("/api/explain/{rules_name}/{hand}/{upcard}")
 def explain(rules_name: str, hand: str, upcard: str) -> dict[str, Any]:
-    """Full breakdown of one decision. Backs the trainer's feedback panel."""
-    from blackjack.cards import parse_hand
-    from blackjack.config.loader import load_rules
-    from blackjack.config.models import ConfigError
-    from blackjack.ev.importance import analyse
-    from blackjack.ev.player import action_evs, make_context
-    from blackjack.ev.solver import deal_probability
-    from blackjack.rules import PRESETS
-    from blackjack.shoe import full_shoe, remove_many
-
-    try:
-        rules = load_rules(rules_name)
-    except ConfigError:
-        if rules_name not in PRESETS:
-            raise HTTPException(404, f"unknown rule set: {rules_name}") from None
-        rules = PRESETS[rules_name]
-
-    cards = parse_hand(hand)
-    if len(cards) != 2:
-        raise HTTPException(400, "hand must be exactly two cards")
-    up = parse_hand(upcard)[0]
-
-    shoe = full_shoe(rules.decks)
-    after = remove_many(shoe, [*cards, up])
-    ctx = make_context(after, up, rules)
-    evs = action_evs(tuple(cards), after, ctx)
-    result = analyse(evs, frequency=deal_probability(shoe, (min(cards), max(cards)), up))
-
-    return {
-        "hand": hand,
-        "upcard": upcard,
-        "best": result.best.value,
-        "margin": result.margin,
-        "closeness": result.closeness,
-        "split_label": result.split_label,
-        "importance": result.importance.value,
-        "frequency": result.frequency,
-        "expected_leak_per_100": result.expected_leak_per_100,
-        "evs": {a.value: v for a, v in result.all_evs.items()},
-        "explanation": result.explain(),
-    }
+    """Price every action for one hand."""
+    return _handle(service.explain, rules_name, hand, upcard)
 
 
-# --- Not yet implemented ------------------------------------------------------
-# These need the job machinery described in the module docstring. Returning 501
-# is deliberate: an endpoint that blocks a worker for 30 seconds is worse than
-# one that admits it is not ready.
+@app.get("/api/sidebet/{name}")
+def sidebet(name: str, decks: int = Query(6, ge=1, le=8)) -> dict[str, Any]:
+    """Analyse a side bet against each of its known paytables."""
+    return _handle(service.sidebet, name, decks)
 
 
-@app.post("/api/jobs/indices")
-def start_index_job() -> dict[str, Any]:
-    """Start an index-generation job. Not implemented; see markdown/ToDo.md."""
-    raise HTTPException(501, "index generation needs the job runner; see markdown/ToDo.md")
+@app.get("/api/systems/{rules_name}")
+def systems(rules_name: str, decks: int = Query(1, ge=1, le=8)) -> dict[str, Any]:
+    """Effect of removal and per-system betting and insurance correlations."""
+    return _handle(service.counting_systems, rules_name, decks)
 
 
-@app.post("/api/jobs/spread")
-def start_spread_job() -> dict[str, Any]:
-    """Start a bet-spread analysis. Not implemented; see markdown/ToDo.md."""
-    raise HTTPException(501, "spread analysis needs the job runner; see markdown/ToDo.md")
+# --- Jobs ---------------------------------------------------------------------
 
 
-@app.post("/api/jobs/simulate")
-def start_sim_job() -> dict[str, Any]:
-    """Start a Monte Carlo simulation. Not implemented; see markdown/ToDo.md."""
-    raise HTTPException(501, "simulation needs the job runner; see markdown/ToDo.md")
+@app.post("/api/jobs/indices", status_code=202)
+def start_indices(
+    rules: str = Query("vegas6-h17"),
+    system: str = Query("hi-lo"),
+    decks_remaining: float | None = Query(None, gt=0, le=8),
+) -> dict[str, Any]:
+    """Start an index sweep. Takes a couple of seconds on the native core."""
+    fn, fingerprint = _handle(service.indices_job, rules, system, decks_remaining)
+    return runner.submit("indices", fn, fingerprint=fingerprint).to_dict()
+
+
+@app.post("/api/jobs/spread", status_code=202)
+def start_spread(profile: str = Query("default")) -> dict[str, Any]:
+    """Start a bet-spread analysis with exact per-count variance."""
+    fn, fingerprint = _handle(service.spread_job, profile)
+    return runner.submit("spread", fn, fingerprint=fingerprint).to_dict()
+
+
+@app.post("/api/jobs/simulate", status_code=202)
+def start_simulation(
+    profile: str = Query("default"),
+    rounds: int | None = Query(None, ge=1_000, le=100_000_000),
+    seed: int | None = Query(None),
+) -> dict[str, Any]:
+    """Start a Monte Carlo run."""
+    fn, fingerprint = _handle(service.simulate_job, profile, rounds, seed)
+    return runner.submit("simulate", fn, fingerprint=fingerprint).to_dict()
+
+
+@app.get("/api/jobs")
+def list_jobs() -> dict[str, Any]:
+    """Every job this process remembers, newest first, without their results."""
+    return {"jobs": [job.to_dict(include_result=False) for job in runner.list()]}
 
 
 @app.get("/api/jobs/{job_id}")
 def job_status(job_id: str) -> dict[str, Any]:
-    """Poll a job. Not implemented; see markdown/ToDo.md."""
-    raise HTTPException(501, f"no job runner yet (asked for {job_id})")
+    """Poll a job. Carries the result once it has succeeded."""
+    job = runner.get(job_id)
+    if job is None:
+        raise HTTPException(404, f"no such job: {job_id}")
+    return job.to_dict()
+
+
+@app.delete("/api/jobs/{job_id}")
+def cancel_job(job_id: str) -> dict[str, Any]:
+    """Ask a job to stop at its next progress checkpoint.
+
+    Cooperative, so a job between checkpoints keeps running briefly. It stops at
+    the next one rather than being killed mid-write.
+    """
+    if runner.get(job_id) is None:
+        raise HTTPException(404, f"no such job: {job_id}")
+    cancelled = runner.cancel(job_id)
+    job = runner.get(job_id)
+    assert job is not None
+    return {"cancelled": cancelled, **job.to_dict(include_result=False)}

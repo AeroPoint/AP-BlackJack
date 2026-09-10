@@ -83,6 +83,7 @@ dev = [
   "mypy>=1.10",           # MIT
   "pre-commit>=3.7",      # MIT
   "maturin>=1.7",         # MIT/Apache-2.0 - builds the Rust core
+  "httpx2>=0.1",          # BSD-3 - required by starlette's TestClient
 ]
 
 [build-system]

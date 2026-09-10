@@ -181,6 +181,52 @@ def save_profile(config: SessionConfig, path: Path) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=True), encoding="utf-8")
 
 
+def resolve_rules(name: str, config_dir: Path | None = None) -> RuleSet:
+    """Load a rule set by name, falling back to the built-in presets.
+
+    The fallback is what keeps the engine usable with no dependencies: YAML
+    needs PyYAML, and the preset keys deliberately match the filenames in
+    ``configs/rules/`` so every shipped rule set resolves either way.
+
+    Lives here rather than in the CLI or the API because both need it, and two
+    copies of a lookup are two chances to disagree about what "vegas6-h17"
+    means.
+
+    Raises:
+        ConfigError: if the name matches neither a config file nor a preset.
+    """
+    from blackjack.rules import PRESETS
+
+    try:
+        return load_rules(name, config_dir)
+    except ConfigError:
+        if name in PRESETS:
+            return PRESETS[name]
+        raise ConfigError(
+            f"unknown rule set {name!r}; available: "
+            f"{sorted(set(list_available('rules', config_dir)) | set(PRESETS))}"
+        ) from None
+
+
+def resolve_system(name: str, config_dir: Path | None = None) -> CountSystem:
+    """Load a counting system by name, falling back to the built-ins.
+
+    Raises:
+        ConfigError: if the name matches neither a config file nor a built-in.
+    """
+    from blackjack.counting import SYSTEMS
+
+    try:
+        return load_system(name, config_dir)
+    except ConfigError:
+        if name in SYSTEMS:
+            return SYSTEMS[name]
+        raise ConfigError(
+            f"unknown counting system {name!r}; available: "
+            f"{sorted(set(list_available('counting', config_dir)) | set(SYSTEMS))}"
+        ) from None
+
+
 def list_available(kind: str, config_dir: Path | None = None) -> list[str]:
     """Names of every config of a given kind."""
     root = config_dir or find_config_dir()
