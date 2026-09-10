@@ -219,9 +219,12 @@ silently falls back — that would make a benchmark measure the wrong thing.
 
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
-- **Web front end.** `apps/web` is a scaffold. The API it needs is built and
-  tested: fast operations as plain requests, long ones as jobs with progress and
-  cancellation. See [apps/api/README.md](../apps/api/README.md).
+- **Web front end.** The strategy-chart screen is built — interactive grid,
+  action/leak colouring toggle, per-action pricing panel — and typechecks and
+  builds clean, but **nobody has looked at it in a browser**, so treat the
+  layout and palette as a first draft. The spread explorer, rule-delta view and
+  trainer screens are not started. See
+  [apps/web/README.md](../apps/web/README.md).
 - **Multi-spot play.** The solver assumes heads-up.
 
 ---
