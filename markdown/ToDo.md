@@ -37,18 +37,27 @@ worth building twice.
   the required bankroll by about $2,000. `bj spread` now reports exact variance
   by default.
 
-- [ ] **Result cache with provenance.** *Now the top P0 item.*
+- [~] **Reconcile the analytic spread model against simulation.** *Now the top
+  P0 item: it is the last place two parts of this project disagree about a
+  number and nobody has explained why.*
+  A 1-8 spread gives +0.0085 units/round analytically against +0.0066
+  simulated. Three candidate causes, none yet isolated: the simulator plays a
+  subset of indices with truncated counts, the analytic model assumes
+  composition-perfect play, and the normal true-count model understates the
+  tails where the big bets sit.
+  *Done when:* a test asserts the two agree within combined error bars, with
+  each remaining difference attributed to a named cause rather than absorbed
+  into a tolerance.
+  *Approach:* make the analytic model play the same index subset the simulator
+  does, then swap the normal count model for the simulator's measured
+  histogram, and see which of the two closes the gap.
+
+- [ ] **Result cache with provenance.** *Demoted — the native core removed most
+  of the need.* An index sweep is 1.7 s and a spread analysis 0.5 s, so this is
+  now a convenience rather than a fix. Worth doing when the UI starts re-solving
+  on every keystroke.
   Key solves on `(rules.slug(), composition hash, engine version)`; store under
   `data/cache/`. Invalidate on engine version change, never on a timestamp.
-  *Done when:* a repeated `bj spread` returns instantly and the cache entry
-  records the fingerprint that produced it.
-
-- [~] **Reconcile the analytic spread model against simulation.**
-  Currently 1-8 spread gives +0.0085 units/round analytically vs +0.0066
-  simulated. The gap is explainable (index subset, TC rounding, normal-model
-  tails) but has not been *closed*.
-  *Done when:* a test asserts the two agree within combined error bars, with
-  each remaining difference attributed.
 
 ---
 
@@ -177,3 +186,13 @@ The terminal versions are built. What remains is depth and a UI.
 - Deep single-deck states can produce fractional compositions where a rank falls
   below one card; the engine clamps at zero and the induced error is below 1e-9,
   but it is an approximation rather than an exact treatment.
+- Post-split decisions are played in free play but not graded: a single chart
+  cell does not capture the split context, so the trainer stays quiet rather
+  than grading against the wrong standard.
+- The web UI has never been opened in a browser. It typechecks and builds, and
+  its data contract is tested, but the layout and palette are unreviewed.
+- Job state is lost when the API restarts, by design. Every job is reproducible
+  from its request plus the recorded fingerprint.
+- `bj` still calls the engine directly rather than going through
+  `apps/api/app/service.py`. Both bottom out in the same functions today, so
+  nothing is wrong; it is worth closing before the two grow separate features.
