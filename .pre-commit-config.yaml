@@ -1,6 +1,12 @@
 # Install with: uv run pre-commit install
-# These are the checks that are cheap enough to run on every commit. The slow
-# ones -- cross-validation, the native build -- live in CI only.
+#
+# Lint and format run through `uv run`, NOT the ruff-pre-commit mirror. The
+# mirror pins its own ruff version, which then disagrees with the one in
+# uv.lock -- the two fight over formatting and the hook "fixes" files CI will
+# reject. One tool, one pin, and it lives in the lockfile.
+#
+# Only the cheap checks are here. Cross-validation and the native build live in
+# CI, where minutes are free.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
@@ -16,28 +22,44 @@ repos:
         args: [--fix=lf]
         exclude: '\.(bat|ps1)$'
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.4
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-
   - repo: local
     hooks:
-      # Guards ADR-0004. Cheap, and the failure it catches -- a stray `import
-      # numpy` at module scope -- is easy to introduce and easy to miss.
+      - id: ruff
+        name: ruff (lint)
+        entry: uv run ruff check --force-exclude --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff (format)
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      # Guards ADR-0004. Cheap, and the failure it catches -- a stray
+      # `import numpy` at module scope -- is easy to introduce and easy to miss.
       - id: no-engine-dependencies
         name: engine imports only stdlib
-        entry: python -m pytest tests/unit/test_no_dependencies.py -q
+        entry: uv run pytest tests/unit/test_no_dependencies.py -q
         language: system
         pass_filenames: false
         files: '^src/blackjack/.*\.py$'
 
-      # Guards ADR-0005.
+      # Guards ADR-0005. The --declared mode needs no environment at all.
       - id: declared-licences
         name: dependencies are permissively licensed
         entry: python scripts/check_licenses.py --declared
         language: system
         pass_filenames: false
         files: '^pyproject\.toml$'
+
+      # Guards ADR-0006. A Rust change that diverges from the Python reference
+      # must not reach a commit; the suite skips itself when no core is built.
+      - id: native-parity
+        name: rust core matches the python reference
+        entry: uv run pytest -m parity -q
+        language: system
+        pass_filenames: false
+        files: '^(crates/blackjack-core/src/.*\.rs|src/blackjack/ev/(dealer|player|moments)\.py)$'
