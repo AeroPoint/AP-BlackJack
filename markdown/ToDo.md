@@ -65,11 +65,13 @@ worth building twice.
   `service.py`. Harmless today because both bottom out in the same functions,
   but worth closing before the two grow separate features.
 
-- [ ] **Web UI: strategy chart.** *Now the top P1 item; the API it needs is
-  built.* The chart as an interactive grid, coloured by
-  action, with an importance overlay toggle (heat by expected leak). Clicking a
-  cell opens the full `explain` breakdown.
-  *Done when:* changing any rule re-solves and re-renders without a page reload.
+- [~] **Web UI: strategy chart.** *Built, not visually reviewed.* Interactive
+  grid with the action/expected-leak colouring toggle, a detail panel pricing
+  every action, and a rule selector that re-solves in ~31 ms. Typechecks under
+  strict TypeScript and builds clean; the API contract is enforced by a test
+  that parses `apps/web/src/api.ts`.
+  *Remaining:* nobody has looked at it in a browser. Layout and palette are a
+  first draft.
 
 - [ ] **Web UI: spread and risk explorer.** Ramp editor with live EV/hour, N0,
   SCORE and risk-of-ruin readouts, and the per-count contribution chart.

@@ -1,44 +1,67 @@
-# Web front end — scaffold
+# Web front end
 
-React + TypeScript + Vite. Project skeleton only; no components written yet.
+React + TypeScript + Vite. One screen, built properly: the strategy chart.
 
 ## Run
 
 ```bash
-cd apps/web
-npm install
-npm run dev          # expects the API on :8000
+cd apps/web && npm install
+npm run dev            # http://localhost:5173, proxies /api to :8000
 ```
 
-## Planned screens
+The API must be running:
 
-**Strategy chart.** The chart as an interactive grid coloured by action, with a
-toggle that recolours it by *expected leak* instead — the heat map that shows
-where the money actually is. Clicking a cell opens the full `explain` breakdown:
-every action's EV, the 51/49 reading, and what the mistake costs per 100 hands.
+```bash
+uv run uvicorn apps.api.app.main:app --reload --port 8000
+```
 
-**Rule-delta explorer.** Pick two rule sets, see the EV difference and which
-cells changed. The screen that answers "is this table worth playing" at a glance.
+## What it does
 
-**Spread and risk explorer.** Ramp editor with live EV/hour, N0, SCORE and
-risk-of-ruin readouts, plus the per-count contribution chart that shows which
-counts are carrying the win rate.
+**The chart**, in two colourings.
 
-**Trainer.** Drill mode serving cells in expected-leak order, and free play with
-live grading — every wrong decision priced in both units and currency.
+*By action* is the chart everybody has seen — one colour per play. It tells you
+what to do and nothing about what it is worth.
 
-## Why a web UI
+*By what it costs* is the one this project exists to draw. Each square is shaded
+by what a learner actually loses there per hundred rounds: the EV margin, times
+how often the hand comes up, times how likely they are to get it wrong. It turns
+the chart into a map of where the money is, and that map does not look like the
+one a printed chart's colours suggest — the dark squares are stiff totals
+against a ten, not the spectacular plays.
 
-See [ADR-0002](../../markdown/adr/ADR-0002-app-shell.md). Short version: the
-interface is chart-heavy, both React and FastAPI are MIT-licensed so the
-commercial question stays open, and the same front end wraps in Tauri later if a
-real desktop executable is wanted.
+**Click a square** for the full pricing: every legal action's exact EV, the
+margin both as a number and as the 51/49 reading, how often the spot arises, the
+severity band, and any composition-dependent exceptions the solver found for
+that row.
 
-## Conventions when this gets built
+Changing the rule set re-solves and re-renders. A solve is ~31 ms on the native
+core, which is the only reason this can be a plain request rather than a job.
 
-- The API is the only source of numbers. No blackjack mathematics in TypeScript —
-  a second implementation is a second thing to be wrong.
-- Chart colours must stay distinguishable in greyscale and for colour-blind
-  viewers; action letters are always rendered, never colour alone.
-- Every displayed number keeps the precision the engine gave it. Round for
-  display, never for storage.
+## Conventions
+
+- **No blackjack mathematics in TypeScript.** Every number comes from the API. A
+  second implementation is a second thing to be wrong, and this one would have
+  no golden tests behind it. `src/api.ts` is the only module that talks to the
+  service.
+- **Never round for storage.** Values keep the precision the engine gave them;
+  formatting happens at the point of display.
+- **Colour is never the only carrier of meaning.** The action letter is always
+  rendered, and the palettes stay distinguishable in greyscale and for the
+  common colour-vision deficiencies.
+- **The contract is tested.** `tests/unit/test_api.py` parses the TypeScript
+  interfaces in `src/api.ts` and asserts the service actually sends every field
+  they declare. Renaming a field server-side would otherwise leave the UI
+  compiling, rendering, and blank.
+
+## Verified
+
+`tsc --noEmit` under `strict` plus `noUncheckedIndexedAccess`, and `vite build`.
+Both clean. The visual result has **not** been reviewed in a browser — treat the
+layout and palette as a first draft.
+
+## Not built
+
+The spread and risk explorer, the rule-delta view, and the trainer. The engine
+and the API support all three; see [markdown/ToDo.md](../../markdown/ToDo.md).
+Every dependency here is MIT-licensed — see
+[ADR-0005](../../markdown/adr/ADR-0005-licensing.md).
