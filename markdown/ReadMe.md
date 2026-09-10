@@ -219,7 +219,9 @@ silently falls back — that would make a benchmark measure the wrong thing.
 
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
-- **Web application.** `apps/api` and `apps/web` are scaffolds.
+- **Web front end.** `apps/web` is a scaffold. The API it needs is built and
+  tested: fast operations as plain requests, long ones as jobs with progress and
+  cancellation. See [apps/api/README.md](../apps/api/README.md).
 - **Multi-spot play.** The solver assumes heads-up.
 
 ---

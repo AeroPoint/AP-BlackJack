@@ -59,23 +59,16 @@ def _cell(code: str, colour: bool) -> str:
 
 def _load_rules(name: str) -> RuleSet:
     """Load rules by config name, falling back to the built-in presets."""
-    from blackjack.config.loader import load_rules
-    from blackjack.config.models import ConfigError
-    from blackjack.rules import PRESETS
+    from blackjack.config.loader import resolve_rules
 
-    try:
-        return load_rules(name)
-    except ConfigError:
-        if name in PRESETS:
-            return PRESETS[name]
-        raise
+    return resolve_rules(name)
 
 
 def _load_system(name: str) -> CountSystem:
     """Load a counting system by config name or built-in key."""
-    from blackjack.config.loader import load_system
+    from blackjack.config.loader import resolve_system
 
-    return load_system(name)
+    return resolve_system(name)
 
 
 # --- Commands -----------------------------------------------------------------
