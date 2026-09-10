@@ -54,12 +54,19 @@ worth building twice.
 
 ## P1 — The application
 
-- [ ] **FastAPI service.** Endpoints for solve, chart, indices, spread, sim,
-  sidebet, explain. Long solves run as jobs with progress, not blocking requests.
-  *Done when:* the CLI is a thin client over the same service layer, so there is
-  one implementation of every operation.
+- [x] **FastAPI service.** *Done.* Fast operations (solve, explain, sidebet,
+  systems) are plain requests; the long ones (indices, spread, simulate) are
+  jobs with progress and cooperative cancellation. `service.py` holds every
+  operation and imports no web framework, which is the test that the boundary
+  is in the right place; name resolution moved into
+  `blackjack.config.loader` so the CLI and the API cannot disagree about what a
+  config name means.
+  Remaining: the CLI still calls the engine directly rather than going through
+  `service.py`. Harmless today because both bottom out in the same functions,
+  but worth closing before the two grow separate features.
 
-- [ ] **Web UI: strategy chart.** The chart as an interactive grid, coloured by
+- [ ] **Web UI: strategy chart.** *Now the top P1 item; the API it needs is
+  built.* The chart as an interactive grid, coloured by
   action, with an importance overlay toggle (heat by expected leak). Clicking a
   cell opens the full `explain` breakdown.
   *Done when:* changing any rule re-solves and re-renders without a page reload.

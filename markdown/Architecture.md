@@ -68,8 +68,16 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | module | responsibility |
 |---|---|
 | `config/models.py` | Config objects, serialisation, fingerprinting. |
-| `config/loader.py` | YAML/JSON loading and name resolution. |
+| `config/loader.py` | YAML/JSON loading and name resolution, shared by the CLI and the API. |
 | `cli.py` | argparse CLI. Thin — all logic lives in the analysis layer. |
+
+### Presentation
+
+| module | responsibility |
+|---|---|
+| `apps/api/app/service.py` | Every operation, as JSON-safe data. Imports no web framework. |
+| `apps/api/app/jobs.py` | In-process thread pool with progress and cooperative cancel. |
+| `apps/api/app/main.py` | Routes. Request parsing and error mapping, nothing else. |
 
 ---
 
@@ -222,10 +230,26 @@ development were caught by it and by nothing else.
 
 ---
 
+### Fast requests, slow jobs
+
+The API splits on duration, not on kind. A full solve is 31 ms, so it is a plain
+`GET`. An index sweep is seconds, so it is a job: `POST` starts it, `GET` polls
+it, and the progress callback the solver already accepts feeds the response.
+
+Holding a connection open for the slow ones would be wrong even where it works —
+the client cannot show progress, a refresh restarts the work, and a slow request
+is indistinguishable from a hung one.
+
+One ordering detail in `jobs.py` is load-bearing: a job's terminal status is
+assigned **after** every other field. A poller watches `status` to decide the job
+is finished, so flipping it first would let a client see `failed` with no error
+attached. Writing it last makes it the commit point.
+
+---
+
 ## What is scaffolded but not implemented
 
-- `apps/api` — module layout and route stubs.
 - `apps/web` — project skeleton.
 
-Each carries a README stating exactly what is missing. Nothing in the engine
-depends on them.
+It carries a README stating exactly what is missing. Nothing in the engine
+depends on it.
