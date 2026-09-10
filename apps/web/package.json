@@ -22,5 +22,8 @@
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
   },
-  "comment": "Every dependency here is MIT-licensed. See markdown/adr/ADR-0005-licensing.md."
+  "comment": "Every dependency here is MIT-licensed. See markdown/adr/ADR-0005-licensing.md.",
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
 }

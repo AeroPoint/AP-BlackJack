@@ -280,3 +280,39 @@ def test_runner_evicts_old_jobs() -> None:
         assert pool.get(ids[-1]) is not None  # the newest survives
     finally:
         pool.shutdown()
+
+
+# --- The contract with the front end ------------------------------------------
+
+
+def test_response_shape_matches_the_typescript_types(client) -> None:
+    """Every field the web client declares must actually be sent.
+
+    This is the failure a type checker cannot catch and a screenshot would not
+    obviously reveal: rename a field on the server and the UI keeps compiling,
+    keeps rendering, and shows blanks. The TypeScript interfaces in
+    ``apps/web/src/api.ts`` are the contract, so they are parsed and checked
+    against a live response rather than trusted.
+    """
+    import re
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[2] / "apps" / "web" / "src" / "api.ts"
+    if not source.exists():  # pragma: no cover - web client is optional
+        pytest.skip("web client not present")
+    text = source.read_text(encoding="utf-8")
+
+    def declared(interface: str) -> set[str]:
+        match = re.search(rf"export interface {interface} \{{(.*?)\n\}}", text, re.S)
+        assert match, f"no interface {interface} in api.ts"
+        return set(re.findall(r"^\s+(\w+)[?]?:", match.group(1), re.M))
+
+    solved = client.get("/api/solve/vegas6-h17").json()
+    for interface, payload in (
+        ("SolveResult", solved),
+        ("ChartCell", solved["chart"][0]),
+        ("Health", client.get("/api/health").json()),
+        ("Configs", client.get("/api/configs").json()),
+    ):
+        missing = declared(interface) - set(payload)
+        assert not missing, f"{interface}: the client expects {sorted(missing)}"
