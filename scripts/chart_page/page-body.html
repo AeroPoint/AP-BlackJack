@@ -1,0 +1,670 @@
+<div class="wrap">
+  <p class="eyebrow">Blackjack solver &middot; decision importance</p>
+  <h1>Where the money leaks</h1>
+  <p class="standfirst">
+    A basic-strategy chart tells you what to do and nothing about what it costs
+    to be wrong. Standing on 20 instead of hitting is a catastrophe; standing on
+    16 against a ten instead of hitting is worth about <strong>six thousandths
+    of a bet</strong>. Both are one coloured square.
+  </p>
+  <p class="standfirst">
+    Set the rules to the table in front of you, then colour the chart by money
+    instead of by play. There are two different money questions and they have
+    two different answers, so they get two separate views:
+    <strong>cost if wrong</strong> is what one mistake on that square costs you,
+    and <strong>where it leaks</strong> is where your money actually goes once
+    you account for how often the hand turns up and how likely anyone is to
+    misplay it. Standing on 20 is the most expensive mistake on the chart and
+    also leaks nothing, because nobody makes it. Tap any square for both numbers
+    in plain English.
+  </p>
+  <p class="provenance" id="provenance"></p>
+
+  <hr class="rule">
+
+  <div class="controls" id="rule-controls">
+    <div class="field wide">
+      <span>Decks</span>
+      <div class="seg" role="group" aria-label="Decks" data-dim="decks"></div>
+    </div>
+    <div class="field">
+      <span>Dealer on soft 17</span>
+      <div class="seg" role="group" aria-label="Dealer on soft 17" data-dim="h17"></div>
+    </div>
+    <div class="field">
+      <span>Doubling allowed on</span>
+      <div class="seg" role="group" aria-label="Doubling allowed on" data-dim="dbl"></div>
+    </div>
+    <div class="field">
+      <span>Double after split</span>
+      <div class="seg" role="group" aria-label="Double after split" data-dim="das"></div>
+    </div>
+    <div class="field">
+      <span>Resplit aces</span>
+      <div class="seg" role="group" aria-label="Resplit aces" data-dim="rsa"></div>
+    </div>
+    <div class="field">
+      <span>Surrender</span>
+      <div class="seg" role="group" aria-label="Surrender" data-dim="sur"></div>
+    </div>
+    <div class="field">
+      <span>Hole card</span>
+      <div class="seg" role="group" aria-label="Hole card" data-dim="hole"></div>
+    </div>
+    <div class="field">
+      <span>Blackjack pays</span>
+      <div class="seg" role="group" aria-label="Blackjack pays" data-dim="bj"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="field wide">
+      <span>Colour the chart by</span>
+      <div class="seg" role="group" aria-label="Chart colouring" id="modes">
+        <button type="button" data-mode="action" aria-pressed="true">The play</button>
+        <button type="button" data-mode="cost" aria-pressed="false">Cost if wrong</button>
+        <button type="button" data-mode="leak" aria-pressed="false">Where it leaks</button>
+      </div>
+    </div>
+    <label class="field">
+      <span>Your unit</span>
+      <input type="number" id="unit" value="25" min="1" step="5" inputmode="numeric">
+    </label>
+  </div>
+
+  <dl class="summary" id="summary"></dl>
+  <p class="ruleline mono" id="ruleline"></p>
+
+  <div class="cols">
+    <div>
+      <section class="block">
+        <h2>The chart</h2>
+        <p class="lede" id="chart-lede"></p>
+        <div class="legend" id="legend"></div>
+        <div class="tables" id="tables"></div>
+      </section>
+
+      <section class="block">
+        <h2>Study order</h2>
+        <p class="lede">
+          Ranked by what a <em>typical learner</em> actually loses here per
+          hundred rounds &mdash; the EV margin, times how often the hand arises,
+          times how likely they are to misplay it. Numbered because it is a
+          sequence: this is the order worth drilling, and it is not the order any
+          printed chart teaches.
+        </p>
+        <ol class="leaks" id="leaks"></ol>
+      </section>
+
+      <section class="block">
+        <h2>Closest calls</h2>
+        <p class="lede">
+          Squares where the two best plays are within half a percent of a bet.
+          Learn them, but do not agonise: these are the ones that genuinely
+          barely matter.
+        </p>
+        <ul class="calls" id="calls"></ul>
+      </section>
+    </div>
+
+    <aside class="detail" id="detail" aria-live="polite">
+      <div class="grab" aria-hidden="true"></div>
+      <div id="detail-body"></div>
+    </aside>
+  </div>
+
+  <footer>
+    <p>
+      Every number on this page was computed by the solver in this project, not
+      copied from a table. Each of the 480 rule combinations above was solved
+      ahead of time and shipped with the page, which is why the chart changes the
+      instant you change a rule rather than asking a server. Expected values are
+      exact and composition-dependent: the cards you hold are cards the dealer
+      cannot draw, so <code>(10,6)</code> against a ten is a different problem
+      from <code>(9,7)</code> against a ten. Where the two disagree with the
+      printed row, the square lists the exception.
+    </p>
+    <p>
+      The <em>miss rate</em> behind the study order is a model, not a
+      measurement: half at a true coin flip, falling away quickly as the right
+      answer becomes obviously right. Nobody hits a twenty. Once the trainer has
+      real session data it gets replaced by your own measured rate, and the
+      ranking becomes personal rather than generic.
+    </p>
+  </footer>
+</div>
+
+<script id="solver-data" type="application/json">__DATA__</script>
+
+<script>
+  "use strict";
+
+  const DATA = JSON.parse(document.getElementById("solver-data").textContent);
+  const META = DATA.meta;
+  const CHARTS = DATA.charts;
+  const SLOTS = DATA.slots;
+  const SCALE = DATA.scale;
+
+  const ACTION_NAME = { S: "Stand", H: "Hit", D: "Double", P: "Split", R: "Surrender" };
+  const ACTION_VAR = { S: "--act-s", H: "--act-h", D: "--act-d", P: "--act-p", R: "--act-r" };
+  const UPCARDS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 1];
+  const CAT_NAME = { h: "hard", s: "soft", p: "pair" };
+  const CAT_TITLE = { hard: "Hard totals", soft: "Soft totals", pair: "Pairs" };
+  const CAT_NOTE = {
+    hard: "no ace counted as eleven",
+    soft: "an ace still counting as eleven",
+    pair: "before you decide to split",
+  };
+  const BAND_TEXT = {
+    critical: "Never get this wrong.",
+    major: "Worth drilling until it is automatic.",
+    moderate: "Real money over a session.",
+    minor: "Learn it; do not agonise over it.",
+    negligible: "Genuinely close to a coin flip.",
+  };
+
+  /* Transliterated from blackjack/ev/importance.py rather than reinvented, so
+     the page and the engine cannot drift. Thresholds are in units of the
+     original wager. */
+  const MARGIN_BANDS = [
+    [0.2, "critical"],
+    [0.08, "major"],
+    [0.02, "moderate"],
+    [0.005, "minor"],
+  ];
+  const ERROR_SCALE = 0.1;
+
+  const classify = (margin) => {
+    for (const [t, band] of MARGIN_BANDS) if (margin >= t) return band;
+    return "negligible";
+  };
+  const winShare = (ev) => Math.min(1, Math.max(0, (1 + ev) / 2));
+  const closeness = (best, second) => {
+    const denom = winShare(best) + winShare(second);
+    return denom <= 0 ? 1 : Math.min(1, Math.max(0.5, winShare(best) / denom));
+  };
+  const errorRate = (margin) =>
+    margin <= 0 ? 0.5 : 0.5 * Math.exp(-margin / ERROR_SCALE);
+
+  /* Leak colouring, in units lost per 100 rounds. The thresholds are absolute
+     and come off the measured distribution -- the median square sits near 0.001
+     and the worst near 0.046, so a ramp normalised to the worst cell renders
+     almost everything as one indistinguishable pale shade. Fixed bands also
+     mean changing a rule only recolours squares whose price actually moved. */
+  const LEAK_BANDS = [0.0005, 0.002, 0.005, 0.01, 0.02];
+  const LEAK_TICKS = ["0", "0.0005", "0.002", "0.005", "0.01", "0.02+"];
+
+  /* Cost colouring: the raw EV margin, in units of a bet. Its own scale and its
+     own palette, because it is emphatically not the same question as leak --
+     the two rank the chart almost in opposite orders, and collapsing them into
+     one colour is what made the chart unreadable. Seven bands rather than the
+     engine's five severity steps: half the chart sits above 0.20, so the top
+     band has to be split to say anything at all up there. */
+  const COST_BANDS = [0.005, 0.02, 0.08, 0.2, 0.5, 1.0];
+  const COST_TICKS = ["0", "0.5%", "2%", "8%", "20%", "50%", "100%"];
+  const bandOf = (bands, value) => {
+    let b = 0;
+    while (b < bands.length && value >= bands[b]) b += 1;
+    return b;
+  };
+  const leakBand = (leak) => bandOf(LEAK_BANDS, leak);
+  const costBand = (margin) => bandOf(COST_BANDS, margin);
+
+  const state = {
+    rules: {
+      decks: 6,
+      h17: true,
+      dbl: "any2",
+      das: true,
+      rsa: true,
+      sur: "none",
+      hole: "peek",
+      bj: "3:2",
+    },
+    mode: "action",
+    unit: 25,
+    key: "hard/16/10", // 16 against a ten: the most argued-about square in the game
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const rankName = (r) => (r === 1 ? "A" : r === 10 ? "T" : String(r));
+
+  const DIMS = {
+    decks: DATA.dims.decks.map((d) => [d, String(d)]),
+    h17: [[true, "Hits"], [false, "Stands"]],
+    dbl: [["any2", "Any two"], ["9-11", "9–11"], ["10-11", "10–11"]],
+    das: [[true, "Allowed"], [false, "No"]],
+    rsa: [[true, "Allowed"], [false, "No"]],
+    sur: [["none", "None"], ["late", "Late"]],
+    hole: [["peek", "Dealer peeks"], ["enhc", "No hole card"]],
+    bj: DATA.dims.payouts.map((p) => [p, p]),
+  };
+
+  const comboKey = (r) =>
+    [r.decks, r.h17 ? 1 : 0, r.dbl, r.das ? 1 : 0, r.rsa ? 1 : 0, r.sur, r.hole].join("|");
+
+  /* Decode one pre-solved combination and derive its importance numbers.
+     Memoised on the record: a rule toggle should feel instant, and the decode
+     is the only work between the click and the repaint. */
+  function cells() {
+    const rec = CHARTS[comboKey(state.rules)];
+    if (rec._cells) return rec._cells;
+
+    const meta = META[String(state.rules.decks)];
+    const list = [];
+    const byKey = new Map();
+    let p = 0;
+
+    for (let i = 0; i < rec.a.length; i += 1) {
+      const entry = meta.cells[i];
+      const cat = CAT_NAME[entry[0]];
+      const row = entry[1];
+      const up = entry[2];
+      const mask = rec.m[i];
+      const evs = {};
+      for (let b = 0; b < SLOTS.length; b += 1) {
+        if (mask & (1 << b)) evs[SLOTS[b]] = rec.ev[p++] / SCALE;
+      }
+      const ordered = Object.entries(evs).sort((a, b) => b[1] - a[1]);
+      const runner = ordered.length > 1 ? ordered[1] : null;
+      const margin = runner ? ordered[0][1] - runner[1] : 0;
+      const share = runner ? closeness(ordered[0][1], runner[1]) * 100 : 100;
+      const freq = meta.freq[i];
+      const err = errorRate(margin);
+
+      const cell = {
+        cat: cat,
+        row: row,
+        up: up,
+        label: entry[3],
+        act: rec.a[i],
+        ordered: ordered,
+        runner: runner ? runner[0] : null,
+        margin: margin,
+        freq: freq,
+        err: err,
+        leak: margin * freq * 100 * err,
+        band: classify(margin),
+        split: share.toFixed(1) + " / " + (100 - share).toFixed(1),
+        exceptions: rec.x[String(i)] || null,
+        key: cat + "/" + row + "/" + up,
+      };
+      list.push(cell);
+      byKey.set(cell.key, cell);
+    }
+
+    rec._cells = {
+      list: list,
+      byKey: byKey,
+      rec: rec,
+      meta: meta,
+      totalLeak: list.reduce((s, c) => s + c.leak, 0),
+      leaks: list.slice().sort((a, b) => b.leak - a.leak).slice(0, 14),
+      close: list
+        .filter((c) => c.margin < 0.005)
+        .sort((a, b) => a.margin - b.margin)
+        .slice(0, 8),
+    };
+    return rec._cells;
+  }
+
+  const fmt = {
+    ev: (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(5),
+    pct: (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(d || 4) + "%",
+    pts: (v) => (v <= 0 ? "0.0000" : "+" + v.toFixed(4)),
+    money: (v) => {
+      const a = Math.abs(v);
+      return (v < 0 ? "−" : "") + a.toFixed(a < 10 ? 2 : 0);
+    },
+  };
+
+  // --- rule controls ------------------------------------------------------
+
+  function renderControls() {
+    document.querySelectorAll("div[data-dim]").forEach((seg) => {
+      const dim = seg.dataset.dim;
+      seg.innerHTML = DIMS[dim]
+        .map(
+          (opt) =>
+            `<button type="button" data-dim="${dim}" data-value="${String(opt[0])}"` +
+            ` aria-pressed="${String(state.rules[dim]) === String(opt[0])}">${opt[1]}</button>`
+        )
+        .join("");
+    });
+  }
+
+  function setRule(dim, raw) {
+    const match = DIMS[dim].filter((opt) => String(opt[0]) === raw)[0];
+    if (!match || state.rules[dim] === match[0]) return;
+    state.rules[dim] = match[0];
+    renderControls();
+    renderAll();
+  }
+
+  // --- header -------------------------------------------------------------
+
+  function renderProvenance() {
+    $("provenance").textContent =
+      `engine ${DATA.engine} · ${Object.keys(CHARTS).length} rule combinations ` +
+      `solved ahead of time · ${META[String(state.rules.decks)].cells.length} squares in this one`;
+  }
+
+  /* Five tiles, and deliberately five *different* facts. An earlier version put
+     the house edge, the basic-strategy EV and the perfect-play ceiling side by
+     side, which in a shoe game is one number printed three times. */
+  function renderSummary() {
+    const c = cells();
+    const r = state.rules;
+    const edge = -c.rec.edge[r.bj] * 100;
+
+    $("summary").innerHTML = `
+      <div class="${edge > 1 ? "hot" : ""}">
+        <dt>House edge</dt>
+        <dd>${edge.toFixed(4)}<small>% &middot; perfect basic</small></dd>
+      </div>
+      <div>
+        <dt>Swing per round</dt>
+        <dd>&plusmn;${c.rec.sd.toFixed(3)}<small> units, 1&sigma;</small></dd>
+      </div>
+      <div>
+        <dt>Card-perfect play adds</dt>
+        <dd>${fmt.pts(c.rec.cd)}<small> pts</small></dd>
+      </div>
+      <div>
+        <dt>Insurance, off the top</dt>
+        <dd>${fmt.pct(c.meta.insurance, 2)}</dd>
+      </div>
+      <div class="hot">
+        <dt>A learner leaks</dt>
+        <dd>${c.totalLeak.toFixed(3)}<small> / 100 rounds &middot; ${fmt.money(c.totalLeak * state.unit)}</small></dd>
+      </div>`;
+
+    $("ruleline").textContent = [
+      `${r.decks}D`,
+      r.h17 ? "H17" : "S17",
+      r.dbl === "any2" ? "double any two" : "double " + r.dbl + " only",
+      r.das ? "DAS" : "no DAS",
+      r.rsa ? "RSA" : "no RSA",
+      r.sur === "late" ? "late surrender" : "no surrender",
+      r.hole === "enhc" ? "no hole card" : "dealer peeks",
+      `blackjack pays ${r.bj}`,
+    ].join("  ·  ");
+  }
+
+  // --- chart --------------------------------------------------------------
+
+  function ramp(prefix, ticks, extra) {
+    const steps = ticks
+      .map((tick, b) => `<div><i class="${prefix}${b}"></i><b>${tick}</b></div>`)
+      .join("");
+    return (
+      `<div class="scale" style="--steps:${ticks.length}">${steps}</div>` +
+      `<p class="scale-note">${extra}</p>`
+    );
+  }
+
+  function renderLegend() {
+    const legend = $("legend");
+    legend.className = state.mode === "action" ? "legend" : "legend stack";
+
+    if (state.mode === "action") {
+      legend.innerHTML = Object.keys(ACTION_NAME)
+        .map(
+          (a) =>
+            `<span class="k"><i class="sw" style="background:var(${ACTION_VAR[a]})"></i>${ACTION_NAME[a]}</span>`
+        )
+        .join("");
+      $("chart-lede").textContent =
+        "One colour per play. This is the chart everybody has seen.";
+    } else if (state.mode === "cost") {
+      legend.innerHTML = ramp(
+        "cg",
+        COST_TICKS,
+        "What <b>one</b> mistake on that square costs, as a share of your bet. " +
+          "Pale means the two best plays are nearly equal — those are the squares " +
+          "you are allowed to get wrong."
+      );
+      $("chart-lede").textContent =
+        "Banded by the price of a single mistake. The darkest squares are the ones with no argument to them — standing on 20, splitting eights — and the palest are the genuine coin flips like 16 against a ten.";
+    } else {
+      legend.innerHTML = ramp(
+        "lk",
+        LEAK_TICKS,
+        "Units actually lost per 100 rounds. Pale here means one of two things: " +
+          "either the square is cheap to get wrong, <b>or</b> it is so obvious " +
+          "that nobody gets it wrong. Switch to <b>cost if wrong</b> to tell those apart."
+      );
+      $("chart-lede").textContent =
+        "Banded by where the money really goes: price of the mistake, times how often the hand arrives, times how likely anyone is to misplay it. This is the drill list, and it looks nothing like the cost view — the money is in stiff totals against a ten, not in the spectacular plays.";
+    }
+  }
+
+  function renderTables() {
+    const c = cells();
+    const groups = { hard: new Map(), soft: new Map(), pair: new Map() };
+    for (const cell of c.list) {
+      if (!groups[cell.cat].has(cell.row)) groups[cell.cat].set(cell.row, new Map());
+      groups[cell.cat].get(cell.row).set(cell.up, cell);
+    }
+
+    const mode = state.mode;
+    let html = "";
+    for (const cat of ["hard", "soft", "pair"]) {
+      const rows = [...groups[cat].keys()].sort((a, b) => a - b);
+      if (!rows.length) continue;
+      html += `<div><div class="tbl-head"><h3>${CAT_TITLE[cat]}</h3><span>${CAT_NOTE[cat]}</span></div>`;
+      html += `<div class="scroller"><table class="grid"><thead><tr><th><span class="sr">Your hand</span></th>`;
+      html += UPCARDS.map((u) => `<th scope="col">${rankName(u)}</th>`).join("");
+      html += `</tr></thead><tbody>`;
+      for (const row of rows) {
+        const inRow = groups[cat].get(row);
+        html += `<tr><th scope="row">${inRow.values().next().value.label}</th>`;
+        for (const up of UPCARDS) {
+          const cell = inRow.get(up);
+          if (!cell) {
+            html += `<td></td>`;
+            continue;
+          }
+          let cls = "cellbtn";
+          let style = ` style="background:var(${ACTION_VAR[cell.act]})"`;
+          let tip = `${ACTION_NAME[cell.act]}, margin ${cell.margin.toFixed(4)}`;
+          if (mode === "cost") {
+            cls = `cellbtn cg${costBand(cell.margin)}`;
+            style = "";
+            tip = `costs ${(cell.margin * 100).toFixed(2)}% of a bet if misplayed`;
+          } else if (mode === "leak") {
+            cls = `cellbtn lk${leakBand(cell.leak)}`;
+            style = "";
+            tip = `leaks ${cell.leak.toFixed(4)} units per 100 rounds`;
+          }
+          tip = `${cell.label} vs ${rankName(up)} — ${tip}`;
+          html +=
+            `<td><button type="button" class="${cls}" data-k="${cell.key}"` +
+            ` aria-pressed="${cell.key === state.key}"${style} title="${tip}"` +
+            ` aria-label="${cell.label} against ${rankName(up)}: ${ACTION_NAME[cell.act]}">${cell.act}</button></td>`;
+        }
+        html += `</tr>`;
+      }
+      html += `</tbody></table></div></div>`;
+    }
+    $("tables").innerHTML = html;
+  }
+
+  // --- lists --------------------------------------------------------------
+
+  function renderLeaks() {
+    $("leaks").innerHTML = cells()
+      .leaks.map(
+        (c) =>
+          `<li class="row" data-k="${c.key}" tabindex="0" role="button">` +
+          `<div><div class="leakhand">${c.label} <em>vs</em> ${rankName(c.up)}</div>` +
+          `<div class="leakwhy">${ACTION_NAME[c.act]}` +
+          `${c.runner && c.runner !== c.act ? ", not " + ACTION_NAME[c.runner] : ""}` +
+          ` &middot; missed ${(c.err * 100).toFixed(0)}% of the time</div></div>` +
+          `<div class="leaknum">${c.leak.toFixed(4)}` +
+          `<br><span class="muted" style="font-size:11px">units / 100</span></div></li>`
+      )
+      .join("");
+  }
+
+  function renderCalls() {
+    const list = cells().close;
+    $("calls").innerHTML = list.length
+      ? list
+          .map(
+            (c) =>
+              `<li data-k="${c.key}" tabindex="0" role="button">` +
+              `<span class="h">${c.label} vs ${rankName(c.up)}</span>` +
+              `<span>${ACTION_NAME[c.act]} over ${c.runner ? ACTION_NAME[c.runner] : "—"}</span>` +
+              `<span class="mono muted">${c.split}</span>` +
+              `<span class="mono muted">margin ${c.margin.toFixed(5)}</span></li>`
+          )
+          .join("")
+      : `<li class="muted">Nothing under half a percent of a bet at these rules.</li>`;
+  }
+
+  // --- detail -------------------------------------------------------------
+
+  /* Says both numbers out loud. The chart cannot encode "expensive but nobody
+     gets it wrong" in one colour, so the panel spells that case out by name. */
+  function reading(c) {
+    const cost = (c.margin * 100).toFixed(2);
+    const cb = costBand(c.margin);
+    const lb = leakBand(c.leak);
+    const per100 = c.leak.toFixed(4);
+    const miss = (c.err * 100).toFixed(0);
+    const head = `One mistake here costs <b>${cost}% of a bet</b>.`;
+
+    if (cb >= 3 && lb <= 1) {
+      return (
+        `${head} That is near the top of the chart — and it still leaks only ` +
+        `<b>${per100}</b> units per 100 rounds, because at a ${c.split} split the right ` +
+        `play is obvious and the modelled miss rate is just ${miss}%. Expensive, ` +
+        `settled, and the last thing worth your drill time.`
+      );
+    }
+    if (lb >= 3) {
+      return (
+        `${head} It turns up on ${(c.freq * 100).toFixed(2)}% of rounds and reads ` +
+        `${c.split}, close enough to misplay ${miss}% of the time — so it leaks ` +
+        `<b>${per100}</b> units per 100 rounds. This is a square worth drilling.`
+      );
+    }
+    if (cb <= 1) {
+      return (
+        `${head} At a ${c.split} split this is barely a decision: play it either ` +
+        `way and you will not notice. It leaks <b>${per100}</b> units per 100 rounds.`
+      );
+    }
+    return (
+      `${head} At a ${c.split} split it is missed about ${miss}% of the time, ` +
+      `which works out to <b>${per100}</b> units per 100 rounds — real money over a ` +
+      `long session, but not where the bleeding is.`
+    );
+  }
+
+  function renderDetail() {
+    const c = cells().byKey.get(state.key);
+    if (!c) {
+      $("detail-body").innerHTML = `<p class="muted">Tap a square.</p>`;
+      return;
+    }
+    const bestEv = c.ordered[0][1];
+    const rows = c.ordered
+      .map(
+        (pair, i) =>
+          `<tr class="${i === 0 ? "best" : ""}">` +
+          `<td>${ACTION_NAME[pair[0]]}${i === 0 ? ' <span class="tick">&larr;</span>' : ""}</td>` +
+          `<td class="n">${fmt.ev(pair[1])}</td>` +
+          `<td class="n gap">${i === 0 ? "" : "−" + (bestEv - pair[1]).toFixed(4)}</td></tr>`
+      )
+      .join("");
+
+    const ex = c.exceptions ? Object.entries(c.exceptions) : [];
+    const exHtml = ex.length
+      ? `<div class="exceptions"><h4>Composition-dependent exceptions</h4>` +
+        `<p>These exact hands play differently from the row, because the cards you hold are cards the dealer cannot draw.</p>` +
+        `<div>${ex.map((e) => `<code>${e[0]}</code> &rarr; ${ACTION_NAME[e[1]]}`).join(" &nbsp; ")}</div></div>`
+      : "";
+
+    $("detail-body").innerHTML = `
+      <h2>${c.label} <em>vs</em> ${rankName(c.up)}</h2>
+      <p class="sub">EV per unit wagered, against a full ${state.rules.decks}-deck shoe.</p>
+      <table class="evs"><tbody>${rows}</tbody></table>
+      <dl class="stats">
+        <div><dt>Cost of the near miss</dt>
+          <dd>${c.margin.toFixed(5)} &nbsp;<span class="muted">${fmt.money(c.margin * state.unit)}</span></dd></div>
+        <div><dt>Read as a split</dt><dd>${c.split}</dd></div>
+        <div><dt>How often it comes up</dt><dd>${(c.freq * 100).toFixed(3)}%</dd></div>
+        <div><dt>Learner miss rate</dt><dd>${(c.err * 100).toFixed(0)}%</dd></div>
+        <div><dt>Leak per 100 rounds</dt>
+          <dd>${c.leak.toFixed(5)} &nbsp;<span class="muted">${fmt.money(c.leak * state.unit)}</span></dd></div>
+      </dl>
+      <p class="verdict ${c.band}"><b>${c.band}</b> <span>&mdash; ${BAND_TEXT[c.band]}</span></p>
+      <p class="reading">${reading(c)}</p>
+      ${exHtml}`;
+  }
+
+  // --- wiring -------------------------------------------------------------
+
+  function select(key) {
+    if (!cells().byKey.has(key)) return;
+    state.key = key;
+    document.querySelectorAll(".cellbtn").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.k === key));
+    });
+    renderDetail();
+  }
+
+  function renderAll() {
+    renderProvenance();
+    renderSummary();
+    renderLegend();
+    renderTables();
+    renderLeaks();
+    renderCalls();
+    if (!cells().byKey.has(state.key)) state.key = "hard/16/10";
+    renderDetail();
+  }
+
+  $("unit").addEventListener("input", (e) => {
+    state.unit = Math.max(1, Number(e.target.value) || 1);
+    renderSummary();
+    renderDetail();
+  });
+
+  function setMode(mode) {
+    state.mode = mode;
+    $("modes")
+      .querySelectorAll("button")
+      .forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+    renderLegend();
+    renderTables();
+  }
+
+  document.addEventListener("click", (e) => {
+    const mode = e.target.closest("#modes button[data-mode]");
+    if (mode) {
+      setMode(mode.dataset.mode);
+      return;
+    }
+    const rule = e.target.closest("button[data-dim][data-value]");
+    if (rule) {
+      setRule(rule.dataset.dim, rule.dataset.value);
+      return;
+    }
+    const target = e.target.closest("[data-k]");
+    if (target) select(target.dataset.k);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const target = e.target.closest("li[data-k]");
+    if (target) {
+      e.preventDefault();
+      select(target.dataset.k);
+    }
+  });
+
+  renderControls();
+  renderAll();
+</script>
