@@ -176,11 +176,13 @@ src/blackjack/       the engine (stdlib only)
   sim/       Monte Carlo simulator and compiled strategies
   bankroll/  true-count distribution, risk maths, bet spreads
   sidebets/  paytable-driven side-bet analysis
+  train/     grading, drill selection, free-play loop and table state machine
   config/    config models and loading
   cli.py     argparse CLI
 crates/blackjack-core/   Rust accelerator (PyO3); ev/native.py is the bridge
 apps/api/                FastAPI service
 apps/web/                React front end
+scripts/                 licence check; chart_page/ builds the shareable page
 configs/                 rules, counting systems, spreads, paytables, profiles
 markdown/                documentation and ADRs
 environment/             bootstrap scripts and the launcher
@@ -201,3 +203,10 @@ tests/                   unit, golden, parity
   `.gitignore` covers `out/`, `runs/`, `data/cache/`.
 - **Attribute honestly.** If a number came from a published source rather than
   this solver, say so in the docstring.
+- **`scripts/chart_page/page-body.html` carries a transliteration of
+  `ev/importance.py`.** It is the one deliberate duplication of engine logic in
+  the repository: the page has no server, and shipping the model per cell would
+  have tripled the payload. Both files say so. If you change the severity
+  thresholds, the closeness transform or the error model, change both — and
+  re-run the build, which checks that the shipped action still equals the argmax
+  of the shipped EVs for all 480 combinations.

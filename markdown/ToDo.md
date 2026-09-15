@@ -74,13 +74,26 @@ worth building twice.
   `service.py`. Harmless today because both bottom out in the same functions,
   but worth closing before the two grow separate features.
 
+- [x] **Standalone chart page.** *Done and reviewed.* `scripts/chart_page/`
+  bakes all 480 rule combinations into one self-contained HTML file: every table
+  rule is its own control, and the chart colours three ways — the play, cost if
+  wrong, and where it leaks. No server, works from a link on a phone.
+  The two money scales exist because one colour could not carry both questions;
+  53% of the chart was pale in the leak view for two opposite reasons. That
+  finding is written up in
+  [DecisionImportance.md](DecisionImportance.md#two-questions-one-square) and it
+  applies to every surface that shows importance, not just this page.
+  Reproducible: `build.py` regenerates the published file byte for byte.
+
 - [~] **Web UI: strategy chart.** *Built, not visually reviewed.* Interactive
   grid with the action/expected-leak colouring toggle, a detail panel pricing
   every action, and a rule selector that re-solves in ~31 ms. Typechecks under
   strict TypeScript and builds clean; the API contract is enforced by a test
   that parses `apps/web/src/api.ts`.
   *Remaining:* nobody has looked at it in a browser. Layout and palette are a
-  first draft.
+  first draft. It also still has the **single leak colouring** that the chart
+  page proved unreadable — porting the two-scale split and the per-rule controls
+  across is the first thing to do here, and is worth more than any new screen.
 
 - [ ] **Web UI: spread and risk explorer.** Ramp editor with live EV/hour, N0,
   SCORE and risk-of-ruin readouts, and the per-count contribution chart.
@@ -161,6 +174,18 @@ The terminal versions are built. What remains is depth and a UI.
 
 - [ ] **Chart export.** PDF/PNG of a strategy chart and index card, sized for a
   wallet, coloured by importance. This is the artefact people actually want.
+  The chart page already solves the colouring question; this is the print target.
+
+- [ ] **Importance under a count.** Margins move with the count: a cell that is
+  negligible at neutral can be major at +4, and the leak view would reorder
+  accordingly. The machinery exists — solve at a tilted composition and
+  re-analyse — so this is a presentation question, not a maths one.
+
+- [ ] **Persist measured miss rates across sessions.** `bj drill` already blends
+  the generic error model toward the player's own rate within a session, but
+  throws it away at exit. Persisting it turns the leak view from a claim about
+  learners in general into a claim about you, which is the point of the whole
+  model. Highest-value remaining change to the importance work.
 
 - [ ] **Session tracker import.** `../Blackjack Tracker.xlsx` holds real session
   data. Import it, compare realised results against the model's EV and SD, and
@@ -189,8 +214,16 @@ The terminal versions are built. What remains is depth and a UI.
 - Post-split decisions are played in free play but not graded: a single chart
   cell does not capture the split context, so the trainer stays quiet rather
   than grading against the wrong standard.
-- The web UI has never been opened in a browser. It typechecks and builds, and
-  its data contract is tested, but the layout and palette are unreviewed.
+- The React web UI has never been opened in a browser. It typechecks and builds,
+  and its data contract is tested, but the layout and palette are unreviewed —
+  and it still colours the chart by leak alone, which the standalone chart page
+  established is ambiguous.
+  The standalone page under `scripts/chart_page/` *has* been reviewed; it is the
+  only user interface in this project that has.
+- The chart page reimplements the importance model in JavaScript. It is a
+  transliteration of `ev/importance.py`, noted as such in both files, but it is a
+  second copy with no test holding the two together. Changing thresholds or the
+  error model means changing both.
 - Job state is lost when the API restarts, by design. Every job is reproducible
   from its request plus the recorded fingerprint.
 - `bj` still calls the engine directly rather than going through

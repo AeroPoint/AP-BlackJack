@@ -46,6 +46,13 @@ The feature that motivated the project. Every chart cell carries four numbers:
 | **frequency** | How often the cell actually occurs per round. |
 | **expected leak** | Cost × frequency × modelled chance of getting it wrong. |
 
+Margin and expected leak answer **different questions** and rank the chart in
+nearly opposite orders. Standing on 20 is the most expensive mistake available
+and leaks nothing, because nobody makes it; 16 against a ten is nearly free to
+get wrong and leaks steadily, because everybody does. Anything presenting
+importance has to keep the two apart — see
+[DecisionImportance.md](DecisionImportance.md#two-questions-one-square).
+
 ```
 $ bj explain T6 T
 T6 against T  --  Vegas Strip 6D H17 DAS
@@ -145,7 +152,7 @@ stated plainly: it ranks systems in almost exactly the published order (Spearman
 the ranking, not the levels — matching levels would mean tuning a constant to one
 author's table. See [Counting.md](Counting.md).
 
-### 9. Trainer and free play
+### 8. Trainer and free play
 
 Both are built and usable from the terminal. The engine solving in milliseconds
 is what makes them possible: **every decision is graded against the cards
@@ -189,7 +196,7 @@ Sessions end with the leaks named:
     12 v 4         3/4 missed, 0.4180 units (10.45)
 ```
 
-### 10. Native core
+### 9. Native core
 
 The Rust accelerator in `crates/blackjack-core` is implemented and validated. It
 ports the two hot recursions — dealer probabilities and player EVs — and
@@ -213,18 +220,47 @@ The engine falls back to Python automatically when no core is built, and
 `solve(..., backend="python"|"rust")` forces either path. A forced backend never
 silently falls back — that would make a benchmark measure the wrong thing.
 
+### 10. The shareable chart page
+
+One self-contained HTML file, built by `scripts/chart_page/`, that puts the whole
+importance model in front of someone on a phone with no server behind it:
+
+```bash
+uv run python scripts/chart_page/build.py out/money-leaks.html
+```
+
+Every table rule is its own control — decks, soft 17, doubling, DAS, resplit
+aces, surrender, hole card, blackjack payout — and all **480 combinations are
+solved ahead of time** and shipped inside the file, 4.8 MB in about 18 seconds.
+That is affordable because of two facts the engine makes clear and the generator
+asserts rather than assumes: the blackjack payout changes no chart cell at all,
+and deal frequencies depend only on the deck count.
+
+The chart colours three ways: the play, **cost if wrong** (the margin) and
+**where it leaks** (the margin discounted by frequency and the chance of the
+mistake). The last two are separate scales on purpose. See
+[scripts/chart_page/README.md](../scripts/chart_page/README.md).
+
+This is currently the **only reviewed user interface in the project**, and it is
+where the feedback that shaped the importance presentation came from.
+
 ---
 
 ## What is not built yet
 
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
-- **Web front end.** The strategy-chart screen is built — interactive grid,
-  action/leak colouring toggle, per-action pricing panel — and typechecks and
-  builds clean, but **nobody has looked at it in a browser**, so treat the
-  layout and palette as a first draft. The spread explorer, rule-delta view and
-  trainer screens are not started. See
+- **Web front end.** The React strategy-chart screen is built — interactive grid,
+  colouring toggle, per-action pricing panel — and typechecks and builds clean,
+  but **nobody has looked at it in a browser**, so treat the layout and palette
+  as a first draft. It also still carries the single leak colouring that the
+  standalone chart page showed to be ambiguous. The spread explorer, rule-delta
+  view and trainer screens are not started. See
   [apps/web/README.md](../apps/web/README.md).
+- **Persistent player statistics.** `bj drill` measures your miss rate per cell
+  and blends the drill weighting toward it, but discards it at exit. Until that
+  persists, the expected-leak model describes learners in general rather than
+  you.
 - **Multi-spot play.** The solver assumes heads-up.
 
 ---
@@ -277,6 +313,7 @@ See [environment/README.md](../environment/README.md).
 | [ConfigControl.md](ConfigControl.md) | Configuration, reproducibility, provenance |
 | [Glossary.md](Glossary.md) | Terms, for anyone who is not a card counter |
 | [ToDo.md](ToDo.md) | Prioritised backlog |
+| [../scripts/chart_page/README.md](../scripts/chart_page/README.md) | How the shareable chart page is built, and why it is pre-solved |
 | [adr/](adr/) | Architecture decision records |
 | [../AGENTS.md](../AGENTS.md) | Conventions for AI agents and contributors |
 
