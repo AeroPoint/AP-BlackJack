@@ -105,6 +105,88 @@ novice error that no chart flags as more urgent than any other square.
 
 ---
 
+## Two questions, one square
+
+This is the part that took a wrong turn first, so it is written down.
+
+The obvious thing to do with `expected_leak_per_100` is colour the chart by it.
+That was built, and it was unreadable. The complaint that came back was exact:
+*"there are choices that are awful that are grey and ones that aren't too bad
+that are also grey."*
+
+Both observations were correct, and the cause is in the formula. Leak is
+
+```
+margin × frequency × P(you misplay it)
+```
+
+and that last factor collapses precisely the cells with the largest margins.
+Standing on 20 against an 8 costs **1.64 of a bet** if you get it wrong and leaks
+**0.0000** units per 100 rounds, because the modelled miss rate is effectively
+zero. Sixteen against a ten costs **0.0065** and leaks a middling amount, because
+it is a coin flip anyone can get wrong. Both render pale, for opposite reasons.
+
+In 6D H17, **192 of 360 squares** are pale in the leak view while sitting in the
+`major` or `critical` margin bands. That is 53% of the chart, so this is not an
+edge case in the presentation — it is most of it.
+
+### The resolution
+
+One colour cannot carry two facts, so the chart offers two scales and names each
+one. No relabelling would have worked; the views had to be split.
+
+| view | encodes | answers |
+|---|---|---|
+| **Cost if wrong** | `margin` | "How bad is one mistake on this square?" |
+| **Where it leaks** | `expected_leak_per_100` | "Where does my money actually go?" |
+
+They rank the chart in nearly opposite orders, which is the whole point. The cost
+view puts `20 v 8` at the top and `16 v T` at the bottom; the leak view does the
+reverse.
+
+Both scales are **absolute**, in fixed bands, rather than normalised to the worst
+cell in the current rule set. A normalised ramp means changing one rule
+recolours squares whose price never moved, which destroys the reader's ability to
+compare two rule sets — and because leak is extremely skewed (median 0.001 against
+a maximum of 0.046), it also buries almost everything in one shade.
+
+Cost bands, in units of a bet:
+
+| band | 0 | 0.005 | 0.02 | 0.08 | 0.20 | 0.50 | 1.00+ |
+|---|---|---|---|---|---|---|---|
+| 6D H17 cells | 3 | 15 | 64 | 105 | 128 | 26 | 19 |
+
+Seven bands rather than the five severity steps below, because half the chart
+sits above 0.20 and a single top band says nothing up there. All seven are
+populated in all 480 rule combinations the chart page ships.
+
+Leak bands, in units per 100 rounds:
+
+| band | 0 | 0.0005 | 0.002 | 0.005 | 0.01 | 0.02+ |
+|---|---|---|---|---|---|---|
+| 6D H17 cells | 100 | 143 | 54 | 41 | 16 | 6 |
+
+### And then say it in words
+
+Colour should not have been carrying this alone in the first place. Every square
+now also gets a sentence combining both numbers, which is the form the trainer
+wants anyway:
+
+> **20 vs 8** — One mistake here costs **164.05% of a bet**. That is near the top
+> of the chart — and it still leaks only **0.0000** units per 100 rounds, because
+> at a 92.3 / 7.7 split the right play is obvious and the modelled miss rate is
+> just 0%. Expensive, settled, and the last thing worth your drill time.
+
+> **13 vs T** — One mistake here costs **11.74% of a bet**. It turns up on 2.56%
+> of rounds and reads 55.7 / 44.3, close enough to misplay 15% of the time — so
+> it leaks **0.0464** units per 100 rounds. This is a square worth drilling.
+
+The lesson generalises past this chart: any metric that multiplies a magnitude by
+a probability of occurrence will send both "huge but rare" and "small but common"
+to the same output, and a single visual channel cannot un-multiply them.
+
+---
+
 ## Severity bands
 
 Thresholds in units of a bet, calibrated so that the cells experienced players
@@ -159,19 +241,25 @@ A7 against 6  --  Vegas Strip 6D H17 DAS
 
 **`bj chart --importance`** adds the drill order and the closest calls.
 
-**Free play** (planned) uses `mistake_cost(evs, chosen)` to grade every decision
-and `DecisionAnalysis.explain(unit)` to phrase the feedback. Both exist and are
-tested; what is missing is the game loop and the UI. See [ToDo.md](ToDo.md).
+**`bj play`** uses `mistake_cost(evs, chosen)` to grade every decision and
+`DecisionAnalysis.explain(unit)` to phrase the feedback, against the cards
+actually left in the shoe. **`bj drill`** samples cells in proportion to
+`margin × frequency × P(you miss it)`, with that last term blending from the
+generic model toward the player's measured rate as evidence accumulates.
+
+**The chart page** (`scripts/chart_page/`) is the visual form of this document:
+every square priced, both scales, 480 rule combinations pre-solved into one
+standalone HTML file.
 
 ---
 
 ## Planned extensions
 
-- **Heat-mapped chart.** Colour each cell by expected leak rather than by action,
-  so the chart itself shows where the money is. The visual answer to the question
-  this document is about.
 - **Empirical error rates.** Replace the modelled `error_likelihood` with the
-  player's own measured miss rate per cell.
+  player's own measured miss rate per cell. `bj drill` already blends toward it
+  within a session; what is missing is persistence across sessions. This is the
+  single highest-value remaining change to this model, because it turns the leak
+  view from a statement about learners in general into a statement about you.
 - **Importance under a count.** Margins move with the count; a cell that is
   negligible at neutral can be major at +4. The machinery exists — solve at a
   tilted composition and re-analyse.

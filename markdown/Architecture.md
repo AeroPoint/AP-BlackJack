@@ -78,6 +78,13 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | `apps/api/app/service.py` | Every operation, as JSON-safe data. Imports no web framework. |
 | `apps/api/app/jobs.py` | In-process thread pool with progress and cooperative cancel. |
 | `apps/api/app/main.py` | Routes. Request parsing and error mapping, nothing else. |
+| `scripts/chart_page/` | Bakes the solver's output into one standalone HTML file. |
+
+The chart page is presentation with no service behind it at all: every rule
+combination is solved ahead of time and shipped inside the file, so it works from
+a link on a phone. That constraint is what makes it a useful forcing function —
+it cannot hide a slow path behind a spinner, and it cannot quietly ask the engine
+a follow-up question. See [scripts/chart_page/README.md](../scripts/chart_page/README.md).
 
 ---
 
@@ -249,7 +256,9 @@ attached. Writing it last makes it the commit point.
 
 ## What is scaffolded but not implemented
 
-- `apps/web` — project skeleton.
+- `apps/web` — the strategy-chart screen is built and typechecks, but has never
+  been opened in a browser. The spread explorer, rule-delta view and trainer
+  screens are not started.
 
 It carries a README stating exactly what is missing. Nothing in the engine
 depends on it.
