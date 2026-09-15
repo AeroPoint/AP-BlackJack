@@ -47,8 +47,10 @@ powershell -ExecutionPolicy Bypass -File environment\bootstrap.ps1
 | path | contents |
 |---|---|
 | `src/blackjack/` | The engine. Standard library only. |
-| `crates/blackjack-core/` | Rust accelerator (PyO3). Scaffold. |
-| `apps/api/`, `apps/web/` | FastAPI service and React front end. Scaffolds. |
+| `crates/blackjack-core/` | Rust accelerator (PyO3). Implemented; 125x on a full solve. |
+| `apps/api/` | FastAPI service. Implemented. |
+| `apps/web/` | React front end. Strategy chart built, never opened in a browser. |
+| `scripts/chart_page/` | Builds the standalone shareable chart page. |
 | `configs/` | Rules, counting systems, spreads, paytables, profiles. |
 | `markdown/` | Documentation and architecture decision records. |
 | `environment/` | Bootstrap scripts and the development launcher. |
@@ -64,10 +66,16 @@ Start with [markdown/ReadMe.md](markdown/ReadMe.md), then
 
 Working and validated against published figures: the exact solver, chart
 generation, the decision-importance model, index derivation, bet-spread and risk
-analysis, side bets, and the simulator.
+analysis, exact variance, side bets, the simulator, the counting-system
+correlations, the Rust core, the FastAPI service, and the terminal trainer
+(`bj drill` and `bj play`).
 
-Scaffolded but not implemented: the Rust core, the web application, and the
-trainer. See [markdown/ToDo.md](markdown/ToDo.md).
+The one reviewed piece of user interface is the standalone chart page built by
+`scripts/chart_page/` — a single self-contained HTML file with all 480 rule
+combinations pre-solved into it. The React application's strategy-chart screen
+typechecks and builds but has never been opened in a browser; its spread,
+rule-delta and trainer screens are not started. See
+[markdown/ToDo.md](markdown/ToDo.md).
 
 ---
 

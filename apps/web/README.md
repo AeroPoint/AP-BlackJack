@@ -59,6 +59,14 @@ core, which is the only reason this can be a plain request rather than a job.
 Both clean. The visual result has **not** been reviewed in a browser — treat the
 layout and palette as a first draft.
 
+The one reviewed surface in this project is the standalone chart page built by
+[scripts/chart_page/](../../scripts/chart_page/README.md). Two things it learned
+should be ported here before anything new is added: table rules belong as
+individual controls rather than a preset list, and colouring the chart by
+expected leak alone is ambiguous — cost-if-wrong and where-it-leaks need separate
+scales. See
+[DecisionImportance.md](../../markdown/DecisionImportance.md#two-questions-one-square).
+
 ## Not built
 
 The spread and risk explorer, the rule-delta view, and the trainer. The engine
