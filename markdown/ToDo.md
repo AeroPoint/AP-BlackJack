@@ -193,9 +193,9 @@ The terminal versions are built. What remains is depth and a UI.
   sit at. Session logs are personal data: read them from a path the user gives,
   never commit one.
 
-- [ ] **Licensing decision.** Free, freemium or paid — see
-  [ADR-0005](adr/ADR-0005-licensing.md). Affects nothing technical today because
-  the dependency policy already assumes commercial use.
+- [x] **Licensing decision.** *Done.* AGPL-3.0-only plus a commercial licence,
+  with an inbound licence grant from contributors so the commercial licence can
+  cover their work. See [ADR-0008](adr/ADR-0008-project-licence.md).
 
 - [ ] **CI.** `.github/workflows/ci.yml` runs lint, types, tests and the licence
   check on Windows and Linux.

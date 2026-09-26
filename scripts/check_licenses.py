@@ -1,8 +1,9 @@
 """Fail the build on a non-permissive dependency licence.
 
-Enforces markdown/adr/ADR-0005-licensing.md: the product's own licence is
-undecided, so every dependency must be permissive enough to keep every option
-open.
+Enforces markdown/adr/ADR-0005-licensing.md. The project itself is AGPL-3.0 with
+a commercial licence alongside (ADR-0008), and that commercial licence can only
+be granted if nothing it covers is copyleft -- so every dependency must be
+permissive.
 
 Usage:
     python scripts/check_licenses.py            # check the installed environment
@@ -21,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: Licences that keep every commercial option open.
+#: Licences that leave the commercial licence grantable.
 #:
 #: Both spellings of everything, because a package may declare an SPDX
 #: expression ("MPL-2.0") or a trove classifier ("Mozilla Public License 2.0
