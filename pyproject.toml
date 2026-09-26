@@ -10,7 +10,8 @@ name = "blackjack"
 description = "Exact-solver and simulation engine for blackjack strategy, counting, bet spreads, and side bets."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-license = { text = "UNLICENSED-PROPRIETARY" }   # see markdown/adr/ADR-0005-licensing.md
+license = "AGPL-3.0-only"   # plus a commercial licence; see markdown/adr/ADR-0008-project-licence.md
+license-files = ["LICENSE"]
 authors = [{ name = "Sean Fennig" }]
 keywords = ["blackjack", "card-counting", "expected-value", "monte-carlo", "solver"]
 classifiers = [
@@ -68,7 +69,9 @@ analysis = [
 bj = "blackjack.cli:main"
 
 [project.urls]
-Documentation = "./markdown/ReadMe.md"
+Homepage = "https://github.com/AeroPoint/AP-BlackJack"
+Documentation = "https://github.com/AeroPoint/AP-BlackJack/blob/main/markdown/ReadMe.md"
+Issues = "https://github.com/AeroPoint/AP-BlackJack/issues"
 
 # --- Build --------------------------------------------------------------------
 # Development tooling. A PEP 735 group rather than an optional-dependency extra:
@@ -87,7 +90,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling>=1.25"]   # MIT
+requires = ["hatchling>=1.27"]   # MIT; 1.27 for PEP 639 licence expressions
 build-backend = "hatchling.build"
 
 [tool.hatch.version]

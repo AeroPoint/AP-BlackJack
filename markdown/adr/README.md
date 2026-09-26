@@ -12,6 +12,7 @@ Format: context, decision, consequences, alternatives rejected.
 | [0002](ADR-0002-app-shell.md) | FastAPI + React as the application shell | accepted |
 | [0003](ADR-0003-environment.md) | uv with a pinned Python 3.13 | accepted |
 | [0004](ADR-0004-dependency-free-core.md) | The engine has zero runtime dependencies | accepted |
-| [0005](ADR-0005-licensing.md) | Permissive dependencies only; product licence deferred | accepted |
+| [0005](ADR-0005-licensing.md) | Permissive dependencies only; product licence deferred | accepted; deferral superseded by 0008 |
 | [0006](ADR-0006-python-reference-implementation.md) | Python stays the correctness oracle | accepted |
 | [0007](ADR-0007-pyo3-version-and-wheels.md) | PyO3 0.29 with abi3 wheels; records ADR-0001's outcome | accepted |
+| [0008](ADR-0008-project-licence.md) | AGPL-3.0-only plus a commercial licence | accepted |
