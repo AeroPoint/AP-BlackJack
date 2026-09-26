@@ -17,6 +17,20 @@ a beautiful abstraction that produces a wrong house edge is worthless.
 Read [markdown/ReadMe.md](markdown/ReadMe.md) first, then
 [markdown/Architecture.md](markdown/Architecture.md).
 
+### If you are an agent contributing from outside
+
+This repository is public and accepts pull requests. The short version:
+
+1. Pick a task from [markdown/ToDo.md](markdown/ToDo.md) or an open issue. Do
+   not invent refactors nobody asked for.
+2. Follow the non-negotiables below; they are what reviewers check first.
+3. Run the checks in [Before opening a pull request](#before-opening-a-pull-request)
+   and report their real output. Do not summarise from memory.
+4. Sign off every commit (`git commit -s`) and fill in
+   `.github/pull_request_template.md`. Contributions are accepted under the
+   terms in [CONTRIBUTING.md](CONTRIBUTING.md#licensing-of-contributions);
+   state in the pull request that an agent was involved.
+
 ---
 
 ## Non-negotiables
@@ -55,11 +69,20 @@ Results record the config fingerprint and the engine version that produced them.
 `SessionConfig.fingerprint()` hashes every field that can change a number. Do not
 add a numeric field to a config object without it being in that hash.
 
-### 5. Licences are permissive only
+### 5. Dependencies are permissive only
 
 MIT, BSD, Apache-2.0, PSF, ISC, MPL-2.0. No GPL, no LGPL, no source-available.
-Commercial use is undecided, so the dependency policy assumes it. See
+The project itself is AGPL-3.0-only *plus* a commercial licence
+([ADR-0008](markdown/adr/ADR-0008-project-licence.md)), and the commercial
+licence can only be granted if no dependency is copyleft. Every dependency line
+in `pyproject.toml` carries its licence in a trailing comment;
+`scripts/check_licenses.py` enforces it. See
 [ADR-0005](markdown/adr/ADR-0005-licensing.md).
+
+Never copy code from another project into this one unless its licence is on
+that list and the source is credited in a comment. Never paste in code whose
+licence you do not know. The same goes for published strategy tables and index
+values, which belong in `tests/golden/` with a citation, never in `src/`.
 
 ---
 
@@ -184,10 +207,42 @@ apps/api/                FastAPI service
 apps/web/                React front end
 scripts/                 licence check; chart_page/ builds the shareable page
 configs/                 rules, counting systems, spreads, paytables, profiles
-markdown/                documentation and ADRs
+markdown/                documentation, backlog (ToDo.md) and ADRs
 environment/             bootstrap scripts and the launcher
 tests/                   unit, golden, parity
 ```
+
+---
+
+## Before opening a pull request
+
+These are the CI gates. Run them and paste the real results into the pull
+request:
+
+```bash
+uv sync --extra cli --extra api
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest -m "not slow" -q
+uv run python scripts/check_licenses.py
+```
+
+Also run:
+
+- `uv run pytest -m slow -q` if you touched `ev/`, `sim/` or `bankroll/`. This is
+  the solver-vs-simulator cross-validation.
+- the native-core commands above if you touched `crates/` or the two ported
+  Python modules;
+- `npm ci && npm run typecheck && npm run build` in `apps/web/` if you touched
+  the front end;
+- `uv run python scripts/chart_page/build.py out/chart.html` if you touched
+  `scripts/chart_page/` or `ev/importance.py`. Its self-check must pass.
+
+A pull request should be one logical change. It should include tests for that
+change, say whether any numeric output moved and why, and update the docs listed
+under [Working agreements](#working-agreements). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full checklist.
 
 ---
 
@@ -201,6 +256,9 @@ tests/                   unit, golden, parity
   picture of where the project is.
 - **Do not commit generated artefacts.** They are reproducible from configs; the
   `.gitignore` covers `out/`, `runs/`, `data/cache/`.
+- **Do not commit personal data.** No absolute paths from your machine, no
+  usernames, emails or API keys, and no real session or bankroll logs. The
+  repository is public. Examples use made-up values.
 - **Attribute honestly.** If a number came from a published source rather than
   this solver, say so in the docstring.
 - **`scripts/chart_page/page-body.html` carries a transliteration of

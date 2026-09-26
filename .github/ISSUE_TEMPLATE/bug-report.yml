@@ -1,0 +1,30 @@
+name: Bug report
+description: Something crashes, errors, or behaves wrongly (for wrong numbers, use "Numerical discrepancy").
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the full command and the full error output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Output of `bj --version`
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS and Python version
+      placeholder: e.g. Windows 11, Python 3.13.1, installed with uv sync --all-extras
+    validations:
+      required: true
