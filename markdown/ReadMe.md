@@ -342,7 +342,11 @@ card. Both were found because the simulator and solver were required to agree.
 
 ## Licensing
 
-Commercial-use posture is undecided (free vs. paid). Every dependency is
-therefore restricted to permissive licences — MIT, BSD, Apache-2.0, PSF, ISC,
-MPL-2.0. No GPL, no LGPL, no source-available. See
-[ADR-0005](adr/ADR-0005-licensing.md).
+Dual-licensed: [AGPL-3.0-only](../LICENSE) for everyone, with a commercial
+licence available from the copyright holder for use that cannot meet the AGPL's
+terms. See [LICENSING.md](../LICENSING.md) and
+[ADR-0008](adr/ADR-0008-project-licence.md).
+
+Dependencies stay restricted to permissive licences (MIT, BSD, Apache-2.0, PSF,
+ISC, MPL-2.0), because a copyleft dependency would make the commercial licence
+impossible to grant. See [ADR-0005](adr/ADR-0005-licensing.md).
