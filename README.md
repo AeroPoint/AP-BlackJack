@@ -1,12 +1,13 @@
-# Blackjack Solver
+# AP-BlackJack
 
-Exact combinatorial solver, Monte Carlo simulator and training engine for
-blackjack — strategy, counting, bet spreads, risk and side bets.
+[![CI](https://github.com/AeroPoint/AP-BlackJack/actions/workflows/ci.yml/badge.svg)](https://github.com/AeroPoint/AP-BlackJack/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+![Python 3.11–3.13](https://img.shields.io/badge/python-3.11%E2%80%933.13-blue.svg)
 
-Successor to the MATLAB prototype in `../matlab`, which could simulate a Hi-Lo
-counter using a hardcoded strategy chart and a hardcoded index table. This
-project *derives* those tables instead, for any rule set and any counting
-system, and quantifies how much each decision is worth.
+An **exact** blackjack solver, simulator and trainer. It *derives* basic strategy,
+deviation indices, bet-spread risk and side-bet edges for any rule set and any
+counting system, rather than copying them from a printed table. It also tells
+you how much each decision is actually worth.
 
 ```
 $ bj explain T6 T
@@ -21,67 +22,136 @@ T6 against T  --  Vegas Strip 6D H17 DAS
   Frequency  : 1.455% of rounds
 ```
 
-**Full documentation: [markdown/ReadMe.md](markdown/ReadMe.md)**
+## Features
 
----
+- **Exact strategy solving.** It computes composition-dependent expected values
+  for every action, for any rules: deck count, H17/S17, DAS, surrender, resplits,
+  peek/ENHC, and 3:2 or 6:5. Basic strategy is the argmax of the output; it is
+  not stored anywhere.
+- **Decision importance.** Every chart cell carries what a mistake costs and how
+  much it leaks in practice (cost × how often it comes up × how often people get
+  it wrong). The result is a study order no printed chart gives you.
+- **Derived deviation indices.** Indices are solved against the maximum-entropy
+  shoe for a given count, for any counting system. It rediscovers the
+  Illustrious 18 from first principles.
+- **Bet spread and risk.** EV/hour, SD, N0, SCORE and risk of ruin, using the
+  exact edge and exact variance at each true count.
+- **Counting-system analysis.** Betting correlation, insurance correlation and
+  playing efficiency, from derived effect-of-removal vectors.
+- **Side bets.** Exact combinatorial edges for 21+3, Perfect Pairs and Lucky
+  Ladies, with paytables driven by config.
+- **Monte Carlo simulator.** Cross-validates the solver and reaches what closed
+  form cannot: drawdowns and behavioural error.
+- **Terminal trainer.** `bj drill` and `bj play` grade every decision against
+  the cards actually left in the shoe.
+- **Optional Rust core.** It computes bit-identical results about 125x faster.
+  Without it, the engine falls back to pure Python.
 
-## Run it now
+Results are checked against published figures in the test suite (dealer
+probabilities, house edges, side-bet edges, counting-system correlations). The
+solver is also cross-checked against the independent simulator.
 
-The engine has **zero runtime dependencies** — no install step, any Python 3.11+:
+## Quick start
+
+The engine has **zero runtime dependencies**, so any Python 3.11+ will run it:
 
 ```bash
+git clone https://github.com/AeroPoint/AP-BlackJack.git
+cd AP-BlackJack
 PYTHONPATH=src python -m blackjack.cli solve --rules vegas6-h17
 PYTHONPATH=src python -m blackjack.cli chart --importance
 ```
 
-For the full environment:
+(PowerShell: `$env:PYTHONPATH = "src"` first, then `python -m blackjack.cli ...`.)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File environment\bootstrap.ps1
+For the full environment, with locked dependencies, dev tools and the optional
+native core, use [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv sync --extra cli           # add --extra native with a Rust toolchain installed
+uv run bj solve --rules vegas6-h17
+uv run pytest -m "not slow" -q
 ```
 
----
+The bootstrap scripts in [environment/](environment/README.md) do all of this on
+Windows, macOS and Linux.
 
-## Layout
+### Commands
 
-| path | contents |
+| command | what it does |
 |---|---|
-| `src/blackjack/` | The engine. Standard library only. |
-| `crates/blackjack-core/` | Rust accelerator (PyO3). Implemented; 125x on a full solve. |
-| `apps/api/` | FastAPI service. Implemented. |
-| `apps/web/` | React front end. Strategy chart built, never opened in a browser. |
-| `scripts/chart_page/` | Builds the standalone shareable chart page. |
-| `configs/` | Rules, counting systems, spreads, paytables, profiles. |
-| `markdown/` | Documentation and architecture decision records. |
-| `environment/` | Bootstrap scripts and the development launcher. |
-| `tests/` | `unit/`, `golden/` (published values), `parity/` (Rust vs Python). |
+| `bj solve` | House edge and composition-dependent ceiling for a rule set |
+| `bj chart` | Basic-strategy chart, optionally ranked by importance |
+| `bj explain` | Full breakdown of one decision, pricing every alternative |
+| `bj indices` | Deviation indices derived for these rules and this counting system |
+| `bj spread` | Bet-ramp EV, SD, N0, SCORE and risk of ruin |
+| `bj systems` | Counting-system correlations, or `--derive` the best tags |
+| `bj sidebet` | Side-bet house edge and outcome distribution |
+| `bj sim` | Monte Carlo simulation |
+| `bj drill` | Strategy drill weighted by what you personally get wrong |
+| `bj play` | Free play with live grading against the real shoe |
+| `bj list` | Available rule, counting, spread and profile configs |
 
-Start with [markdown/ReadMe.md](markdown/ReadMe.md), then
-[markdown/Architecture.md](markdown/Architecture.md). Contributors and agents:
-[AGENTS.md](AGENTS.md).
+Rules, counting systems, spreads and paytables are YAML files in
+[configs/](configs/), so adding a new game is usually a config file, not code.
 
----
+## Project status
 
-## Status
+| component | state |
+|---|---|
+| Engine: solver, indices, spread and risk, side bets, simulator | Working, validated |
+| Rust accelerator (`crates/blackjack-core`) | Working, bit-identical to Python |
+| Terminal trainer (`bj drill`, `bj play`) | Working |
+| FastAPI service (`apps/api`) | Working |
+| Standalone chart page (`scripts/chart_page`) | Working, and the one reviewed UI |
+| React front end (`apps/web`) | Early: chart screen builds, not yet reviewed in a browser |
 
-Working and validated against published figures: the exact solver, chart
-generation, the decision-importance model, index derivation, bet-spread and risk
-analysis, exact variance, side bets, the simulator, the counting-system
-correlations, the Rust core, the FastAPI service, and the terminal trainer
-(`bj drill` and `bj play`).
-
-The one reviewed piece of user interface is the standalone chart page built by
-`scripts/chart_page/` — a single self-contained HTML file with all 480 rule
-combinations pre-solved into it. The React application's strategy-chart screen
-typechecks and builds but has never been opened in a browser; its spread,
-rule-delta and trainer screens are not started. See
+The prioritised backlog, with a definition of "done" for each item, is in
 [markdown/ToDo.md](markdown/ToDo.md).
 
----
+## Documentation
+
+- [markdown/ReadMe.md](markdown/ReadMe.md): the full tour, with worked output
+  for every feature
+- [markdown/Architecture.md](markdown/Architecture.md): layering and data flow
+- [markdown/Math.md](markdown/Math.md): the recursions and every approximation,
+  with its size
+- [markdown/DecisionImportance.md](markdown/DecisionImportance.md): the
+  importance model
+- [markdown/Counting.md](markdown/Counting.md): counting systems and index
+  derivation
+- [markdown/Glossary.md](markdown/Glossary.md): terms, for anyone who is not a
+  card counter
+- [markdown/adr/](markdown/adr/README.md): architecture decision records
+
+## Contributing
+
+Pull requests are welcome, from people and AI coding agents alike.
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md):** setup, the checks CI runs, what a good
+  pull request looks like, and the contribution licence terms. Commits need a
+  `Signed-off-by` line (`git commit -s`).
+- **[AGENTS.md](AGENTS.md):** the conventions and non-negotiables. Read this
+  first if you are an agent, or pointing one at the repo. The most important
+  rule: never hardcode a number the solver can derive.
+- **Found a number that disagrees with a published source?** That is the most
+  useful report you can file. Use the *Numerical discrepancy* issue template.
 
 ## Licence
 
-Undecided — free versus paid is an open question. Every dependency is therefore
-restricted to permissive licences (MIT, BSD, Apache-2.0, PSF, ISC, MPL-2.0), so
-every option stays open. See
-[ADR-0005](markdown/adr/ADR-0005-licensing.md).
+Dual-licensed:
+
+- **[AGPL-3.0-only](LICENSE)** for everyone. You may use, modify and share it,
+  commercially too. If you distribute it, or run a modified version as a network
+  service, you must publish your source under the same licence.
+- **A commercial licence** from the copyright holder, for use that cannot meet
+  those terms, such as a closed-source product.
+
+See [LICENSING.md](LICENSING.md).
+
+## Disclaimer
+
+This is analysis and training software, provided as is, without warranty. It is
+not gambling advice, and it does not promise that any strategy will make money.
+Card counting is legal in most jurisdictions, but casinos may refuse to deal to
+counters. Every casino game carries risk. If gambling stops being fun, stop.

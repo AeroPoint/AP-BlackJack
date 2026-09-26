@@ -1,0 +1,26 @@
+name: Feature or proposal
+description: Suggest a feature, a rule variant, a counting system, or a structural change.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [markdown/ToDo.md](https://github.com/AeroPoint/AP-BlackJack/blob/main/markdown/ToDo.md) first; it may already be planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What question should the project be able to answer?
+      description: Frame it as the question a player or analyst is trying to answer, not only the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Optional. Note any new dependency (and its licence), approximation, or config field.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to implement this myself
