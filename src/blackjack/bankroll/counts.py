@@ -60,7 +60,7 @@ position before the cut equally; a player experiences every *round* equally, and
 rounds are sparser after the runs of low cards that push the count up, because
 low cards make long rounds. That shifts about half a percentage point of rounds
 from positive counts to zero and below -- the cut-card effect -- and on a 1-8
-Hi-Lo ramp it is worth about 0.0006 units per round, which this model overstates
+Hi-Lo ramp it is worth about 0.0007 units per round, which this model overstates
 by. :meth:`TrueCountDistribution.with_frequencies` swaps in measured frequencies
 where that matters. Where the far tails matter (deep single deck, spreads that
 pay off only at TC 8+), the Monte Carlo simulator is the authority and this

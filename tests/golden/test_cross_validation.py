@@ -236,12 +236,13 @@ def test_analytic_spread_matches_the_simulator(counted_play) -> None:
 
     With the simulator's own frequencies (see the test above for why they
     differ from the model's) the only thing left to compare is the edge in each
-    bin, and that must agree within the simulator's error bars. The remaining
-    approximations are each under 0.0002 units per round and named in
+    bin, and that must agree within the simulator's error bars. What remains
+    at 400 million rounds is 0.0003 units per round, with the model high; the
+    approximations that lean it that way are named in
     ``blackjack.bankroll.spread``.
 
     Also asserts the analytic frequencies overstate the simulator by no more
-    than the cut-card effect: about 0.0006 units per round on this ramp.
+    than the cut-card effect: about 0.0007 units per round on this ramp.
     """
     from blackjack.bankroll.spread import evaluate_ramp
 
@@ -261,7 +262,7 @@ def test_analytic_spread_matches_the_simulator(counted_play) -> None:
         ramp, rules, HI_LO, distribution=distribution, edges=curve
     ).ev_per_round_units
     assert 0.0 < modelled - analytic < 0.0012, (
-        f"cut-card effect {modelled - analytic:+.5f} units/round, expected about +0.0006"
+        f"cut-card effect {modelled - analytic:+.5f} units/round, expected about +0.0007"
     )
 
 
