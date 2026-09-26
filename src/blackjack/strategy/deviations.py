@@ -44,7 +44,7 @@ from itertools import pairwise
 from blackjack.actions import Action
 from blackjack.bankroll.counts import TrueCountDistribution, true_count_distribution
 from blackjack.cards import CARDS_PER_DECK, NUM_RANKS, RANKS, SINGLE_DECK_COUNTS, rank_name
-from blackjack.counting import CountSystem
+from blackjack.counting import CountSystem, TrueCountRounding
 from blackjack.ev import native
 from blackjack.ev.player import action_evs, insurance_ev, make_context
 from blackjack.ev.solver import Category, categorise, deal_probability
@@ -366,7 +366,8 @@ def generate_indices(
         max_index_magnitude: Discard crossovers beyond this. An index of +14 is
             real and will never occur often enough to be worth a memory slot.
         distribution: True-count frequency model used to value each index.
-            Defaults to one built from the rules' penetration.
+            Defaults to the exact-count distribution for the rules'
+            penetration: no rounding, perfect deck estimation.
 
     Returns:
         Indices sorted by value per 100 rounds, descending -- which is the order
@@ -374,7 +375,17 @@ def generate_indices(
     """
     dr = decks_remaining if decks_remaining is not None else rules.decks / 2.0
     targets = cells if cells is not None else default_candidates()
-    freq = distribution or true_count_distribution(system, rules.decks, rules.penetration)
+    # An index is valued for a player who knows the exact count: that is the
+    # value of the index itself, before the player's rounding costs any of it.
+    # Binning by the player's rounding instead would value "+1.31" as though it
+    # were "+2" under truncation, which is a fact about the player, not the play.
+    freq = distribution or true_count_distribution(
+        system,
+        rules.decks,
+        rules.penetration,
+        rounding=TrueCountRounding.NONE,
+        estimation=0.0,
+    )
 
     out: list[Index] = []
     for category, row, upcard in targets:
