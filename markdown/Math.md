@@ -233,10 +233,35 @@ E[RC] = 0        Var[RC] = d(N−d)/(N−1) · σ²        TC = RC / ((N−d)/52
 ```
 
 Averaged over the depths actually played — uniformly from the top of the shoe to
-the cut card. The normal approximation is good in the body and slightly
-understates the extreme tails; where the tails matter (deep single deck,
-aggressive spreads at TC 8+) the simulator is the authority and this is the fast
-estimate.
+the cut card.
+
+**Bins follow the player's arithmetic.** A bin is labelled with the integer the
+player uses, so it collects every exact count the player's rounding maps there.
+Under truncation, bin +1 is `[1, 2)` and bin 0 is the double-width `(−1, 1)`.
+The divisor is the player's half-deck estimate of the decks left, and each bin
+boundary sits halfway between the running-count lattice points it separates (a
+continuity correction). An earlier version integrated `[k − ½, k + ½)` whatever
+the rounding mode. That modelled a player who rounds to nearest, put 26% of
+rounds at a zero count where the simulator measures 43%, and was the main reason
+the spread model and the simulator disagreed. See
+[Counting.md](Counting.md#reconciling-the-spread-model-with-the-simulator).
+
+**Each bin carries its mean count and its typical depth.** Truncated bin +1
+averages +1.34, not +1, and a zero count mostly occurs early in the shoe (about
+four decks left in six) while a +6 mostly occurs late (about two). Both move the
+edge in the bin, so both are recorded; the depth is the harmonic mean,
+`1 / E[1/decks]`, because removal effects scale with one over the cards left.
+
+**Accuracy.** Against the exact hypergeometric distribution for Hi-Lo in six
+decks, bin probabilities agree to 0.1 points and bin means to 0.01. What the
+model cannot see is that the simulator — and a player — experience *rounds*, not
+card positions. Rounds are sparser after the runs of low cards that push the
+count up, because low cards make long rounds. That shifts about half a point of
+rounds from positive counts to zero and below: the cut-card effect, worth about
+0.0006 units per round on a 1-8 ramp. Where it matters, reweight to a
+simulator's histogram with `TrueCountDistribution.with_frequencies`. Where the far
+tails matter (deep single deck, spreads that pay off only at TC 8+), the
+simulator is the authority and this is the fast estimate.
 
 ---
 
@@ -252,9 +277,13 @@ separate is what makes the analysis fast, exact where it can be, and honest wher
 it cannot.
 
 Because `edge(TC)` comes from a full solve, it automatically accounts for the
-fact that a counter also *plays* better at high counts, not just bigger.
+fact that a counter also *plays* better at high counts, not just bigger. It
+includes the insurance bet, taken whenever it pays. On a 1-8 ramp insurance is
+worth about 0.001 units per round, a seventh of the whole win rate.
 
-Measured for 6D H17, three decks remaining:
+The bet is read at the bin's label and the edge at the bin's mean count and
+depth (§8): one solve per bin. The table below is the edge at exact integer
+counts, all at three decks remaining. Measured for 6D H17:
 
 | TC | −4 | −2 | 0 | +1 | +2 | +3 | +5 | +8 | +10 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -271,8 +300,9 @@ Variance is not flat across the count — about 1.24 at true count −6 and 1.67
 +10, because high counts mean more doubles and more splits. A ramp puts its
 largest bets exactly where variance is highest, and bets enter the variance
 squared, so treating variance as a constant understates risk of ruin where it
-matters most. For a 1-12 spread the flat assumption reported 3.77% lifetime risk
-against a true 4.42%, and a required bankroll about $2,000 light.
+matters most. For a 1-12 spread with a $42,000 bankroll at $25 a unit, the flat
+assumption reports 2.06% lifetime risk against a true 2.53%, and a required
+bankroll about $1,800 light.
 
 ---
 

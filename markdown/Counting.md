@@ -224,6 +224,76 @@ rather than borrowed.
 
 ---
 
+## Reconciling the spread model with the simulator
+
+`bj spread` values a bet ramp analytically: `Σ P(count) · bet(count) ·
+edge(count)`. The simulator values it by dealing cards. For a long time the two
+disagreed about the default 1-8 Hi-Lo ramp in 6D H17: +0.0085 units per round
+against +0.0066. This is how that was run down.
+
+**Sample size first.** The 0.0066 came from 2 million rounds, whose standard
+error is ±0.0019 — as large as the whole disagreement. 200 million rounds give
+**+0.00679 ± 0.00019**. So the simulator was about right, and the analytic
+figure needed explaining.
+
+**Then the causes, one at a time** (units per round, same ramp):
+
+| step | EV |
+|---|---|
+| Original analytic model | 0.0085 |
+| Count bins that match the player's truncation | 0.0063 |
+| Each bin priced at its mean count, not its label | 0.0073 |
+| Played with the simulator's strategy (chart + 18 indices), not perfect play | 0.0067 |
+| Insurance included, at the simulator's index | 0.0078 |
+| Each bin at its typical depth, not half a shoe | 0.0078 |
+| With the simulator's count frequencies (the cut-card effect) | **0.0071** |
+| Simulator, 200M rounds | 0.00679 ± 0.00019 |
+
+What each row means:
+
+- **Binning** was a bug. The frequency model integrated `[k − ½, k + ½)` for
+  every bin, i.e. a player who rounds to nearest, while the player truncates. It
+  put 26% of rounds at a zero count where the simulator measures 43%.
+- **Bin means.** Truncated bin +1 is every count in `[1, 2)` and averages
+  +1.34; pricing it at +1 undervalued it by a third. This error and the binning
+  error pulled in opposite directions, which is why the original figure looked
+  closer than it was.
+- **Strategy.** The model assumed composition-perfect play; the simulator plays
+  the chart plus the top 18 indices. Worth 0.0005 on this ramp.
+- **Insurance** was missing from the model entirely. It is worth 0.001 — a
+  seventh of the win rate — because it is taken exactly when the big bets are
+  out.
+- **Depth.** A zero count happens mostly early in the shoe (about four decks
+  left) and a +6 mostly late (about two). The edge at a given count improves as
+  the shoe shrinks, so each bin is now solved at its own typical depth. Across
+  this ramp the effect nearly cancels, but bin by bin it is up to 0.06 points —
+  and the simulator confirms the per-bin figures.
+- **The cut-card effect.** The model weights card positions; a player
+  experiences rounds. The count goes positive after a run of low cards, low
+  cards make long rounds, so fewer rounds start while the count is high:
+  rounds at a positive count follow rounds that used 5.64 cards on average,
+  against 5.37 before negative counts. This shifts about half a point of rounds
+  to zero and below, and costs 0.0006. The model does not capture it; it is
+  measured, named, and removable by reweighting to a simulator's histogram
+  (`TrueCountDistribution.with_frequencies`).
+
+**What is left** is 0.0003, 1.7 standard errors — not distinguishable from
+noise at this sample size. The remaining named approximations (the normal count
+model, composition-perfect play after the first decision, one composition per
+bin) are each under 0.0002.
+
+**One non-cause worth recording.** Indices are generated as fractions (+1.31,
+insurance +3.05) and the simulator compares them with a truncated integer count,
+so an index effectively applies from the next integer up. Converting every index
+to the integer bin whose mean reaches it is worth 0.00005. Not worth a rule.
+
+`tests/golden/test_cross_validation.py` holds the line: it asserts the count
+frequencies match the simulator (and that the cut-card shift keeps its sign),
+and that with the simulator's frequencies the analytic EV lands within three
+standard errors with no allowance.
+
+---
+
 ## Practical notes
 
 **The spread is worth more than the deviations.** At 6D H17, playing indices
@@ -236,5 +306,5 @@ in the same rule file and read the change in SCORE. It will usually exceed any
 rule difference you were worrying about.
 
 **Wonging is powerful and obvious.** Sitting out below TC 0 roughly triples SCORE
-in the measured 6D game — N0 falls from ~115,000 rounds to ~37,000. It is also
+in the measured 6D game — on a 1-8 ramp, N0 falls from ~106,000 rounds to ~38,000. It is also
 the single most visible thing you can do at a table.

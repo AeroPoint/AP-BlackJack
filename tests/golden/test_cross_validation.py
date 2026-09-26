@@ -153,48 +153,116 @@ def test_counted_play_beats_flat_play() -> None:
     assert result.ev_per_round > 3 * result.standard_error
 
 
-def test_analytic_spread_and_simulation_agree_in_sign_and_scale() -> None:
-    """The analytic ramp model and the simulator should broadly reconcile.
+@pytest.fixture(scope="module")
+def counted_play():
+    """A Hi-Lo counter on a 1-8 ramp with the top 18 indices, simulated and modelled.
 
-    Deliberately loose. The two differ in known ways -- the simulator plays a
-    subset of indices with truncated counts, the analytic model assumes
-    composition-perfect play and a normal count distribution. Closing that gap
-    properly is a P0 item in ToDo.md; until then this asserts only that they are
-    the same order of magnitude and the same sign.
+    Twelve million rounds leaves a standard error of about 0.0008 units per
+    round. That is enough to catch the kind of defect this comparison exists
+    for -- the count-binning error it caught was worth 0.002 -- but not to
+    resolve the last few hundredths. The one-off 400-million-round run recorded
+    in markdown/Counting.md does that.
     """
-    from blackjack.bankroll.spread import count_edge_curve, evaluate_ramp
+    from blackjack.bankroll.counts import true_count_distribution
+    from blackjack.bankroll.spread import bin_edge_curve
     from blackjack.sim.engine import BetRamp
     from blackjack.strategy.deviations import generate_indices, insurance_index
 
-    ramp = BetRamp()
-    grid = [float(c) for c in range(-6, 11)]
-    analytic = evaluate_ramp(
-        ramp,
-        VEGAS_6D_H17,
-        HI_LO,
-        edges=count_edge_curve(VEGAS_6D_H17, HI_LO, grid),
-        counts=grid,
-    ).ev_per_round_units
-
-    solved = solve(VEGAS_6D_H17)
-    counted = compile_strategy(
-        solved.chart,
-        indices=generate_indices(VEGAS_6D_H17, HI_LO)[:18],
-        insurance_index=insurance_index(VEGAS_6D_H17, HI_LO),
+    rules = VEGAS_6D_H17
+    strategy = compile_strategy(
+        solve(rules).chart,
+        name="counted",
+        indices=generate_indices(rules, HI_LO)[:18],
+        insurance_index=insurance_index(rules, HI_LO),
     )
-    measured = simulate(
-        SimConfig(
-            rules=VEGAS_6D_H17,
-            strategy=counted,
-            system=HI_LO,
-            ramp=ramp,
-            rounds=2_000_000,
-            seed=5,
+    ramp = BetRamp()
+    runs = [
+        simulate(
+            SimConfig(
+                rules=rules, strategy=strategy, system=HI_LO, ramp=ramp, rounds=ROUNDS, seed=seed
+            )
         )
-    ).ev_per_round
+        for seed in SEEDS
+    ]
+    distribution = true_count_distribution(HI_LO, rules.decks, rules.penetration)
+    # The same strategy the simulator plays, priced exactly bin by bin. The wide
+    # range keeps the rare extreme bins from borrowing a neighbour's edge.
+    curve = bin_edge_curve(
+        rules, HI_LO, distribution, lo=-12, hi=15, strategy=strategy, exact_variance=False
+    )
+    return rules, ramp, runs, distribution, curve
 
-    assert analytic > 0 and measured > 0
-    assert 0.4 < measured / analytic < 2.0, f"analytic {analytic:.5f} vs sim {measured:.5f}"
+
+def _pooled(runs) -> tuple[float, float, dict[float, int]]:
+    """EV per round, its standard error, and the count histogram, across runs."""
+    dealt = sum(r.rounds_dealt for r in runs)
+    net = sum(r.net for r in runs)
+    squares = sum(r.sum_squares for r in runs)
+    mean = net / dealt
+    sd = math.sqrt(squares / dealt - mean * mean)
+    histogram: dict[float, int] = {}
+    for r in runs:
+        for tc, n in r.count_histogram.items():
+            histogram[tc] = histogram.get(tc, 0) + n
+    return mean, sd / math.sqrt(dealt), histogram
+
+
+def test_count_frequencies_match_the_simulator(counted_play) -> None:
+    """The analytic true-count distribution against what the simulator deals.
+
+    The model this replaced binned counts as if the player rounded to nearest
+    while the simulator truncates, and was off by 17 points at a zero count.
+    What remains is the cut-card effect: rounds are sparser after the low-card
+    runs that push the count up, so the simulator sees slightly more rounds at
+    zero and below than a model that weights every card position equally. It is
+    about half a point at zero, and its direction is asserted, because a model
+    change that reversed it would be a bug rather than an improvement.
+    """
+    _, _, runs, distribution, _ = counted_play
+    _, _, histogram = _pooled(runs)
+    rounds = sum(histogram.values())
+    for tc in range(-4, 5):
+        measured = histogram.get(float(tc), 0) / rounds
+        modelled = distribution.probability_at(tc)
+        assert measured == pytest.approx(modelled, abs=0.01), (
+            f"TC {tc:+d}: simulator {measured:.4f} vs model {modelled:.4f}"
+        )
+    at_zero = histogram[0.0] / rounds
+    assert at_zero > distribution.probability_at(0), "cut-card effect has changed sign"
+
+
+def test_analytic_spread_matches_the_simulator(counted_play) -> None:
+    """Same strategy, same count frequencies: the ramp's EV must agree, no allowance.
+
+    With the simulator's own frequencies (see the test above for why they
+    differ from the model's) the only thing left to compare is the edge in each
+    bin, and that must agree within the simulator's error bars. The remaining
+    approximations are each under 0.0002 units per round and named in
+    ``blackjack.bankroll.spread``.
+
+    Also asserts the analytic frequencies overstate the simulator by no more
+    than the cut-card effect: about 0.0006 units per round on this ramp.
+    """
+    from blackjack.bankroll.spread import evaluate_ramp
+
+    rules, ramp, runs, distribution, curve = counted_play
+    measured, se, histogram = _pooled(runs)
+
+    reweighted = distribution.with_frequencies(histogram)
+    analytic = evaluate_ramp(
+        ramp, rules, HI_LO, distribution=reweighted, edges=curve
+    ).ev_per_round_units
+    sigma = abs(measured - analytic) / se
+    assert sigma < TOLERANCE_SIGMA, (
+        f"analytic {analytic:.5f} vs simulated {measured:.5f} +/- {se:.5f} = {sigma:.2f} sigma"
+    )
+
+    modelled = evaluate_ramp(
+        ramp, rules, HI_LO, distribution=distribution, edges=curve
+    ).ev_per_round_units
+    assert 0.0 < modelled - analytic < 0.0012, (
+        f"cut-card effect {modelled - analytic:+.5f} units/round, expected about +0.0006"
+    )
 
 
 def test_free_play_table_matches_the_solver() -> None:

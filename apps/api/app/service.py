@@ -302,19 +302,17 @@ def indices_job(
 
 def spread_job(profile_name: str) -> tuple[Any, str | None]:
     """Build the callable and fingerprint for a bet-spread analysis."""
-    from blackjack.bankroll.spread import count_edge_curve, evaluate_ramp
+    from blackjack.bankroll.counts import true_count_distribution
+    from blackjack.bankroll.spread import bin_edge_curve, evaluate_ramp
 
     profile = resolve_profile(profile_name)
     rules, system = profile.rules, profile.system
     ramp = _ramp_from(profile)
 
     def run(progress: Any) -> dict[str, Any]:
-        grid = [float(c) for c in range(-6, 11)]
-        curve = []
-        for i, tc in enumerate(grid):
-            curve.extend(count_edge_curve(rules, system, [tc]))
-            progress(i + 1, len(grid))
-        result = evaluate_ramp(ramp, rules, system, edges=curve, counts=grid)
+        distribution = true_count_distribution(system, rules.decks, rules.penetration)
+        curve = bin_edge_curve(rules, system, distribution, progress=progress)
+        result = evaluate_ramp(ramp, rules, system, edges=curve, distribution=distribution)
         metrics = result.metrics(
             unit=profile.unit,
             bankroll=profile.bankroll,

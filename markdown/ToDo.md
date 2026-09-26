@@ -33,24 +33,22 @@ worth building twice.
 
   Variance turns out **not** to be flat across the count — 1.24 at TC −6, 1.67
   at +10 — and a ramp bets most where variance is highest. The old constant was
-  understating a 1-12 spread's risk of ruin by 17% (3.77% vs the true 4.42%) and
-  the required bankroll by about $2,000. `bj spread` now reports exact variance
-  by default.
+  understating a 1-12 spread's risk of ruin by a fifth (2.06% vs the true 2.53%)
+  and the required bankroll by about $1,800. `bj spread` now reports exact
+  variance by default. (Figures as re-measured after the count-binning fix
+  below; before it they read 3.77% vs 4.42% and $2,000.)
 
-- [~] **Reconcile the analytic spread model against simulation.** *Now the top
-  P0 item: it is the last place two parts of this project disagree about a
-  number and nobody has explained why.*
-  A 1-8 spread gives +0.0085 units/round analytically against +0.0066
-  simulated. Three candidate causes, none yet isolated: the simulator plays a
-  subset of indices with truncated counts, the analytic model assumes
-  composition-perfect play, and the normal true-count model understates the
-  tails where the big bets sit.
-  *Done when:* a test asserts the two agree within combined error bars, with
-  each remaining difference attributed to a named cause rather than absorbed
-  into a tolerance.
-  *Approach:* make the analytic model play the same index subset the simulator
-  does, then swap the normal count model for the simulator's measured
-  histogram, and see which of the two closes the gap.
+- [x] **Reconcile the analytic spread model against simulation.** *Done.*
+  The +0.0085 vs +0.0066 gap was partly sample size (2M rounds carry ±0.0019)
+  and partly a real bug: the count-frequency model binned for round-to-nearest
+  while the player truncates, and priced each bin at its label rather than its
+  mean count. The two errors half-cancelled. The model also left out insurance
+  (worth 0.001 on a 1-8 ramp) and priced every count at half a shoe. All fixed;
+  with the simulator's strategy and count frequencies the two now agree within
+  the simulator's error bars, and a test asserts it with no allowance. The one
+  named, measured difference left is the cut-card effect on frequencies, 0.0006
+  units per round, which the analytic model overstates by. Full breakdown in
+  [Counting.md](Counting.md#reconciling-the-spread-model-with-the-simulator).
 
 - [ ] **Result cache with provenance.** *Demoted — the native core removed most
   of the need.* An index sweep is 1.7 s and a spread analysis 0.5 s, so this is
@@ -165,8 +163,17 @@ The terminal versions are built. What remains is depth and a UI.
 - [ ] **Shuffle-tracking and ace-sequencing models.** Long tail, but the
   architecture should not preclude them.
 
-- [ ] **Cut-card effect.** Quantify it explicitly rather than leaving it as a
-  residual in simulation-vs-solver comparisons.
+- [~] **Cut-card effect.** *Quantified, not yet modelled.* On a 1-8 Hi-Lo ramp
+  it costs 0.0006 units per round against the analytic spread model, because
+  rounds are sparser after the low-card runs that push the count up (the round
+  before a positive count averages 5.64 cards, before a negative one 5.37). The
+  analytic model weights card positions and cannot see it;
+  `TrueCountDistribution.with_frequencies` removes it with a simulator's
+  histogram.
+  *Done when:* the frequency model weights rounds rather than cards -- most
+  likely a Markov chain over (running count, depth) whose step is one round's
+  joint (count change, cards used) -- and matches the simulator's histogram
+  within its noise without reweighting.
 
 ---
 
