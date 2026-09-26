@@ -232,8 +232,9 @@ disagreed about the default 1-8 Hi-Lo ramp in 6D H17: +0.0085 units per round
 against +0.0066. This is how that was run down.
 
 **Sample size first.** The 0.0066 came from 2 million rounds, whose standard
-error is ±0.0019 — as large as the whole disagreement. 200 million rounds give
-**+0.00679 ± 0.00019**. So the simulator was about right, and the analytic
+error is ±0.0019 — as large as the whole disagreement. 400 million rounds (two
+independent runs of 200 million, reading +0.00679 and +0.00687) give
+**+0.00683 ± 0.00013**. So the simulator was about right, and the analytic
 figure needed explaining.
 
 **Then the causes, one at a time** (units per round, same ramp):
@@ -247,7 +248,7 @@ figure needed explaining.
 | Insurance included, at the simulator's index | 0.0078 |
 | Each bin at its typical depth, not half a shoe | 0.0078 |
 | With the simulator's count frequencies (the cut-card effect) | **0.0071** |
-| Simulator, 200M rounds | 0.00679 ± 0.00019 |
+| Simulator, 400M rounds | 0.00683 ± 0.00013 |
 
 What each row means:
 
@@ -273,14 +274,18 @@ What each row means:
   cards make long rounds, so fewer rounds start while the count is high:
   rounds at a positive count follow rounds that used 5.64 cards on average,
   against 5.37 before negative counts. This shifts about half a point of rounds
-  to zero and below, and costs 0.0006. The model does not capture it; it is
+  to zero and below, and costs 0.0007. The model does not capture it; it is
   measured, named, and removable by reweighting to a simulator's histogram
   (`TrueCountDistribution.with_frequencies`).
 
-**What is left** is 0.0003, 1.7 standard errors — not distinguishable from
-noise at this sample size. The remaining named approximations (the normal count
-model, composition-perfect play after the first decision, one composition per
-bin) are each under 0.0002.
+**What is left** is 0.0003, with the model high: 0.00711 against 0.00683 ±
+0.00013, or 2.1 standard errors. That is on the edge of significance rather than
+clearly past it, and it points the way every remaining approximation leans. The
+likeliest single cause is that the solver plays perfectly *after* the first
+decision (a hit after a hit, post-split hands), where the simulator follows the
+chart. That matters most at extreme counts, where the big bets are. The others
+are the normal model's bin means and depths, and pricing each bin at one
+composition. None is isolated yet; together they are about 4% of the win rate.
 
 **One non-cause worth recording.** Indices are generated as fractions (+1.31,
 insurance +3.05) and the simulator compares them with a truncated integer count,

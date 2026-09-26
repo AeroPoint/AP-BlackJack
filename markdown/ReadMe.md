@@ -116,11 +116,12 @@ most exactly where variance is highest. Treating it as a constant understated a
 and the bankroll it needs by about $1,800. Nothing in the risk maths is a
 fitted constant any more.
 
-**And it agrees with the simulator.** The analytic spread model and the Monte
-Carlo simulator reconcile within the simulator's error bars once they play the
-same strategy against the same count frequencies. Getting there found a real
+**And it agrees with the simulator.** Once the analytic spread model and the
+Monte Carlo simulator play the same strategy against the same count frequencies,
+they agree to 0.0003 units per round over 400 million simulated rounds, about
+4% of the win rate. Getting there found a real
 bug: the count model binned for round-to-nearest while the player truncates. The
-one remaining difference is named and measured: the cut-card effect, 0.0006
+one remaining difference is named and measured: the cut-card effect, 0.0007
 units per round on a 1-8 ramp. See
 [Counting.md](Counting.md#reconciling-the-spread-model-with-the-simulator).
 

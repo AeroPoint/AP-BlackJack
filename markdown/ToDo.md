@@ -44,11 +44,15 @@ worth building twice.
   while the player truncates, and priced each bin at its label rather than its
   mean count. The two errors half-cancelled. The model also left out insurance
   (worth 0.001 on a 1-8 ramp) and priced every count at half a shoe. All fixed;
-  with the simulator's strategy and count frequencies the two now agree within
-  the simulator's error bars, and a test asserts it with no allowance. The one
-  named, measured difference left is the cut-card effect on frequencies, 0.0006
+  with the simulator's strategy and count frequencies the two now agree to
+  0.0003 units per round over 400 million simulated rounds (2.1 standard
+  errors, model high), and a test asserts agreement with no allowance. The
+  named, measured difference left is the cut-card effect on frequencies, 0.0007
   units per round, which the analytic model overstates by. Full breakdown in
   [Counting.md](Counting.md#reconciling-the-spread-model-with-the-simulator).
+  Follow-up, small: isolate the last 0.0003. The likeliest cause is that the
+  solver plays composition-perfect after the first decision where the simulator
+  follows the chart.
 
 - [ ] **Result cache with provenance.** *Demoted — the native core removed most
   of the need.* An index sweep is 1.7 s and a spread analysis 0.5 s, so this is
@@ -164,7 +168,7 @@ The terminal versions are built. What remains is depth and a UI.
   architecture should not preclude them.
 
 - [~] **Cut-card effect.** *Quantified, not yet modelled.* On a 1-8 Hi-Lo ramp
-  it costs 0.0006 units per round against the analytic spread model, because
+  it costs 0.0007 units per round against the analytic spread model, because
   rounds are sparser after the low-card runs that push the count up (the round
   before a positive count averages 5.64 cards, before a negative one 5.37). The
   analytic model weights card positions and cannot see it;
