@@ -11,7 +11,7 @@ description = "Exact-solver and simulation engine for blackjack strategy, counti
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = { text = "UNLICENSED-PROPRIETARY" }   # see markdown/adr/ADR-0005-licensing.md
-authors = [{ name = "Sean Fennig", email = "seanfennig@gmail.com" }]
+authors = [{ name = "Sean Fennig" }]
 keywords = ["blackjack", "card-counting", "expected-value", "monte-carlo", "solver"]
 classifiers = [
   "Private :: Do Not Upload",

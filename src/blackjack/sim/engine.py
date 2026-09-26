@@ -1,7 +1,7 @@
 """Monte Carlo simulation of a counted blackjack session.
 
-This is the direct descendant of the MATLAB prototype in ``../matlab``, with the
-bugs the prototype had around resplitting fixed and the whole thing restructured
+This is the direct descendant of an earlier MATLAB prototype (not published), with
+the bugs the prototype had around resplitting fixed and the whole thing restructured
 so the strategy, the bet ramp and the counting system are injected rather than
 hardcoded.
 
