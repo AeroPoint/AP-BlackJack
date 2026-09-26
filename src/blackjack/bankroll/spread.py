@@ -46,13 +46,14 @@ and the edge and variance at the bin's mean exact count
 Reconciliation with the simulator
 ---------------------------------
 Given a fixed ``strategy``, this model plays exactly what the simulator plays,
-and given the simulator's count frequencies, the two agree within its error bars
-(``tests/golden/test_cross_validation.py``, and a 400-million-round run recorded
-in ``markdown/Counting.md``). The approximations that remain, each smaller than
-0.0002 units per round on a 1-8 Hi-Lo ramp:
+and given the simulator's count frequencies, the two agree to 0.0003 units per
+round on a 1-8 Hi-Lo ramp: 0.00711 against 0.00683 +/- 0.00013 over 400 million
+simulated rounds (``markdown/Counting.md``). That is 2.1 standard errors, with the
+model high -- the direction every remaining approximation leans, none of them yet
+isolated:
 
-* the normal count model, about 0.0001 against the exact hypergeometric
-  distribution (see :mod:`blackjack.bankroll.counts`);
+* the normal count model's bin means and depths, against the exact
+  hypergeometric distribution (see :mod:`blackjack.bankroll.counts`);
 * the solver's play *after* the first decision -- hits after a hit, post-split
   hands -- is composition-perfect rather than the chart the simulator follows;
 * each bin is priced at one composition -- the maximum-entropy shoe at the
@@ -64,7 +65,7 @@ in ``markdown/Counting.md``). The approximations that remain, each smaller than
 What the model does *not* capture is the cut-card effect on frequencies: the
 simulator counts rounds, the model counts card positions, and rounds are sparser
 after the runs of low cards that make a count positive. On a 1-8 Hi-Lo ramp that
-costs about 0.0006 units per round, or 7% of the win rate, which the model
+costs about 0.0007 units per round, or 10% of the win rate, which the model
 overstates by. :meth:`~blackjack.bankroll.counts.TrueCountDistribution.with_frequencies`
 swaps in a simulator's measured frequencies to remove it.
 """

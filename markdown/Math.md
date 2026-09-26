@@ -258,7 +258,7 @@ model cannot see is that the simulator — and a player — experience *rounds*,
 card positions. Rounds are sparser after the runs of low cards that push the
 count up, because low cards make long rounds. That shifts about half a point of
 rounds from positive counts to zero and below: the cut-card effect, worth about
-0.0006 units per round on a 1-8 ramp. Where it matters, reweight to a
+0.0007 units per round on a 1-8 ramp. Where it matters, reweight to a
 simulator's histogram with `TrueCountDistribution.with_frequencies`. Where the far
 tails matter (deep single deck, spreads that pay off only at TC 8+), the
 simulator is the authority and this is the fast estimate.
