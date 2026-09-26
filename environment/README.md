@@ -24,14 +24,11 @@ re-run; every step checks before acting.
 
 ## Day to day
 
-`Launch-BlackJackEnv.bat` opens a shell in the repository with the environment
-ready. It replaces the original Spyder launcher and differs in three ways that
-matter:
+`Launch-BlackJackEnv.bat` (Windows) opens a shell in the repository with the
+environment ready. Three properties matter:
 
 - **No hardcoded paths.** It finds the repository from its own location, so the
-  checkout can live anywhere and the file survives being moved to another
-  machine. The original had `C:\Users\seanf\Desktop\Professional\BlackJack\python`
-  written into it four times.
+  checkout can live anywhere.
 - **It opens a shell, not one fixed application.** Use whatever editor you like.
 - **It degrades gracefully.** With no `uv` installed it falls back to running the
   engine on bare Python with `PYTHONPATH` set, which works because the engine has
@@ -67,22 +64,11 @@ Development tooling (`pytest`, `ruff`, `mypy`, `maturin`, `pre-commit`) is a PEP
 editable path source in `pyproject.toml`. `bj --version` reports which backend
 actually loaded, so there is no guessing.
 
-## The old environment
+## Editors
 
-`blackjackenv/` is the original Python 3.14 venv with Spyder in it. It is
-**superseded** and gitignored.
-
-It has been left on disk rather than deleted — several hundred megabytes of your
-disk is your call, not a script's. Nothing in this repository refers to it. When
-you are satisfied the new environment works:
-
-```powershell
-Remove-Item -Recurse -Force blackjackenv
-```
-
-Spyder itself is not part of the new setup. If you want it back, `uv add --dev
-spyder` — but note it is GPL-licensed, so keep it as a development tool only and
-out of anything shipped. See
+Nothing here assumes an editor. Spyder was used for the original prototype and
+is not part of this setup. If you add it, or any other GPL-licensed tool, keep it
+a local development tool and out of anything shipped. See
 [ADR-0005](../markdown/adr/ADR-0005-licensing.md).
 
 ## Why uv, why Python 3.13

@@ -3,8 +3,8 @@
 An exact combinatorial solver, Monte Carlo simulator and training engine for
 blackjack — strategy, counting, bet spreads, risk, and side bets.
 
-The MATLAB prototype in `../matlab` could simulate a Hi-Lo counter with a
-hardcoded chart and a hardcoded Illustrious-18 table. This project replaces it
+An earlier MATLAB prototype (not published) could simulate a Hi-Lo counter with
+a hardcoded chart and a hardcoded Illustrious-18 table. This project replaces it
 with something that *derives* those tables instead of reciting them, for any rule
 set and any counting system, and then explains how much each decision is worth.
 

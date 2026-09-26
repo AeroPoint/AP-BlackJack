@@ -187,9 +187,11 @@ The terminal versions are built. What remains is depth and a UI.
   learners in general into a claim about you, which is the point of the whole
   model. Highest-value remaining change to the importance work.
 
-- [ ] **Session tracker import.** `../Blackjack Tracker.xlsx` holds real session
-  data. Import it, compare realised results against the model's EV and SD, and
-  report how many standard deviations the session sits at.
+- [ ] **Session tracker import.** Import a player's own session log (CSV or
+  XLSX: date, hours, rules, spread, result), compare realised results against
+  the model's EV and SD, and report how many standard deviations the sessions
+  sit at. Session logs are personal data: read them from a path the user gives,
+  never commit one.
 
 - [ ] **Licensing decision.** Free, freemium or paid — see
   [ADR-0005](adr/ADR-0005-licensing.md). Affects nothing technical today because
