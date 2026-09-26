@@ -2,7 +2,7 @@
 REM ============================================================================
 REM  Blackjack solver -- development shell launcher
 REM
-REM  Replaces the original Spyder launcher. Differences that matter:
+REM  Properties that matter:
 REM    * no hardcoded absolute paths -- it locates the repository from its own
 REM      location, so the checkout can live anywhere;
 REM    * it opens a shell with the environment active rather than launching one
