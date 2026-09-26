@@ -197,8 +197,16 @@ The terminal versions are built. What remains is depth and a UI.
   with an inbound licence grant from contributors so the commercial licence can
   cover their work. See [ADR-0008](adr/ADR-0008-project-licence.md).
 
-- [ ] **CI.** `.github/workflows/ci.yml` runs lint, types, tests and the licence
-  check on Windows and Linux.
+- [x] **CI.** *Done, and green.* `.github/workflows/ci.yml` runs eight jobs on
+  every push and pull request: lint, format, types, the fast suite and the
+  installed-licence check across Windows and Linux on Python 3.11 and 3.13; the
+  engine on a bare Python with nothing installed, which is what actually enforces
+  [ADR-0004](adr/ADR-0004-dependency-free-core.md); the slow solver-vs-simulator
+  cross-validation once rather than across the matrix; and a native job that
+  builds the Rust core and runs the parity suite on both platforms. That last one
+  builds and tests in the *same* job on purpose — the parity suite skips itself
+  when no core is present, so split across jobs it would go green having tested
+  nothing.
 
 ---
 
