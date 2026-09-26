@@ -13,8 +13,11 @@ what makes the analysis fast, exact where it can be, and honest where it cannot:
 
 ``edge(count)``
     The *exact solver*, run against the maximum-entropy shoe for that count.
-    No simulation error, no interpolation, and it automatically accounts for
-    the fact that a counter also plays better at high counts, not just bigger.
+    No simulation error, and it automatically accounts for the fact that a
+    counter also plays better at high counts, not just bigger. It includes the
+    insurance bet, taken whenever it is worth taking: on a steep ramp that is
+    about a seventh of the whole win rate, and leaving it out was one of the
+    reasons this model and the simulator used to disagree.
 
 ``bet(count)``
     The ramp under test.
@@ -30,23 +33,61 @@ about 1.24 at a true count of -6 and 1.67 at +10, because high counts mean more
 doubles and more splits. A bet ramp puts its *largest* bets exactly where
 variance is highest, and bets enter the variance squared -- so a flat constant
 understates risk of ruin precisely where it matters.
+
+A count bin is priced at its mean, not its label
+------------------------------------------------
+The ramp bets on the integer count the player computes, but the edge depends on
+the exact count. Under truncation, bin +1 is every count in ``[1, 2)`` and
+averages about +1.34, so pricing it at exactly +1 undervalues it by a third of
+the bin's edge. :func:`evaluate_ramp` therefore reads the bet at the bin's label
+and the edge and variance at the bin's mean exact count
+(:attr:`~blackjack.bankroll.counts.TrueCountDistribution.means`).
+
+Reconciliation with the simulator
+---------------------------------
+Given a fixed ``strategy``, this model plays exactly what the simulator plays,
+and given the simulator's count frequencies, the two agree within its error bars
+(``tests/golden/test_cross_validation.py``, and a 400-million-round run recorded
+in ``markdown/Counting.md``). The approximations that remain, each smaller than
+0.0002 units per round on a 1-8 Hi-Lo ramp:
+
+* the normal count model, about 0.0001 against the exact hypergeometric
+  distribution (see :mod:`blackjack.bankroll.counts`);
+* the solver's play *after* the first decision -- hits after a hit, post-split
+  hands -- is composition-perfect rather than the chart the simulator follows;
+* each bin is priced at one composition -- the maximum-entropy shoe at the
+  bin's mean count and typical depth -- rather than averaged over the shoes that
+  share the count. Resolving depth fully instead moves each bin's edge by under
+  0.001 points; and
+* insurance adds variance that the per-count variance here does not include.
+
+What the model does *not* capture is the cut-card effect on frequencies: the
+simulator counts rounds, the model counts card positions, and rounds are sparser
+after the runs of low cards that make a count positive. On a 1-8 Hi-Lo ramp that
+costs about 0.0006 units per round, or 7% of the win rate, which the model
+overstates by. :meth:`~blackjack.bankroll.counts.TrueCountDistribution.with_frequencies`
+swaps in a simulator's measured frequencies to remove it.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from itertools import pairwise
 
 from blackjack.bankroll.counts import TrueCountDistribution, true_count_distribution
 from blackjack.bankroll.metrics import BankrollMetrics
-from blackjack.counting import CountSystem
+from blackjack.cards import ACE
+from blackjack.counting import CountSystem, apply_rounding
 from blackjack.ev.moments import round_moments
 from blackjack.ev.player import insurance_ev
-from blackjack.ev.solver import solve
+from blackjack.ev.solver import SolveResult, solve
+from blackjack.hand import hand_value
 from blackjack.rules import RuleSet
 from blackjack.shoe import remove_many
 from blackjack.sim.engine import BetRamp
+from blackjack.sim.strategy import PlayingStrategy
 from blackjack.strategy.deviations import tilted_composition
 
 DEFAULT_VARIANCE_PER_UNIT = 1.349
@@ -79,6 +120,21 @@ class CountEdge:
     ``None`` means the caller asked to skip it and a fallback constant will be
     used instead."""
 
+    insurance_per_round: float = 0.0
+    """What the insurance decision adds to a one-unit round, in units.
+
+    ``P(dealer shows an ace) x 1/2 x insurance_edge`` when insurance is taken at
+    this count, zero when it is declined. Kept apart from :attr:`edge` so that
+    ``edge`` still means the main bet alone."""
+
+    decks_remaining: float | None = None
+    """The shoe depth this point was solved at, in decks."""
+
+    @property
+    def round_edge(self) -> float:
+        """EV of a one-unit round including the insurance decision."""
+        return self.edge + self.insurance_per_round
+
 
 def count_edge_curve(
     rules: RuleSet,
@@ -87,11 +143,12 @@ def count_edge_curve(
     *,
     decks_remaining: float | None = None,
     exact_variance: bool = True,
+    strategy: PlayingStrategy | None = None,
 ) -> list[CountEdge]:
     """Exact player edge, and optionally variance, at each true count.
 
-    Results depend only on ``(rules, system, count, decks remaining)``, so they
-    cache well.
+    Results depend only on ``(rules, system, count, decks remaining)``, plus the
+    strategy if one is given, so they cache well.
 
     Args:
         rules: Table rules.
@@ -102,25 +159,127 @@ def count_edge_curve(
             doubles the cost and is worth it: a flat variance understates risk
             of ruin for any ramp, because the biggest bets sit at the counts
             where variance is highest.
+        strategy: Price this fixed strategy instead of composition-perfect
+            play. Its decisions, including insurance, are taken at the count the
+            player would compute from each requested count -- the system's
+            rounding applied to it -- which is how the simulator plays it. Pass
+            the simulator's strategy to compare the two like for like. The
+            variance stays that of composition-perfect play.
 
     Returns:
         One :class:`CountEdge` per requested count, in the order given.
     """
     dr = decks_remaining if decks_remaining is not None else rules.decks / 2.0
+    return [_count_edge(rules, system, tc, dr, exact_variance, strategy) for tc in counts]
+
+
+def bin_edge_curve(
+    rules: RuleSet,
+    system: CountSystem,
+    distribution: TrueCountDistribution,
+    *,
+    lo: float = -6.0,
+    hi: float = 10.0,
+    exact_variance: bool = True,
+    strategy: PlayingStrategy | None = None,
+    progress: Callable[[int, int], None] | None = None,
+) -> list[CountEdge]:
+    """The edge in each count bin, solved where that bin actually sits.
+
+    One solve per bin, at the bin's mean exact count and its typical depth
+    (:attr:`~blackjack.bankroll.counts.TrueCountDistribution.decks_remaining`).
+    This is what :func:`evaluate_ramp` uses by default, and it is no more
+    expensive than a grid of integer counts at half-shoe depth -- but it prices
+    a zero count, which mostly occurs early in the shoe, at about four decks
+    left rather than three, and that alone moves its edge by 0.05 points.
+
+    Args:
+        rules: Table rules.
+        system: Counting system.
+        distribution: The count bins to price.
+        lo: Lowest bin to solve. Bins outside ``[lo, hi]`` borrow the nearest
+            solved edge in :func:`evaluate_ramp`.
+        hi: Highest bin to solve.
+        exact_variance: Also compute the exact per-bin variance.
+        strategy: Price this fixed strategy instead of composition-perfect play.
+            See :func:`count_edge_curve`.
+        progress: Optional ``(done, total)`` callback, one call per bin.
+
+    Returns:
+        One :class:`CountEdge` per bin in range, keyed by the bin's mean count.
+    """
+    default_dr = rules.decks / 2.0
+    wanted = [i for i, c in enumerate(distribution.counts) if lo <= c <= hi]
     out: list[CountEdge] = []
-    for tc in counts:
-        comp = tilted_composition(system, rules.decks, dr, tc)
-        result = solve(rules, comp)
-        variance = round_moments(rules, comp).variance if exact_variance else None
-        out.append(
-            CountEdge(
-                true_count=tc,
-                edge=result.optimal_ev,
-                insurance_edge=insurance_ev(remove_many(comp, [1]), rules),
-                variance=variance,
-            )
-        )
+    for n, i in enumerate(wanted, start=1):
+        dr = distribution.decks_remaining_of_bin(i) or default_dr
+        tc = distribution.mean_of_bin(i)
+        out.append(_count_edge(rules, system, tc, dr, exact_variance, strategy))
+        if progress:
+            progress(n, len(wanted))
     return out
+
+
+def _count_edge(
+    rules: RuleSet,
+    system: CountSystem,
+    tc: float,
+    dr: float,
+    exact_variance: bool,
+    strategy: PlayingStrategy | None,
+) -> CountEdge:
+    """Solve one count at one depth. See :func:`count_edge_curve`."""
+    comp = tilted_composition(system, rules.decks, dr, tc)
+    result = solve(rules, comp)
+    variance = round_moments(rules, comp).variance if exact_variance else None
+    insurance = insurance_ev(remove_many(comp, [ACE]), rules)
+    if strategy is None:
+        edge = result.optimal_ev
+        takes_insurance = insurance > 0.0
+    else:
+        player_tc = apply_rounding(tc, system.rounding) if system.balanced else tc
+        edge = _strategy_edge(rules, result, strategy, player_tc)
+        takes_insurance = strategy.takes_insurance(player_tc)
+    # The insurance bet is half the main bet, offered only against an ace.
+    ace_up = comp[ACE - 1] / sum(comp)
+    return CountEdge(
+        true_count=tc,
+        edge=edge,
+        insurance_edge=insurance,
+        variance=variance,
+        insurance_per_round=ace_up * 0.5 * insurance if takes_insurance else 0.0,
+        decks_remaining=dr,
+    )
+
+
+def _strategy_edge(
+    rules: RuleSet, solved: SolveResult, strategy: PlayingStrategy, player_tc: float
+) -> float:
+    """EV of a round when the first decision follows ``strategy``.
+
+    Each cell's EVs come from the exact solve of the shoe, so the only thing
+    fixed is the first decision on each two-card hand -- the one a chart and its
+    indices actually govern. Play after that (a hit after a hit, post-split
+    hands) stays composition-perfect, which is an approximation named in the
+    module docstring.
+    """
+    total = 0.0
+    for cell in solved.cell_results:
+        if cell.is_natural:
+            total += cell.probability * cell.round_ev(rules)
+            continue
+        first, second = cell.cards
+        hand_total, soft = hand_value(cell.cards)
+        pair = first if first == second else None
+        action = strategy.action(
+            hand_total, soft, cell.upcard, pair_rank=pair, num_cards=2, true_count=player_tc
+        )
+        if action not in cell.evs:
+            # A play this particular hand cannot make. The strategy's own
+            # fallbacks make this rare; take the best legal play as the table would.
+            action = max(cell.evs, key=lambda a: cell.evs[a])
+        total += cell.probability * cell.round_ev(rules, action)
+    return total
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +301,11 @@ class SpreadResult:
     """Net win as a fraction of total money wagered."""
 
     detail: list[tuple[float, float, float, float, float]] = field(default_factory=list)
-    """Per-count ``(true count, probability, bet units, edge, variance)`` rows."""
+    """Per-count ``(true count, probability, bet units, edge, variance)`` rows.
+
+    The true count is the bin's label, the one the bet is keyed on. Edge and
+    variance are at the bin's mean exact count, and the edge includes the
+    insurance decision."""
 
     exact_variance: bool = False
     """Whether the variance came from the solver rather than the fallback."""
@@ -194,37 +357,34 @@ def evaluate_ramp(
         ramp: The spread to evaluate.
         rules: Table rules.
         system: Counting system.
-        edges: Precomputed edge curve. Computed if omitted, which is slow.
+        edges: Precomputed edge curve. Computed with :func:`bin_edge_curve`
+            if omitted: one solve per bin from -6 to +10, each at the bin's mean
+            count and typical depth.
         distribution: True-count frequencies. Built from the rules if omitted.
         variance_per_unit: Fallback variance of a one-unit round, used only for
             counts whose :class:`CountEdge` carries no exact figure.
-        counts: True counts to evaluate when ``edges`` is not supplied.
+        counts: If given and ``edges`` is not, solve these counts at half-shoe
+            depth instead of the bins. Kept for callers that want a fixed grid;
+            the default is more accurate for the same cost.
 
     Returns:
-        The spread's EV, variance and per-count breakdown.
+        The spread's EV, variance and per-count breakdown. Each bin is bet at
+        its label and priced at its mean exact count, with the edge read off the
+        curve by linear interpolation and clamped at its ends.
     """
     freq = distribution or true_count_distribution(system, rules.decks, rules.penetration)
-    grid = counts or [c for c in freq.counts if -6 <= c <= 10]
-    curve = edges or count_edge_curve(rules, system, grid)
-    edge_by_count = {e.true_count: e.edge for e in curve}
+    if edges is not None:
+        curve = edges
+    elif counts is not None:
+        curve = count_edge_curve(rules, system, counts)
+    else:
+        curve = bin_edge_curve(rules, system, freq)
+    edge_by_count = {e.true_count: e.round_edge for e in curve}
     variance_by_count = {e.true_count: e.variance for e in curve if e.variance is not None}
 
     def edge_at(tc: float) -> float:
-        """Edge at ``tc``, linearly interpolated between solved points."""
-        if tc in edge_by_count:
-            return edge_by_count[tc]
-        known = sorted(edge_by_count)
-        if not known:
-            return 0.0
-        if tc <= known[0]:
-            return edge_by_count[known[0]]
-        if tc >= known[-1]:
-            return edge_by_count[known[-1]]
-        for a, b in pairwise(known):
-            if a <= tc <= b:
-                w = (tc - a) / (b - a) if b != a else 0.0
-                return edge_by_count[a] * (1 - w) + edge_by_count[b] * w
-        return 0.0  # pragma: no cover - covered by the bounds above
+        """Round edge at ``tc``, linearly interpolated between solved points."""
+        return _interpolate(edge_by_count, tc)
 
     def variance_at(tc: float) -> float:
         """Exact variance at ``tc`` when available, nearest solved point otherwise.
@@ -246,19 +406,23 @@ def evaluate_ramp(
     played = 0.0
     detail: list[tuple[float, float, float, float, float]] = []
 
-    for tc, p in zip(freq.counts, freq.probabilities, strict=True):
+    for i, (tc, p) in enumerate(zip(freq.counts, freq.probabilities, strict=True)):
+        # The bet follows the count the player computes; the edge follows the
+        # count the shoe actually has. See the module docstring.
         bet = ramp.bet(tc)
-        edge = edge_at(tc)
+        exact = freq.mean_of_bin(i)
+        edge = edge_at(exact)
+        variance = variance_at(exact)
         contribution = p * bet * edge
         ev += contribution
         # E[X^2] for a round: bet^2 * (variance per unit + edge^2). The variance
         # term is exact per count where the curve supplies it, which matters
         # because the largest bets land where variance is highest.
-        second_moment += p * bet * bet * (variance_at(tc) + edge * edge)
+        second_moment += p * bet * bet * (variance + edge * edge)
         total_bet += p * bet
         if bet > 0:
             played += p
-        detail.append((tc, p, bet, edge, variance_at(tc)))
+        detail.append((tc, p, bet, edge, variance))
 
     variance = max(0.0, second_moment - ev * ev)
     return SpreadResult(
@@ -273,6 +437,24 @@ def evaluate_ramp(
         detail=detail,
         exact_variance=bool(variance_by_count),
     )
+
+
+def _interpolate(points: dict[float, float], tc: float) -> float:
+    """Linear interpolation between solved counts, clamped at the ends."""
+    if tc in points:
+        return points[tc]
+    known = sorted(points)
+    if not known:
+        return 0.0
+    if tc <= known[0]:
+        return points[known[0]]
+    if tc >= known[-1]:
+        return points[known[-1]]
+    for a, b in pairwise(known):
+        if a <= tc <= b:
+            w = (tc - a) / (b - a) if b != a else 0.0
+            return points[a] * (1 - w) + points[b] * w
+    return 0.0  # pragma: no cover - covered by the bounds above
 
 
 def optimise_ramp(

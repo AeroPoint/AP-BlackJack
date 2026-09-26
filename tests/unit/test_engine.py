@@ -7,10 +7,18 @@ import math
 import pytest
 
 from blackjack.actions import Action
-from blackjack.bankroll.counts import true_count_distribution
+from blackjack.bankroll.counts import count_step, true_count_distribution
 from blackjack.bankroll.metrics import BankrollMetrics, n0, risk_of_ruin
 from blackjack.cards import parse_hand, parse_rank
-from blackjack.counting import HI_LO, KO, SYSTEMS, TrueCountRounding, apply_rounding
+from blackjack.counting import (
+    HI_LO,
+    KO,
+    SYSTEMS,
+    WONG_HALVES,
+    ZEN_COUNT,
+    TrueCountRounding,
+    apply_rounding,
+)
 from blackjack.ev.importance import Importance, analyse, closeness, mistake_cost
 from blackjack.ev.solver import Category, categorise, enumerate_deals, solve
 from blackjack.hand import add_card, hand_value, is_blackjack, is_pair
@@ -176,6 +184,93 @@ def test_true_count_distribution_is_a_distribution() -> None:
     # High counts must be rare and low counts common.
     assert dist.probability_at_or_above(5) < 0.05
     assert dist.probability_at_or_above(0) > 0.35
+
+
+def _exact_hi_lo_distribution(decks: int, penetration: float) -> dict[float, tuple[float, float]]:
+    """The Hi-Lo true-count distribution computed exactly, as the simulator plays it.
+
+    Hi-Lo has three tag classes, so the cards seen at each depth follow a
+    multivariate hypergeometric distribution that can be summed outright. The
+    player's count uses a half-deck estimate of the divisor and truncation, as
+    ``CountState`` does. Returns ``{bin: (probability, mean exact count)}``.
+    """
+    total = 52 * decks
+    low = high = 20 * decks
+    neutral = total - low - high
+
+    def log_comb(n: int, k: int) -> float:
+        return math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
+
+    bins: dict[float, list[float]] = {}
+    for dealt in range(round(total * penetration)):
+        remaining = (total - dealt) / 52
+        norm = log_comb(total, dealt)
+        for lows in range(max(0, dealt - high - neutral), min(low, dealt) + 1):
+            for highs in range(max(0, dealt - lows - neutral), min(high, dealt - lows) + 1):
+                p = math.exp(
+                    log_comb(low, lows)
+                    + log_comb(high, highs)
+                    + log_comb(neutral, dealt - lows - highs)
+                    - norm
+                )
+                if p < 1e-16:
+                    continue
+                rc = lows - highs
+                tc = HI_LO.true_count(rc, remaining, estimation=0.5)
+                acc = bins.setdefault(tc, [0.0, 0.0])
+                acc[0] += p
+                acc[1] += p * rc / remaining
+    mass = sum(v[0] for v in bins.values())
+    return {k: (v[0] / mass, v[1] / v[0]) for k, v in bins.items()}
+
+
+def test_true_count_distribution_matches_the_exact_distribution() -> None:
+    """The normal model must reproduce the hypergeometric truth, bins and means.
+
+    This is the test the original model would have failed by 17 percentage
+    points at a zero count: it binned every count as if the player rounded to
+    nearest, whatever the rounding mode said.
+    """
+    exact = _exact_hi_lo_distribution(6, 0.75)
+    model = true_count_distribution(HI_LO, 6, 0.75)
+    for tc in range(-6, 7):
+        p_exact, mean_exact = exact[float(tc)]
+        i = model.counts.index(float(tc))
+        p_model, mean_model = model.probabilities[i], model.mean_of_bin(i)
+        assert p_model == pytest.approx(p_exact, abs=0.0015), tc
+        assert mean_model == pytest.approx(mean_exact, abs=0.02), tc
+
+
+def test_truncated_bins_hold_the_counts_that_truncate_to_them() -> None:
+    """Truncation makes bin 0 twice as wide, and pushes every bin mean outward.
+
+    With a perfect deck estimate, so that the player's count and the exact count
+    differ only by the rounding. (With a half-deck estimate a bin's mean can sit
+    just outside it, because the player divided by the wrong number of decks.)
+    """
+    truncated = true_count_distribution(
+        HI_LO, 6, 0.75, rounding=TrueCountRounding.TRUNCATE, estimation=0.0
+    )
+    rounded = true_count_distribution(
+        HI_LO, 6, 0.75, rounding=TrueCountRounding.ROUND, estimation=0.0
+    )
+    assert truncated.probability_at(0) > 1.5 * rounded.probability_at(0)
+    for i, tc in enumerate(truncated.counts):
+        mean = truncated.mean_of_bin(i)
+        if tc > 0:
+            assert tc <= mean < tc + 1
+        elif tc < 0:
+            assert tc - 1 < mean <= tc
+        else:
+            assert mean == pytest.approx(0.0, abs=1e-9)
+    for i, tc in enumerate(rounded.counts):
+        assert tc - 0.5 <= rounded.mean_of_bin(i) < tc + 0.5
+
+
+def test_count_step_is_the_running_count_lattice() -> None:
+    assert count_step(HI_LO) == 1.0
+    assert count_step(WONG_HALVES) == 0.5
+    assert count_step(ZEN_COUNT) == 1.0
 
 
 # --- The count tilt -----------------------------------------------------------

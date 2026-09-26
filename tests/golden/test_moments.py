@@ -11,6 +11,8 @@ Three independent checks, and the module is only trustworthy if all three hold:
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from blackjack.backend import ACTIVE
@@ -147,12 +149,12 @@ def test_exact_variance_raises_risk_of_ruin_for_a_ramp() -> None:
     using an off-the-top constant understates both the standard deviation and
     the bankroll the game actually requires.
     """
-    from blackjack.bankroll.spread import CountEdge, count_edge_curve, evaluate_ramp
+    from blackjack.bankroll.spread import count_edge_curve, evaluate_ramp
     from blackjack.sim.engine import BetRamp
 
     grid = [float(c) for c in range(-6, 11)]
     curve = count_edge_curve(VEGAS_6D_H17, HI_LO, grid)
-    flattened = [CountEdge(c.true_count, c.edge, c.insurance_edge, None) for c in curve]
+    flattened = [dataclasses.replace(c, variance=None) for c in curve]
     ramp = BetRamp(thresholds=(-99.0, 1.0, 2.0, 3.0, 4.0, 5.0), units=(1, 2, 4, 6, 9, 12))
 
     exact = evaluate_ramp(ramp, VEGAS_6D_H17, HI_LO, edges=curve, counts=grid)
