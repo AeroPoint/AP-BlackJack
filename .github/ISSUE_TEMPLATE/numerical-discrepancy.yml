@@ -1,0 +1,37 @@
+name: Numerical discrepancy
+description: The solver disagrees with a published figure, or with the simulator, or with itself.
+labels: ["numerics"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These are the most valuable reports this project gets. A discrepancy is worth reporting even without a fix.
+  - type: textarea
+    id: command
+    attributes:
+      label: What you ran
+      description: The exact command or code, and the rule set / counting system / config.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What it produced
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and the source
+      description: Cite the book, paper, or calculator (with edition/page or URL). A number without provenance cannot be checked.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Output of `bj --version`
+      description: Includes the engine version and which backend (python or rust) was loaded.
+    validations:
+      required: true
