@@ -171,6 +171,48 @@ def test_exact_variance_raises_risk_of_ruin_for_a_ramp() -> None:
     assert exact_metrics.bankroll_for_ruin(0.05) > flat_metrics.bankroll_for_ruin(0.05)
 
 
+@pytest.mark.slow
+def test_published_risk_of_ruin_figures_still_hold() -> None:
+    """Pins the risk-of-ruin figures quoted in the documentation.
+
+    Math.md, ReadMe.md and ToDo.md all state that for a 1-12 spread at a 25 unit
+    on a 42,000 bankroll, treating variance as flat reports 2.06% lifetime risk
+    against a true 2.53%, and a bankroll about 1,800 light. Those are outputs of
+    this engine, quoted in prose where nothing else checks them, so this asserts
+    them: if the numbers move for a good reason, this test fails and the three
+    documents get updated in the same commit.
+
+    The configuration has to be the one the docs quote -- the default bin curve,
+    which is what ``bj spread`` prints -- not the integer grid the test above
+    uses. The two differ (the grid gives 2.12% and 2.56%), which is exactly the
+    kind of mismatch this pins down.
+
+    Marked slow because it solves every bin with exact variance: under a second
+    on the native core, about a minute without it. The *invariant* that exact
+    variance raises risk is asserted by the test above, which is not slow; this
+    only guards the published values.
+    """
+    from blackjack.bankroll.counts import true_count_distribution
+    from blackjack.bankroll.spread import bin_edge_curve, evaluate_ramp
+    from blackjack.sim.engine import BetRamp
+
+    ramp = BetRamp(thresholds=(-99.0, 1.0, 2.0, 3.0, 4.0, 5.0), units=(1, 2, 4, 6, 9, 12))
+    distribution = true_count_distribution(HI_LO, VEGAS_6D_H17.decks, VEGAS_6D_H17.penetration)
+    curve = bin_edge_curve(VEGAS_6D_H17, HI_LO, distribution)
+    flattened = [dataclasses.replace(c, variance=None) for c in curve]
+
+    exact = evaluate_ramp(ramp, VEGAS_6D_H17, HI_LO, edges=curve, distribution=distribution)
+    flat = evaluate_ramp(ramp, VEGAS_6D_H17, HI_LO, edges=flattened, distribution=distribution)
+    exact_metrics = exact.metrics(unit=25, bankroll=42_000)
+    flat_metrics = flat.metrics(unit=25, bankroll=42_000)
+
+    assert exact_metrics.risk_of_ruin * 100 == pytest.approx(2.53, abs=0.01)
+    assert flat_metrics.risk_of_ruin * 100 == pytest.approx(2.06, abs=0.01)
+
+    gap = exact_metrics.bankroll_for_ruin(0.05) - flat_metrics.bankroll_for_ruin(0.05)
+    assert gap == pytest.approx(1_838, abs=60), f"docs say about 1,800 light, got {gap:.0f}"
+
+
 def test_flat_betting_variance_matches_the_off_the_top_figure() -> None:
     """With no ramp there is nothing to weight, so the two must coincide."""
     from blackjack.bankroll.spread import count_edge_curve, evaluate_ramp
