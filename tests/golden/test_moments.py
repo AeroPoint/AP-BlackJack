@@ -189,12 +189,20 @@ def test_published_risk_of_ruin_figures_still_hold() -> None:
     kind of mismatch this pins down.
 
     Gated on the native core because it solves all seventeen bins with exact
-    variance. That is under a second with the core and minutes without it -- it
-    was marked ``slow`` first, and cost the slow job nearly seven minutes on
-    CI's runners, which is poor value for a guard on prose. Here it runs in the
-    native jobs on both platforms instead, and skips where it would be slow.
+    variance: measured at 0.5 s on the accelerator against 69.8 s without it, a
+    140x difference. Seventy seconds on each of four matrix jobs is poor value
+    for a guard on three sentences of prose, so it runs in the two native jobs
+    instead and skips where it would be slow.
+
+    It was marked ``slow`` first, which was worse: that job builds no
+    accelerator, so it paid the seventy seconds and nothing else gained. Do not
+    trust the job's wall time to show that -- the same nine slow tests have run
+    in 779 s and 1092 s on different runners, a 40% swing, which is wide enough
+    to hide this test completely. The 0.5 s and 69.8 s above are measured
+    directly, which is why they are the numbers quoted.
+
     The *invariant* that exact variance raises risk is asserted by the test
-    above, which needs no core and runs everywhere.
+    above, which needs no accelerator and runs everywhere.
     """
     from blackjack.bankroll.counts import true_count_distribution
     from blackjack.bankroll.spread import bin_edge_curve, evaluate_ramp
