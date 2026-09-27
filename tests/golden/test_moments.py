@@ -171,7 +171,8 @@ def test_exact_variance_raises_risk_of_ruin_for_a_ramp() -> None:
     assert exact_metrics.bankroll_for_ruin(0.05) > flat_metrics.bankroll_for_ruin(0.05)
 
 
-@pytest.mark.slow
+@pytest.mark.native
+@pytest.mark.skipif(not ACTIVE.is_native, reason="native core unavailable")
 def test_published_risk_of_ruin_figures_still_hold() -> None:
     """Pins the risk-of-ruin figures quoted in the documentation.
 
@@ -187,10 +188,13 @@ def test_published_risk_of_ruin_figures_still_hold() -> None:
     uses. The two differ (the grid gives 2.12% and 2.56%), which is exactly the
     kind of mismatch this pins down.
 
-    Marked slow because it solves every bin with exact variance: under a second
-    on the native core, about a minute without it. The *invariant* that exact
-    variance raises risk is asserted by the test above, which is not slow; this
-    only guards the published values.
+    Gated on the native core because it solves all seventeen bins with exact
+    variance. That is under a second with the core and minutes without it -- it
+    was marked ``slow`` first, and cost the slow job nearly seven minutes on
+    CI's runners, which is poor value for a guard on prose. Here it runs in the
+    native jobs on both platforms instead, and skips where it would be slow.
+    The *invariant* that exact variance raises risk is asserted by the test
+    above, which needs no core and runs everywhere.
     """
     from blackjack.bankroll.counts import true_count_distribution
     from blackjack.bankroll.spread import bin_edge_curve, evaluate_ramp
