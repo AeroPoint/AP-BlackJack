@@ -37,8 +37,9 @@ from enum import StrEnum
 
 from blackjack.actions import Action
 from blackjack.ev.importance import DecisionAnalysis, analyse, classify
-from blackjack.ev.player import action_evs, make_context
+from blackjack.ev.player import hand_action_evs, make_context
 from blackjack.ev.solver import Category, categorise, deal_probability
+from blackjack.hand import hand_value
 from blackjack.rules import RuleSet
 from blackjack.shoe import Composition, remove_many
 
@@ -167,24 +168,32 @@ def legal_actions(
 
 
 def grade(
-    cards: tuple[int, int],
+    cards: tuple[int, ...],
     upcard: int,
     comp: Composition,
     rules: RuleSet,
     chosen: Action,
     *,
+    after_split: bool = False,
+    splits_used: int = 0,
     standard: Standard = Standard.CHART,
     expected: Action | None = None,
 ) -> Verdict:
-    """Grade one two-card decision.
+    """Grade one decision, on a hand of any length, split or not.
 
     Args:
-        cards: The player's two cards.
+        cards: The player's hand. Two cards for an opening decision, more for a
+            hand reached by hitting. For a split hand the first entry is the
+            split rank, as the table deals it.
         upcard: Dealer upcard.
-        comp: The *live* shoe, with the player's cards and the upcard still in
-            it. They are removed here so callers cannot get it half right.
+        comp: The *live* shoe, with this hand's cards and the upcard still in
+            it. They are removed here so callers cannot get it half right. A
+            sibling split hand's cards stay removed, because they really are
+            gone.
         rules: Table rules.
         chosen: What the player did.
+        after_split: Whether this hand came from a split.
+        splits_used: Split operations already performed this round.
         standard: What to hold them to.
         expected: The standard's answer, when the caller already knows it --
             from a compiled chart, say. Computed from the exact shoe when
@@ -196,14 +205,21 @@ def grade(
     Raises:
         ValueError: if ``chosen`` is not legal for this hand.
     """
-    after = remove_many(comp, [cards[0], cards[1], upcard])
+    after = remove_many(comp, [*cards, upcard])
     ctx = make_context(after, upcard, rules)
-    evs = action_evs(cards, after, ctx)
+    evs = hand_action_evs(cards, after, ctx, after_split=after_split, splits_used=splits_used)
 
     if chosen not in evs:
         raise ValueError(f"{chosen.label} is not legal for {cards} vs {upcard}")
 
-    frequency = deal_probability(comp, (min(cards), max(cards)), upcard)
+    # Frequency is the chance of *being dealt* this spot, which only means
+    # anything for an opening hand. A hand reached by hitting, or off a split,
+    # gets zero rather than a number that looks like a frequency and is not one.
+    frequency = (
+        deal_probability(comp, (min(cards), max(cards)), upcard)
+        if len(cards) == 2 and not after_split
+        else 0.0
+    )
     analysis = analyse(evs, frequency=frequency)
 
     target = expected if expected is not None else analysis.best
@@ -230,7 +246,17 @@ def grade(
     )
 
 
-def cell_key(cards: tuple[int, int], upcard: int) -> tuple[Category, int, int]:
-    """Chart cell a hand belongs to, for per-cell statistics."""
-    category, row = categorise(cards)
-    return (category, row, upcard)
+def cell_key(cards: tuple[int, ...], upcard: int) -> tuple[Category, int, int]:
+    """Chart cell a hand belongs to, for per-cell statistics.
+
+    A hand of three or more cards keys to its total's hard or soft row -- the
+    row the chart would have you consult. A split hand keys to the same cell an
+    opening hand of that shape would, which buckets "hard 11 off a split" with
+    "hard 11" deliberately: it is the same thing the player is learning, and
+    splitting the statistics would only make each half noisier.
+    """
+    if len(cards) == 2:
+        category, row = categorise((cards[0], cards[1]))
+        return (category, row, upcard)
+    value = hand_value(cards)
+    return ((Category.SOFT if value.soft else Category.HARD), value.total, upcard)

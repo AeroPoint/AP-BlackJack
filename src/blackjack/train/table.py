@@ -105,6 +105,11 @@ class RoundState:
         """The hand awaiting a decision."""
         return self.hands[self.active] if 0 <= self.active < len(self.hands) else None
 
+    @property
+    def splits_used(self) -> int:
+        """Split operations performed this round. Each one adds a hand."""
+        return len(self.hands) - 1
+
 
 class Table:
     """A dealt blackjack game the caller drives one action at a time.

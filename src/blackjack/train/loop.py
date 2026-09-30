@@ -23,9 +23,9 @@ from blackjack.rules import RuleSet
 from blackjack.shoe import full_shoe
 from blackjack.sim.strategy import PlayingStrategy, compile_strategy
 from blackjack.train.drill import pick
-from blackjack.train.grading import Standard, Verdict, grade
+from blackjack.train.grading import Standard, Verdict, cell_key, grade
 from blackjack.train.session import Session, describe_cell
-from blackjack.train.table import Phase, Table
+from blackjack.train.table import Hand, Phase, RoundState, Table
 
 #: Single-key answers. Deliberately the same letters the chart prints.
 KEYS: dict[str, Action] = {
@@ -197,13 +197,10 @@ def run_free_play(
                 print(session.report())
                 return session
 
-            if len(hand.cards) == 2:
-                verdict = _grade_here(table, play, hand, state, chosen, rules, standard)
-                if verdict is not None:
-                    key = _cell_key(hand, state.upcard)
-                    session.record(key, verdict)
-                    mark = "[ok]" if verdict.correct else "[XX]"
-                    print(f"  {mark} {verdict.message(unit)}")
+            verdict = _grade_here(table, play, hand, state, chosen, rules, standard)
+            session.record(cell_key(tuple(hand.cards), state.upcard), verdict)
+            mark = "[ok]" if verdict.correct else "[XX]"
+            print(f"  {mark} {verdict.message(unit)}")
 
             state = table.act(chosen)
 
@@ -224,59 +221,56 @@ def run_free_play(
     return session
 
 
-def _cell_key(hand: object, upcard: int) -> tuple[Category, int, int]:
-    """Chart cell for a live hand."""
-    from blackjack.train.grading import cell_key
-
-    cards = tuple(hand.cards)  # type: ignore[attr-defined]
-    return cell_key((cards[0], cards[1]), upcard)
-
-
 def _grade_here(
     table: Table,
     play: PlayingStrategy,
-    hand: object,
-    state: object,
+    hand: Hand,
+    state: RoundState,
     chosen: Action,
     rules: RuleSet,
     standard: Standard,
-) -> Verdict | None:
-    """Grade a two-card decision against the live shoe.
+) -> Verdict:
+    """Price one decision against the live shoe, whatever kind of hand it is.
 
-    Returns ``None`` when the hand cannot be graded as a chart cell -- currently
-    only post-split hands, whose correct play depends on the split context in a
-    way a single chart cell does not capture.
+    Every decision the table asks for is graded: an opening hand, a hand reached
+    by hitting, and a hand off a split. The last two used to be skipped, on the
+    grounds that a chart cell does not capture the split context -- but the
+    compiled strategy has always taken ``after_split`` and ``num_cards`` and
+    degraded illegal plays correctly, so the standard was expressible all along
+    and the trainer simply never asked it.
     """
-    cards = tuple(hand.cards)  # type: ignore[attr-defined]
-    if len(cards) != 2 or hand.from_split:  # type: ignore[attr-defined]
-        return None
+    cards = tuple(hand.cards)
+    upcard = state.upcard
 
-    upcard = state.upcard  # type: ignore[attr-defined]
-    # The live shoe with this round's three visible cards put back, because
-    # `grade` removes them itself.
+    # The live shoe with this hand's cards and the upcard put back, because
+    # `grade` removes them itself. A sibling split hand's cards stay out: those
+    # really are gone.
     comp = list(table.composition())
-    for rank in (cards[0], cards[1], upcard):
+    for rank in (*cards, upcard):
         comp[rank - 1] += 1.0
 
     expected: Action | None = None
     if standard is not Standard.EXACT:
-        tc = state.true_count if standard is Standard.COUNT else 0.0  # type: ignore[attr-defined]
-        pair = cards[0] if cards[0] == cards[1] else None
+        tc = state.true_count if standard is Standard.COUNT else 0.0
+        pair = cards[0] if len(cards) == 2 and cards[0] == cards[1] else None
         expected = play.action(
-            hand.total,  # type: ignore[attr-defined]
-            hand.soft,  # type: ignore[attr-defined]
+            hand.total,
+            hand.soft,
             upcard,
             pair_rank=pair,
-            num_cards=2,
+            num_cards=len(cards),
+            after_split=hand.from_split,
             true_count=tc,
         )
 
     return grade(
-        (cards[0], cards[1]),
+        cards,
         upcard,
         tuple(comp),
         rules,
         chosen,
+        after_split=hand.from_split,
+        splits_used=state.splits_used,
         standard=standard,
         expected=expected,
     )

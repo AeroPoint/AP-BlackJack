@@ -281,6 +281,126 @@ def test_drill_loop_stops_on_quit(chart) -> None:
     assert session.decisions == 1
 
 
+def test_grade_prices_a_hand_reached_by_hitting(shoe) -> None:
+    """Three cards: stand or hit, and the mistake still carries a price."""
+    verdict = grade((2, 3, 4), 10, shoe, VEGAS_6D_H17, Action.STAND, expected=Action.HIT)
+    assert not verdict.correct
+    assert verdict.cost > 0.1, "standing on a hard nine against a ten is not a small error"
+    assert set(verdict.analysis.all_evs) == {Action.STAND, Action.HIT}
+    # Frequency is meaningless for a hand you hit your way into, so it is zero
+    # rather than an opening hand's deal probability wearing the wrong label.
+    assert verdict.analysis.frequency == 0.0
+
+
+def test_a_multi_card_sixteen_can_beat_the_chart(shoe) -> None:
+    """Pricing a hit hand against the live shoe finds real exceptions.
+
+    Hard 16 against a ten is the chart's most famous hit. Reach it as 5-5-6 and
+    you are holding three of the low cards that would have helped you, so
+    standing is better -- by a little over three thousandths of a bet here. The
+    trainer says "you were right and the chart was wrong" rather than marking it
+    an error, which is only possible because the hand is priced against the
+    cards actually left.
+    """
+    verdict = grade((5, 5, 6), 10, shoe, VEGAS_6D_H17, Action.STAND, expected=Action.HIT)
+    assert verdict.beats_standard
+    assert verdict.correct
+    evs = verdict.analysis.all_evs
+    assert evs[Action.STAND] > evs[Action.HIT]
+    assert "better than the chart" in verdict.message()
+
+
+def test_grade_rejects_a_play_the_hand_cannot_make(shoe) -> None:
+    with pytest.raises(ValueError, match="not legal"):
+        grade((5, 5, 6), 10, shoe, VEGAS_6D_H17, Action.DOUBLE)
+
+
+@pytest.mark.parametrize("das", [True, False])
+def test_grade_follows_das_on_a_split_hand(shoe, das: bool) -> None:
+    """Doubling an 11 off a split is legal only when the table allows it."""
+    rules = VEGAS_6D_H17.with_(double_after_split=das)
+    call = lambda: grade(  # noqa: E731
+        (8, 3), 6, shoe, rules, Action.DOUBLE, after_split=True, splits_used=1
+    )
+    if das:
+        assert call().correct is not None
+    else:
+        with pytest.raises(ValueError, match="not legal"):
+            call()
+
+
+def test_a_split_hand_is_held_to_the_post_split_play(shoe) -> None:
+    """The standard must be asked with ``after_split`` set.
+
+    Hard 11 against a six is a double off the top. With no double after split
+    the chart's answer for the same hand off a split is to hit, and grading it
+    against the opening-hand answer would mark a correct play wrong.
+    """
+    from blackjack.sim.strategy import compile_strategy
+
+    rules = VEGAS_6D_H17.with_(double_after_split=False)
+    play = compile_strategy(solve(rules).chart)
+    assert play.action(11, False, 6, num_cards=2) is Action.DOUBLE
+    expected = play.action(11, False, 6, num_cards=2, after_split=True)
+    assert expected is Action.HIT
+
+    verdict = grade(
+        (8, 3), 6, shoe, rules, Action.HIT, after_split=True, splits_used=1, expected=expected
+    )
+    assert verdict.correct
+
+
+def test_cell_key_buckets_longer_hands_by_their_row() -> None:
+    from blackjack.train.grading import cell_key
+
+    assert cell_key((10, 6), 10) == (Category.HARD, 16, 10)
+    assert cell_key((5, 5, 6), 10) == (Category.HARD, 16, 10)
+    assert cell_key((1, 2, 4), 10) == (Category.SOFT, 17, 10)
+    # A pair off a split is still a pair decision: it may be resplittable.
+    assert cell_key((8, 8), 6) == (Category.PAIR, 8, 6)
+
+
+def test_free_play_grades_every_decision_it_asks_for(capsys) -> None:
+    """Nothing is silently ungraded, including split and multi-card hands.
+
+    Counts the decisions the loop *asked* for and asserts the session recorded
+    exactly that many. Before this, the loop graded only opening two-card hands,
+    so hitting to three cards or playing out a split produced prompts that were
+    priced at nothing at all.
+    """
+    from blackjack.sim.strategy import compile_strategy
+
+    asked: list[str] = []
+
+    def reader(prompt: str) -> str:
+        if "y/n" in prompt:
+            return "n"
+        asked.append(prompt)
+        # Split whenever offered, otherwise hit, otherwise stand -- which is how
+        # split hands and three-card hands both get reached.
+        for key in ("P", "H", "S"):
+            if key in prompt:
+                return key.lower()
+        return "s"
+
+    session = run_free_play(
+        VEGAS_6D_H17,
+        HI_LO,
+        rounds=40,
+        unit=25,
+        seed=7,
+        standard=Standard.CHART,
+        reader=reader,
+        strategy=compile_strategy(solve(VEGAS_6D_H17).chart),
+    )
+    out = capsys.readouterr().out
+
+    assert session.decisions == len(asked), "a prompt went ungraded"
+    assert session.decisions > session.hands, "multi-card hands produced no extra decisions"
+    assert "(split hand)" in out, "the seed never produced a split; pick another"
+    assert out.count("[ok]") + out.count("[XX]") == session.decisions
+
+
 def test_free_play_loop_runs_headless() -> None:
     from blackjack.sim.strategy import compile_strategy
 
