@@ -123,26 +123,44 @@ def legal_actions(
     rules: RuleSet,
     *,
     after_split: bool = False,
+    splits_used: int = 0,
 ) -> set[Action]:
     """Actions the player may legally take.
+
+    The single authority on legality. It must return exactly the keys of
+    :func:`blackjack.ev.player.hand_action_evs` for the same state, and a test
+    asserts that across every shape of hand: this function is cheap and drives
+    the prompt, that one costs a solve and prices the choice, and a table that
+    offers a play the pricer will not score is a bug in one of them.
 
     Args:
         cards: The player's current hand.
         rules: Table rules.
         after_split: Whether this hand came from a split.
+        splits_used: Split operations already performed this round.
 
     Returns:
-        The legal choice set. Always contains stand and hit.
+        The legal choice set. Always contains stand; contains hit unless this is
+        a split ace the rules forbid drawing to.
     """
+    from blackjack.cards import ACE
     from blackjack.hand import hand_value
     from blackjack.rules import SurrenderRule
 
-    actions = {Action.STAND, Action.HIT}
+    actions = {Action.STAND}
     total = hand_value(cards).total
-    if rules.can_double(total, after_split=after_split, num_cards=len(cards)):
-        actions.add(Action.DOUBLE)
-    if len(cards) == 2 and cards[0] == cards[1] and rules.max_splits >= 1:
+
+    # A split ace takes one card and stands, but may still be resplit.
+    one_card_only = after_split and cards[0] == ACE and not rules.hit_split_aces
+    if not one_card_only:
+        actions.add(Action.HIT)
+        if rules.can_double(total, after_split=after_split, num_cards=len(cards)):
+            actions.add(Action.DOUBLE)
+
+    resplittable = not after_split or cards[0] != ACE or rules.resplit_aces
+    if len(cards) == 2 and cards[0] == cards[1] and splits_used < rules.max_splits and resplittable:
         actions.add(Action.SPLIT)
+
     if len(cards) == 2 and not after_split and rules.surrender is not SurrenderRule.NONE:
         actions.add(Action.SURRENDER)
     return actions

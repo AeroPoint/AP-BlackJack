@@ -456,17 +456,96 @@ def test_resplit_aces_gates_a_second_ace_split(resplit_aces: bool) -> None:
     assert (Action.SPLIT in again) is resplit_aces
 
 
-def test_a_split_ace_that_cannot_be_hit_has_no_decision() -> None:
+def test_a_split_ace_that_cannot_be_hit_may_only_stand() -> None:
     rules = VEGAS_6D_H17.with_(hit_split_aces=False)
     after, ctx = _hand((1, 7), 6, rules)
     evs = hand_action_evs((1, 7), after, ctx, after_split=True, splits_used=1)
     assert set(evs) == {Action.STAND}
 
 
+def test_a_split_ace_pair_can_still_be_resplit_without_hitting() -> None:
+    """The one-card rule stops you drawing, not splitting.
+
+    A,A off a split under ``hit_split_aces=False`` and ``resplit_aces=True`` is a
+    real decision: split again, or stand on soft 12. Collapsing it to stand
+    alone -- which an earlier version of this function did -- silently removes
+    the better play.
+    """
+    rules = VEGAS_6D_H17.with_(hit_split_aces=False, resplit_aces=True)
+    after, ctx = _hand((1, 1), 6, rules)
+    evs = hand_action_evs((1, 1), after, ctx, after_split=True, splits_used=1)
+    assert set(evs) == {Action.STAND, Action.SPLIT}
+    assert evs[Action.SPLIT] > evs[Action.STAND], "splitting aces again beats soft 12"
+
+    no_resplit = VEGAS_6D_H17.with_(hit_split_aces=False, resplit_aces=False)
+    after2, ctx2 = _hand((1, 1), 6, no_resplit)
+    assert set(hand_action_evs((1, 1), after2, ctx2, after_split=True, splits_used=1)) == {
+        Action.STAND
+    }
+
+
 def test_hand_action_evs_rejects_a_hand_with_no_decision() -> None:
     after, ctx = _hand((1, 7), 6)
     with pytest.raises(ValueError, match="at least two cards"):
         hand_action_evs((1,), after, ctx)
+
+
+LEGALITY_RULES = [
+    VEGAS_6D_H17.with_(decks=1, surrender=SurrenderRule.LATE),
+    VEGAS_6D_H17.with_(decks=1, surrender=SurrenderRule.NONE, double_after_split=False),
+    VEGAS_6D_H17.with_(decks=1, resplit_aces=False, hit_split_aces=False),
+    VEGAS_6D_H17.with_(decks=1, resplit_aces=True, hit_split_aces=False),
+    VEGAS_6D_H17.with_(decks=1, max_split_hands=2, double_rule=DoubleRule.TEN_ELEVEN),
+    VEGAS_6D_H17.with_(decks=1, max_split_hands=1),
+]
+
+
+@pytest.mark.parametrize("rules", LEGALITY_RULES, ids=lambda r: r.slug())
+def test_legal_actions_matches_what_hand_action_evs_prices(rules) -> None:
+    """The cheap legality check and the expensive pricer must agree exactly.
+
+    `legal_actions` drives the prompt and costs nothing; `hand_action_evs`
+    prices the choice and costs a solve. If the table offers a play the grader
+    will not score -- or scores one the table never offers -- one of them is
+    wrong, and before this test that had already happened twice: the split limit
+    and the resplit-aces rule were patched in afterwards by the table rather
+    than being part of legality, and the one-card rule on split aces wrongly
+    suppressed a resplit.
+
+    Single deck keeps the solves cheap. Legality does not depend on the shoe, so
+    this loses no coverage.
+    """
+    from blackjack.train.grading import legal_actions
+
+    hands: list[tuple[int, ...]] = [
+        (10, 6),
+        (1, 7),
+        (8, 8),
+        (1, 1),
+        (5, 5),
+        (10, 10),
+        (5, 5, 6),
+        (2, 3, 4, 5),
+    ]
+    states = [(False, 0), (True, 1), (True, rules.max_splits)]
+    for cards in hands:
+        for upcard in (2, 6, 10, 1):
+            after, ctx = _hand(cards, upcard, rules)
+            for after_split, splits_used in states:
+                priced = set(
+                    hand_action_evs(
+                        cards, after, ctx, after_split=after_split, splits_used=splits_used
+                    )
+                )
+                cheap = legal_actions(
+                    cards, rules, after_split=after_split, splits_used=splits_used
+                )
+                assert cheap == priced, (
+                    f"{rules.slug()} {cards} v{upcard} "
+                    f"after_split={after_split} splits_used={splits_used}: "
+                    f"prompt {sorted(a.value for a in cheap)} vs "
+                    f"priced {sorted(a.value for a in priced)}"
+                )
 
 
 # --- Importance ---------------------------------------------------------------

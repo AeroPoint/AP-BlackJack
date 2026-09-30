@@ -253,17 +253,7 @@ class Table:
         hand = self._hands[self._active] if self._active >= 0 else None
         if hand is None:
             return set()
-        actions = legal_actions(tuple(hand.cards), self.rules, after_split=hand.from_split)
-        if Action.SPLIT in actions and self._splits_used() >= self.rules.max_splits:
-            actions.discard(Action.SPLIT)
-        if (
-            Action.SPLIT in actions
-            and hand.cards[0] == ACE
-            and hand.from_split
-            and not self.rules.resplit_aces
-        ):
-            actions.discard(Action.SPLIT)
-        return actions
+        return self.legal_for(hand)
 
     def _splits_used(self) -> int:
         return len(self._hands) - 1
@@ -319,13 +309,18 @@ class Table:
         return self.state()
 
     def legal_for(self, hand: Hand) -> set[Action]:
-        """Legal actions for a specific hand, used by the split-ace rule."""
-        actions = legal_actions(tuple(hand.cards), self.rules, after_split=hand.from_split)
-        if self._splits_used() >= self.rules.max_splits:
-            actions.discard(Action.SPLIT)
-        if hand.cards and hand.cards[0] == ACE and hand.from_split and not self.rules.resplit_aces:
-            actions.discard(Action.SPLIT)
-        return actions
+        """Legal actions for a specific hand.
+
+        Everything about legality lives in :func:`legal_actions`; this only
+        supplies the split count, which is the one thing the table knows and the
+        rules do not.
+        """
+        return legal_actions(
+            tuple(hand.cards),
+            self.rules,
+            after_split=hand.from_split,
+            splits_used=self._splits_used(),
+        )
 
     def _advance(self) -> None:
         """Move to the next undecided hand, or settle the round."""

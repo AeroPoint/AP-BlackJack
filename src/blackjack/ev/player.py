@@ -416,18 +416,17 @@ def hand_action_evs(
     for rank in cards:
         total, soft = add_card(total, soft, rank)
 
-    # A split ace that has taken its one card has no decision left to make.
-    if after_split and cards[0] == ACE and not rules.hit_split_aces:
-        return {Action.STAND: stand_value(total, comp, ctx)}
-
     num_cards = len(cards)
-    evs: dict[Action, float] = {
-        Action.STAND: stand_value(total, comp, ctx),
-        Action.HIT: hit_value(total, soft, comp, ctx, num_cards=num_cards),
-    }
+    evs: dict[Action, float] = {Action.STAND: stand_value(total, comp, ctx)}
 
-    if rules.can_double(total, after_split=after_split, num_cards=num_cards):
-        evs[Action.DOUBLE] = double_value(total, soft, comp, ctx)
+    # A split ace takes one card and stands -- but it may still be *resplit* if
+    # it drew another ace and the rules allow it, so this suppresses drawing
+    # rather than ending the hand.
+    one_card_only = after_split and cards[0] == ACE and not rules.hit_split_aces
+    if not one_card_only:
+        evs[Action.HIT] = hit_value(total, soft, comp, ctx, num_cards=num_cards)
+        if rules.can_double(total, after_split=after_split, num_cards=num_cards):
+            evs[Action.DOUBLE] = double_value(total, soft, comp, ctx)
 
     if num_cards == 2 and cards[0] == cards[1] and splits_used < rules.max_splits:
         aces = cards[0] == ACE
