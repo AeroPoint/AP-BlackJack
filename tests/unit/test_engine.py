@@ -20,10 +20,11 @@ from blackjack.counting import (
     apply_rounding,
 )
 from blackjack.ev.importance import Importance, analyse, closeness, mistake_cost
+from blackjack.ev.player import action_evs, hand_action_evs, make_context
 from blackjack.ev.solver import Category, categorise, enumerate_deals, solve
 from blackjack.hand import add_card, hand_value, is_blackjack, is_pair
-from blackjack.rules import VEGAS_6D_H17, DoubleRule, RuleSet
-from blackjack.shoe import DealingShoe, full_shoe, remove
+from blackjack.rules import VEGAS_6D_H17, DoubleRule, RuleSet, SurrenderRule
+from blackjack.shoe import DealingShoe, full_shoe, remove, remove_many
 from blackjack.strategy.deviations import running_count_of, tilted_composition, verify_tilt
 
 # --- Primitives ---------------------------------------------------------------
@@ -356,6 +357,116 @@ def test_chart_matches_known_h17_signatures() -> None:
     assert chart.action(Category.HARD, 16, 10) is Action.HIT
     assert chart.action(Category.HARD, 12, 3) is Action.HIT
     assert chart.action(Category.HARD, 12, 4) is Action.STAND
+
+
+# --- Action EVs for hands in play ---------------------------------------------
+#
+# `action_evs` answers the opening hand and is what the solver and the native
+# core use. `hand_action_evs` is the general form the trainer grades against:
+# hands reached by hitting, and hands produced by a split.
+
+
+def _hand(cards, upcard, rules=VEGAS_6D_H17):
+    """Shoe and context for ``cards`` against ``upcard``, all of them removed."""
+    after = remove_many(full_shoe(rules.decks), [*cards, upcard])
+    return after, make_context(after, upcard, rules)
+
+
+@pytest.mark.parametrize(
+    "cards",
+    [(10, 6), (1, 7), (8, 8), (10, 10), (5, 6), (1, 1), (9, 2)],
+    ids=lambda c: "".join(str(r) for r in c),
+)
+@pytest.mark.parametrize("upcard", [2, 6, 10, 1])
+def test_hand_action_evs_reproduces_action_evs_on_an_opening_hand(cards, upcard) -> None:
+    """The general form must be the special form on the case they share.
+
+    Exactly, not approximately: both bottom out in the same recursions, so any
+    difference is a bug in the generalisation rather than float noise. This is
+    the test that lets the trainer use one and the solver the other.
+    """
+    rules = VEGAS_6D_H17.with_(surrender=SurrenderRule.LATE)
+    after, ctx = _hand(cards, upcard, rules)
+    assert hand_action_evs(cards, after, ctx) == action_evs(cards, after, ctx)
+
+
+def test_a_hand_reached_by_hitting_has_only_stand_and_hit() -> None:
+    """Three cards: doubling, splitting and surrender are all gone."""
+    rules = VEGAS_6D_H17.with_(surrender=SurrenderRule.LATE)
+    after, ctx = _hand((5, 5, 6), 10, rules)
+    evs = hand_action_evs((5, 5, 6), after, ctx)
+    assert set(evs) == {Action.STAND, Action.HIT}
+
+
+def test_a_hit_hand_is_priced_for_the_cards_it_holds() -> None:
+    """The continuation depends on the card count, not just the total.
+
+    Under a Charlie rule a hard 16 on four cards is one card from a bonus and a
+    hard 16 on two is three away, so the hit is worth a different amount. The
+    count has to reach :func:`hit_value`, and the only way to show that is to
+    hold the composition fixed and vary nothing but the count -- comparing two
+    different four-card and two-card hands would differ because of the cards
+    they removed, whatever the rule did.
+    """
+    from blackjack.ev.player import hit_value
+
+    rules = VEGAS_6D_H17.with_(charlie=5)
+    after, ctx = _hand((2, 2, 6, 6), 10, rules)
+    as_four = hit_value(16, False, after, ctx, num_cards=4)
+    as_two = hit_value(16, False, after, ctx, num_cards=2)
+    assert as_four != pytest.approx(as_two), "the Charlie rule must move with the count"
+    assert hand_action_evs((2, 2, 6, 6), after, ctx)[Action.HIT] == as_four
+
+
+@pytest.mark.parametrize("das", [True, False])
+def test_post_split_doubling_follows_das(das: bool) -> None:
+    rules = VEGAS_6D_H17.with_(double_after_split=das)
+    after, ctx = _hand((8, 3), 6, rules)
+    evs = hand_action_evs((8, 3), after, ctx, after_split=True, splits_used=1)
+    assert (Action.DOUBLE in evs) is das
+
+
+def test_surrender_is_never_offered_after_a_split() -> None:
+    rules = VEGAS_6D_H17.with_(surrender=SurrenderRule.LATE)
+    after, ctx = _hand((10, 6), 10, rules)
+    assert Action.SURRENDER in hand_action_evs((10, 6), after, ctx)
+    assert Action.SURRENDER not in hand_action_evs(
+        (10, 6), after, ctx, after_split=True, splits_used=1
+    )
+
+
+def test_resplit_is_offered_until_the_split_limit() -> None:
+    """max_split_hands 4 means three split operations, so the third is the last."""
+    rules = VEGAS_6D_H17.with_(max_split_hands=4)
+    after, ctx = _hand((8, 8), 6, rules)
+    for used in range(rules.max_splits):
+        evs = hand_action_evs((8, 8), after, ctx, after_split=used > 0, splits_used=used)
+        assert Action.SPLIT in evs, f"{used} splits used"
+    spent = hand_action_evs((8, 8), after, ctx, after_split=True, splits_used=rules.max_splits)
+    assert Action.SPLIT not in spent
+
+
+@pytest.mark.parametrize("resplit_aces", [True, False])
+def test_resplit_aces_gates_a_second_ace_split(resplit_aces: bool) -> None:
+    """And it gates only the resplit -- the opening split of aces is unaffected."""
+    rules = VEGAS_6D_H17.with_(resplit_aces=resplit_aces, hit_split_aces=True)
+    after, ctx = _hand((1, 1), 6, rules)
+    assert Action.SPLIT in hand_action_evs((1, 1), after, ctx)
+    again = hand_action_evs((1, 1), after, ctx, after_split=True, splits_used=1)
+    assert (Action.SPLIT in again) is resplit_aces
+
+
+def test_a_split_ace_that_cannot_be_hit_has_no_decision() -> None:
+    rules = VEGAS_6D_H17.with_(hit_split_aces=False)
+    after, ctx = _hand((1, 7), 6, rules)
+    evs = hand_action_evs((1, 7), after, ctx, after_split=True, splits_used=1)
+    assert set(evs) == {Action.STAND}
+
+
+def test_hand_action_evs_rejects_a_hand_with_no_decision() -> None:
+    after, ctx = _hand((1, 7), 6)
+    with pytest.raises(ValueError, match="at least two cards"):
+        hand_action_evs((1,), after, ctx)
 
 
 # --- Importance ---------------------------------------------------------------

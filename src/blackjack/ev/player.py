@@ -344,17 +344,105 @@ def action_evs(
     if cards[0] == cards[1] and rules.max_splits >= 1:
         evs[Action.SPLIT] = split_value(cards[0], comp, ctx)
 
+    surrender = _surrender_ev(comp, ctx)
+    if surrender is not None:
+        evs[Action.SURRENDER] = surrender
+
+    return evs
+
+
+def _surrender_ev(comp: Composition, ctx: Context) -> float | None:
+    """Conditional EV of surrendering, or ``None`` when the rules forbid it.
+
+    Late surrender is simply half the wager. Early surrender is taken *before*
+    the dealer checks for a natural, so it would be compared against the
+    unconditional EV of playing. Rather than de-conditioning every other action,
+    the equivalent conditional value of surrender is used: ``-0.5``
+    unconditional is worth ``(-0.5 + p_bj) / (1 - p_bj)`` once the
+    losing-to-a-natural branch is removed.
+    """
+    rules = ctx.rules
     if rules.surrender is SurrenderRule.LATE:
-        evs[Action.SURRENDER] = SURRENDER_EV
-    elif rules.surrender is SurrenderRule.EARLY:
-        # Early surrender is taken before the dealer checks for a natural, so it
-        # is compared against the *unconditional* EV of playing. Rather than
-        # de-conditioning every other action, the equivalent conditional value of
-        # surrender is used: -0.5 unconditional is worth
-        #   (-0.5 + p_bj) / (1 - p_bj)
-        # once the losing-to-a-natural branch is removed.
+        return SURRENDER_EV
+    if rules.surrender is SurrenderRule.EARLY:
         p_bj = _natural_probability(comp, ctx)
-        evs[Action.SURRENDER] = (SURRENDER_EV + p_bj) / (1.0 - p_bj) if p_bj < 1 else SURRENDER_EV
+        return (SURRENDER_EV + p_bj) / (1.0 - p_bj) if p_bj < 1 else SURRENDER_EV
+    return None
+
+
+def hand_action_evs(
+    cards: tuple[int, ...],
+    comp: Composition,
+    ctx: Context,
+    *,
+    after_split: bool = False,
+    splits_used: int = 0,
+) -> dict[Action, float]:
+    """EV of every legal action for a hand of any length, split or not.
+
+    :func:`action_evs` is the opening-hand special case: two cards, no split
+    behind it. It stays that way because it is the solver's hot path and the one
+    the native core ports. This is the general form, which the trainer needs for
+    the two kinds of decision a chart cell cannot describe:
+
+    * a hand reached by hitting, where doubling, splitting and surrender are all
+      gone and the continuation depends on how many cards are held; and
+    * a hand produced by a split, where doubling depends on ``double_after_split``,
+      surrender is unavailable, and a further split depends on how many split
+      operations are already spent -- and, for aces, on ``resplit_aces``.
+
+    Args:
+        cards: The player's hand, at least two cards. For a split hand the first
+            entry is the split rank, as the table deals it.
+        comp: Shoe with this hand's cards and the dealer upcard removed.
+        ctx: Evaluation context, whose upcard must match.
+        after_split: Whether this hand came from a split.
+        splits_used: Split operations already performed this round. A further
+            split needs ``splits_used < rules.max_splits``.
+
+    Returns:
+        Mapping from legal action to EV in units of *one* original wager, so a
+        split hand's EVs are directly comparable with an opening hand's. Illegal
+        actions are absent rather than set to minus infinity.
+
+    Raises:
+        ValueError: if fewer than two cards are given.
+    """
+    if len(cards) < 2:
+        raise ValueError("a hand needs at least two cards to have a decision")
+
+    rules = ctx.rules
+    total, soft = 0, False
+    for rank in cards:
+        total, soft = add_card(total, soft, rank)
+
+    # A split ace that has taken its one card has no decision left to make.
+    if after_split and cards[0] == ACE and not rules.hit_split_aces:
+        return {Action.STAND: stand_value(total, comp, ctx)}
+
+    num_cards = len(cards)
+    evs: dict[Action, float] = {
+        Action.STAND: stand_value(total, comp, ctx),
+        Action.HIT: hit_value(total, soft, comp, ctx, num_cards=num_cards),
+    }
+
+    if rules.can_double(total, after_split=after_split, num_cards=num_cards):
+        evs[Action.DOUBLE] = double_value(total, soft, comp, ctx)
+
+    if num_cards == 2 and cards[0] == cards[1] and splits_used < rules.max_splits:
+        aces = cards[0] == ACE
+        if not after_split or not aces or rules.resplit_aces:
+            # One unit becomes two hands of one unit each, exactly as
+            # `split_value` does for the opening hand -- which is this with
+            # ``splits_used`` zero.
+            evs[Action.SPLIT] = 2.0 * _post_split_hand_value(
+                cards[0], comp, ctx, depth=splits_used + 1
+            )
+
+    if num_cards == 2 and not after_split:
+        surrender = _surrender_ev(comp, ctx)
+        if surrender is not None:
+            evs[Action.SURRENDER] = surrender
 
     return evs
 
