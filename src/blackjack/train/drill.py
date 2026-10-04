@@ -8,8 +8,8 @@ one from :mod:`blackjack.ev.importance`:
 
 The first two terms come from the solver. The third starts as a model and is
 replaced, cell by cell, with your measured miss rate as evidence accumulates --
-from the live session (:class:`blackjack.train.session.Session`) and, when a
-profile is in use, from every earlier session on the same rules
+from the live session (:class:`blackjack.train.session.Session`) and, with
+``--player``, from every earlier session on the same rules
 (:class:`blackjack.train.history.PlayerHistory`).
 
 Blending rather than switching
@@ -129,8 +129,8 @@ def pick(
             model alone.
         rng: Seedable randomness, so a drill sequence can be reproduced.
         exclude: A cell to avoid repeating immediately.
-        history: Stored results from earlier sessions on these rules, if a
-            profile is in use. See :func:`blended_error_rate`.
+        history: Stored results from earlier sessions on these rules, with
+            ``--player``. See :func:`blended_error_rate`.
 
     Returns:
         The next question.

@@ -39,11 +39,29 @@ KEYS: dict[str, Action] = {
 QUIT = {"q", "quit", "exit"}
 
 
+def _read(reader: Callable[[str], str], prompt: str) -> str | None:
+    """One line of input, or ``None`` if the player has gone.
+
+    End of input (Ctrl-D, Ctrl-Z on Windows, a closed pipe) and Ctrl-C are read
+    as "quit": the session ends normally and is returned, so its results are
+    reported and -- with ``--player`` -- recorded, rather than lost to a
+    traceback.
+    """
+    try:
+        return reader(prompt)
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+
+
 def _prompt(legal: set[Action], reader: Callable[[str], str]) -> Action | None:
     """Read one action. Returns ``None`` if the player wants to stop."""
     options = "/".join(a.value for a in KEYS.values() if a in legal)
     while True:
-        raw = reader(f"  [{options}] or q to quit > ").strip().lower()
+        line = _read(reader, f"  [{options}] or q to quit > ")
+        if line is None:
+            return None
+        raw = line.strip().lower()
         if raw in QUIT:
             return None
         action = KEYS.get(raw[:1]) if raw else None
@@ -86,6 +104,7 @@ def run_drill(
         history: Stored per-cell results from earlier sessions on these rules,
             so the weighting starts from what you missed last time rather than
             from the generic model. Read only; saving is the caller's choice.
+            Pass the chart scope only: the drill grades against the chart.
 
     Returns:
         The completed session.
@@ -177,7 +196,8 @@ def run_free_play(
 
         if state.phase is Phase.INSURANCE:
             print(f"[{i}] Dealer shows an Ace. Insurance?")
-            raw = reader("  [y/n] > ").strip().lower()
+            line = _read(reader, "  [y/n] > ")
+            raw = "q" if line is None else line.strip().lower()
             if raw in QUIT:
                 break
             state = table.take_insurance(raw.startswith("y"))
@@ -202,7 +222,11 @@ def run_free_play(
                 return session
 
             verdict = _grade_here(table, play, hand, state, chosen, rules, standard)
-            session.record(cell_key(tuple(hand.cards), state.upcard), verdict)
+            session.record(
+                cell_key(tuple(hand.cards), state.upcard),
+                verdict,
+                opening=len(hand.cards) == 2 and not hand.from_split,
+            )
             mark = "[ok]" if verdict.correct else "[XX]"
             print(f"  {mark} {verdict.message(unit)}")
 

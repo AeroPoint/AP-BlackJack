@@ -70,17 +70,36 @@ class Session:
     """Units won or lost at the table, for free play."""
 
     stats: dict[CellKey, CellStats] = field(default_factory=dict)
+    """Every graded decision, by cell. What the report and the live drill use."""
+
+    opening: dict[CellKey, CellStats] = field(default_factory=dict)
+    """The subset of :attr:`stats` that were *opening* decisions: two cards, not
+    off a split. That is the decision a drill question poses, and the only part a
+    player history keeps -- see :mod:`blackjack.train.history` for why."""
+
     worst: list[tuple[CellKey, float, Action, Action]] = field(default_factory=list)
 
-    def record(self, key: CellKey, verdict: Verdict) -> None:
-        """Fold one graded decision into the session."""
-        cell = self.stats.setdefault(key, CellStats())
-        cell.seen += 1
+    def record(self, key: CellKey, verdict: Verdict, *, opening: bool = True) -> None:
+        """Fold one graded decision into the session.
+
+        Args:
+            key: The chart cell the decision belongs to.
+            verdict: The grade.
+            opening: Whether this was a two-card hand not off a split. A drill
+                question always is; in free play, a hand hit into or split into
+                is not.
+        """
+        targets = [self.stats.setdefault(key, CellStats())]
+        if opening:
+            targets.append(self.opening.setdefault(key, CellStats()))
         self.decisions += 1
+        for cell in targets:
+            cell.seen += 1
         if verdict.correct:
             return
-        cell.errors += 1
-        cell.cost += verdict.cost
+        for cell in targets:
+            cell.errors += 1
+            cell.cost += verdict.cost
         self.errors += 1
         self.total_cost += verdict.cost
         self.worst.append((key, verdict.cost, verdict.chosen, verdict.expected))

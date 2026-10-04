@@ -12,7 +12,7 @@ available and quietly skipped when it is not.
     bj sidebet 21+3 --decks 6
     bj explain T6 T --rules vegas6-h17
     bj systems --derive
-    bj drill --rounds 20 --profile me
+    bj drill --rounds 20 --player me
     bj play --count --standard count
 """
 
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from blackjack.counting import CountSystem
     from blackjack.ev.solver import SolveResult
     from blackjack.rules import RuleSet
-    from blackjack.train.grading import Standard
     from blackjack.train.history import PlayerHistory
     from blackjack.train.session import Session
 
@@ -344,11 +343,11 @@ def cmd_explain(args: argparse.Namespace) -> int:
 
 
 def _open_player(name: str | None) -> tuple[Path, PlayerHistory] | None:
-    """Load the player profile named on the command line, if there is one.
+    """Load the player history named by ``--player``, if there is one.
 
     Loaded *before* the session starts, so a corrupt or newer-schema file stops
     the command up front instead of after fifty hands whose results then have
-    nowhere to go. No ``--profile``, no file access at all.
+    nowhere to go. No ``--player``, no file access at all.
     """
     if name is None:
         return None
@@ -356,7 +355,7 @@ def _open_player(name: str | None) -> tuple[Path, PlayerHistory] | None:
 
     path = profile_path(name)
     history = load_history(path)
-    print(f"Profile {name}: {history.sessions} earlier session(s) on record.")
+    print(f"Player {name}: {history.sessions} earlier session(s) on record.")
     return path, history
 
 
@@ -364,46 +363,50 @@ def _save_player(
     player: tuple[Path, PlayerHistory] | None,
     rules: RuleSet,
     session: Session,
-    standard: Standard,
+    scope: str,
 ) -> None:
-    """Fold a finished session into the profile, if one was asked for."""
+    """Fold a finished session into the player's history, if one was asked for."""
     if player is None:
         return
     from blackjack.train.history import record_session
 
     path, _ = player
-    history = record_session(path, rules.slug(), session, standard)
-    print(f"Saved to profile {path} ({history.sessions} session(s) on record).")
+    history = record_session(path, rules.slug(), session, scope)
+    if history is None:
+        print(f"No opening decisions to record; {path} was not changed.")
+    else:
+        print(f"Saved to {path} ({history.sessions} session(s) on record).")
 
 
 def cmd_drill(args: argparse.Namespace) -> int:
     """Drill strategy cells, weighted by what they actually cost you."""
-    from blackjack.train.grading import Standard
+    from blackjack.train.history import CHART_SCOPE
     from blackjack.train.loop import run_drill
 
     rules = _load_rules(args.rules)
-    player = _open_player(args.profile)
+    player = _open_player(args.player)
     session = run_drill(
         rules,
         rounds=args.rounds,
         unit=args.unit,
         seed=args.seed,
         # The drill grades against the chart, so it consults chart misses only.
-        history=player[1].cells(rules.slug(), Standard.CHART) if player else None,
+        history=player[1].cells(rules.slug(), CHART_SCOPE) if player else None,
     )
-    _save_player(player, rules, session, Standard.CHART)
+    _save_player(player, rules, session, CHART_SCOPE)
     return 0
 
 
 def cmd_play(args: argparse.Namespace) -> int:
     """Play hands and be told what every decision cost."""
     from blackjack.train.grading import Standard
+    from blackjack.train.history import scope_for
     from blackjack.train.loop import run_free_play
 
     rules = _load_rules(args.rules)
     system = _load_system(args.system)
     standard = Standard(args.standard)
-    player = _open_player(args.profile)
+    player = _open_player(args.player)
     session = run_free_play(
         rules,
         system,
@@ -413,7 +416,7 @@ def cmd_play(args: argparse.Namespace) -> int:
         standard=standard,
         show_count=args.count,
     )
-    _save_player(player, rules, session, standard)
+    _save_player(player, rules, session, scope_for(standard, system))
     return 0
 
 
@@ -545,11 +548,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--unit", type=float, default=25.0)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument(
-        "--profile",
+        "--player",
         default=None,
         metavar="NAME",
-        help="player profile: load and save your per-cell miss rates in "
-        "data/profiles/NAME.json (personal, gitignored). Nothing is saved without it",
+        help="weight the drill by your stored miss rates and add this session's to "
+        "data/profiles/NAME.json (personal, gitignored). A value containing a path "
+        "separator is a .json path instead, which may not be elsewhere in the "
+        "repository. Without --player nothing is read or saved",
     )
     p.set_defaults(func=cmd_drill)
 
@@ -567,11 +572,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--count", action="store_true", help="show the running and true count")
     p.add_argument(
-        "--profile",
+        "--player",
         default=None,
         metavar="NAME",
-        help="player profile: load and save your per-cell miss rates in "
-        "data/profiles/NAME.json (personal, gitignored). Nothing is saved without it",
+        help="record this session's per-cell results in data/profiles/NAME.json "
+        "(personal, gitignored), where bj drill --player NAME will use them. A value "
+        "containing a path separator is a .json path instead, which may not be "
+        "elsewhere in the repository. Without --player nothing is saved",
     )
     p.set_defaults(func=cmd_play)
 
