@@ -14,6 +14,7 @@ available and quietly skipped when it is not.
     bj systems --derive
     bj drill --rounds 20 --player me
     bj play --count --standard count
+    bj count --mode true --system hi-lo
 """
 
 from __future__ import annotations
@@ -420,6 +421,26 @@ def cmd_play(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_count(args: argparse.Namespace) -> int:
+    """Drill the running count, true-count conversion, or deck estimation."""
+    from blackjack.counting import TrueCountRounding
+    from blackjack.train.counting_drill import DrillMode
+    from blackjack.train.loop import run_count_drill
+
+    system = _load_system(args.system)
+    run_count_drill(
+        system,
+        mode=DrillMode(args.mode),
+        rounds=args.rounds,
+        decks=args.decks,
+        cards_per_flash=args.cards_per_flash,
+        flashes=args.flashes,
+        rounding=TrueCountRounding(args.rounding) if args.rounding else None,
+        seed=args.seed,
+    )
+    return 0
+
+
 def cmd_systems(args: argparse.Namespace) -> int:
     """Score counting systems against effect-of-removal vectors we derive."""
     from blackjack.counting import SYSTEMS
@@ -581,6 +602,27 @@ def build_parser() -> argparse.ArgumentParser:
         "elsewhere in the repository. Without --player nothing is saved",
     )
     p.set_defaults(func=cmd_play)
+
+    p = sub.add_parser("count", help="counting drills: running count, true count, deck estimation")
+    p.add_argument(
+        "--mode",
+        default="running",
+        choices=["running", "true", "decks"],
+        help="running = keep the count, true = convert it, decks = read the discard tray",
+    )
+    p.add_argument("--system", default="hi-lo")
+    p.add_argument("--rounds", type=int, default=10, help="questions to ask")
+    p.add_argument("--decks", type=int, default=6)
+    p.add_argument("--cards-per-flash", type=int, default=2, help="cards shown per group")
+    p.add_argument("--flashes", type=int, default=5, help="groups per running-count question")
+    p.add_argument(
+        "--rounding",
+        default=None,
+        choices=["none", "floor", "truncate", "round"],
+        help="override the system's true-count rounding",
+    )
+    p.add_argument("--seed", type=int, default=None)
+    p.set_defaults(func=cmd_count)
 
     p = sub.add_parser("systems", help="score counting systems from derived EORs")
     p.add_argument("--rules", default="vegas6-h17")

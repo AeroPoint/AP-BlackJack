@@ -1,4 +1,4 @@
-"""Terminal loops for drilling and free play.
+"""Terminal loops for drilling, free play and counting drills.
 
 Output is deliberately **ASCII only**. The Windows console still defaults to
 cp1252, and a tick mark that raises ``UnicodeEncodeError`` mid-session is a worse
@@ -13,15 +13,30 @@ and nothing else.
 from __future__ import annotations
 
 import random
+import time
 from collections.abc import Callable, Mapping
 
 from blackjack.actions import Action
 from blackjack.cards import rank_name
-from blackjack.counting import CountSystem
+from blackjack.counting import CountSystem, TrueCountRounding
 from blackjack.ev.solver import Category, StrategyChart, solve
 from blackjack.rules import RuleSet
 from blackjack.shoe import full_shoe
 from blackjack.sim.strategy import PlayingStrategy, compile_strategy
+from blackjack.train.counting_drill import (
+    ROUNDING_PHRASES,
+    CountResult,
+    CountSession,
+    DrillMode,
+    RunningCountDrill,
+    deck_question,
+    grade_decks,
+    grade_running,
+    grade_true_count,
+    parse_answer,
+    signed,
+    true_count_question,
+)
 from blackjack.train.drill import pick
 from blackjack.train.grading import Standard, Verdict, cell_key, grade
 from blackjack.train.session import CellKey, CellStats, Session, describe_cell
@@ -302,6 +317,188 @@ def _grade_here(
         standard=standard,
         expected=expected,
     )
+
+
+# --- Counting drills -----------------------------------------------------------
+
+
+def _read_count(
+    prompt: str,
+    reader: Callable[[str], str],
+    writer: Callable[[str], None],
+    *,
+    positive: bool = False,
+) -> float | None:
+    """Read one numeric answer, re-asking on anything unparseable.
+
+    End of input counts as quitting, so answers piped in from a file finish the
+    session with a report instead of a traceback.
+    """
+    while True:
+        try:
+            raw = reader(prompt)
+        except EOFError:
+            return None
+        try:
+            value = parse_answer(raw)
+        except ValueError:
+            writer("  Not a number. Try +3, -2.5 or 0; blank or q to stop.")
+            continue
+        if value is not None and positive and value <= 0:
+            writer("  Decks remaining must be more than zero.")
+            continue
+        return value
+
+
+def _feedback(result: CountResult, writer: Callable[[str], None]) -> None:
+    """Print the verdict on one answer, with the right figure either way."""
+    mark = "[ok]" if result.correct else "[XX]"
+    # Decks remaining are never negative, so a leading plus sign there is noise.
+    fmt: Callable[[float], str] = (lambda x: f"{x:g}") if result.mode is DrillMode.DECKS else signed
+    if result.correct:
+        head = f"{fmt(result.given)} is right"
+    else:
+        head = f"you said {fmt(result.given)}, the answer is {fmt(result.expected)}"
+    pace = f"{result.seconds:.1f} s"
+    if result.cards and result.seconds > 0:
+        pace += f", {result.cards / result.seconds:.1f} cards/s"
+    writer(f"  {mark} {head} ({pace})")
+    for line in result.note.splitlines():
+        writer(f"       {line}")
+    writer("")
+
+
+def run_count_drill(
+    system: CountSystem,
+    *,
+    mode: DrillMode = DrillMode.RUNNING,
+    rounds: int = 10,
+    decks: int = 6,
+    cards_per_flash: int = 2,
+    flashes: int = 5,
+    penetration: float = 0.75,
+    estimation: float = 0.5,
+    rounding: TrueCountRounding | None = None,
+    seed: int | None = None,
+    reader: Callable[[str], str] = input,
+    writer: Callable[[str], None] = print,
+    clock: Callable[[], float] = time.monotonic,
+) -> CountSession:
+    """Drill the running count, the true-count conversion, or deck estimation.
+
+    The terminal cannot flash cards and take them away again without
+    terminal-specific escape codes, so a running-count question prints all its
+    groups at once and the clock measures how long the count takes. That is a
+    speed test, not a memory test; the memory half comes from the count carrying
+    across questions until the shuffle.
+
+    Response time runs from the moment a question is fully shown until a valid
+    answer arrives, re-prompts included, and is read from ``clock`` --
+    :func:`time.monotonic` by default, because wall-clock time can jump.
+
+    Args:
+        system: Counting system to drill.
+        mode: Which skill.
+        rounds: Questions to ask.
+        decks: Decks in the shoe.
+        cards_per_flash: Cards per group in running-count mode.
+        flashes: Groups per running-count question.
+        penetration: Fraction of the shoe dealt before the shuffle.
+        estimation: Deck-estimation granularity for the true-count divisor, as
+            in the simulator's ``deck_estimation``.
+        rounding: Override the system's true-count rounding.
+        seed: Seeds every card and question, so a session can be replayed.
+        reader: Input function; injected so the loop is testable.
+        writer: Output function; injected for the same reason.
+        clock: Monotonic seconds; injected so tests control the timings.
+
+    Returns:
+        The completed session.
+
+    Raises:
+        ValueError: for a true-count drill on an unbalanced system, or a
+            running-count question too large for the shoe.
+    """
+    rng = random.Random(seed)
+    session = CountSession()
+    rounding_mode = rounding or system.rounding
+    running: RunningCountDrill | None = None
+    if mode is DrillMode.RUNNING:
+        running = RunningCountDrill(
+            system,
+            rng,
+            decks=decks,
+            cards_per_flash=cards_per_flash,
+            flashes=flashes,
+            penetration=penetration,
+        )
+    elif mode is DrillMode.TRUE and not system.balanced:
+        raise ValueError(
+            f"{system.name} is unbalanced and never converts to a true count; use --mode running"
+        )
+
+    writer("")
+    writer(f"Counting drill ({mode.value}) -- {system.name}, {decks}-deck shoe")
+    writer(f"  {system.describe()}")
+    if mode is DrillMode.RUNNING:
+        writer("Keep the running count through the shoe and type it after each batch.")
+        writer("It carries on between questions -- you are told the right figure each")
+        writer("time -- and restarts at the IRC when the shoe is shuffled.")
+    elif mode is DrillMode.TRUE:
+        writer("Divide by the decks remaining rounded to the nearest half deck, then")
+        writer(f"{ROUNDING_PHRASES[rounding_mode]}.")
+    else:
+        writer("Estimate the decks remaining to the nearest half deck. Each answer")
+        writer("shows what the error would do to a true count around +3.")
+    writer("Blank line or q to stop.")
+    writer("")
+
+    for i in range(1, rounds + 1):
+        result: CountResult
+        if running is not None:
+            rq = running.next_question()
+            if rq.fresh_shoe:
+                writer(f"  -- fresh shoe, the count starts at {signed(rq.irc)} --")
+            writer(f"[{i}/{rounds}]")
+            for group in rq.flashes:
+                writer("    " + " ".join(rank_name(c) for c in group))
+            start = clock()
+            answer = _read_count("  Running count? > ", reader, writer)
+            if answer is None:
+                break
+            result = grade_running(rq, answer, clock() - start)
+        elif mode is DrillMode.TRUE:
+            tq = true_count_question(
+                system,
+                rng,
+                decks=decks,
+                penetration=penetration,
+                estimation=estimation,
+                rounding=rounding,
+            )
+            writer(
+                f"[{i}/{rounds}]  RC {signed(tq.running)} with "
+                f"{tq.decks_remaining:.1f} decks remaining"
+            )
+            start = clock()
+            answer = _read_count("  True count? > ", reader, writer)
+            if answer is None:
+                break
+            result = grade_true_count(tq, answer, clock() - start)
+        else:
+            dq = deck_question(rng, decks=decks, penetration=penetration)
+            writer(f"[{i}/{rounds}]  {dq.describe()}")
+            start = clock()
+            answer = _read_count("  Decks remaining? > ", reader, writer, positive=True)
+            if answer is None:
+                break
+            result = grade_decks(dq, answer, clock() - start, system, rounding=rounding)
+        session.record(result)
+        _feedback(result, writer)
+
+    writer("")
+    writer(session.report())
+    return session
 
 
 def describe_curriculum(chart: StrategyChart, session: Session, limit: int = 10) -> str:
