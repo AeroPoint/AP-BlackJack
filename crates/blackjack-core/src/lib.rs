@@ -19,6 +19,14 @@
 //! 9 is every ten-value card. A composition is `[f64; 10]` — floats, because
 //! expected shoes are first-class inputs.
 
+// PyO3's `from_py_object` expansion calls `.clone()` on `CoreRules`, which is
+// `Copy`, so clippy 1.99 rejects it under `-D warnings`. The clone is written by
+// the macro, not by this crate, and an item-level `#[allow]` does not reach it
+// whichever side of `#[pyclass]` it sits on. Crate level is wider than the one
+// struct that needs it, which is the cost of the macro owning the span; narrow
+// it to that item, or drop it entirely, once PyO3 stops emitting the clone.
+#![allow(clippy::clone_on_copy)]
+
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rayon::prelude::*;
@@ -61,7 +69,9 @@ pub struct DealerOutcome {
 ///
 /// Deliberately small: payouts, penetration and everything else are applied on
 /// the Python side, so this changes only when the *recursion* changes.
-// Passed *into* the solver functions, so it needs FromPyObject.
+// Passed *into* the solver functions, so it needs FromPyObject. Its
+// `from_py_object` expansion is what the crate-level `clone_on_copy` allow is
+// for; see the top of this file.
 #[pyclass(get_all, set_all, from_py_object)]
 #[derive(Clone, Copy, Debug)]
 pub struct CoreRules {
