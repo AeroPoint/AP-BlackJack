@@ -199,7 +199,8 @@ src/blackjack/       the engine (stdlib only)
   sim/       Monte Carlo simulator and compiled strategies
   bankroll/  true-count distribution, risk maths, bet spreads
   sidebets/  paytable-driven side-bet analysis
-  train/     grading, drill selection, free-play loop and table state machine
+  train/     grading, drill selection, free-play loop, table state machine,
+             counting drills
   config/    config models and loading
   cli.py     argparse CLI
 crates/blackjack-core/   Rust accelerator (PyO3); ev/native.py is the bridge

@@ -221,9 +221,11 @@ Sessions end with the leaks named:
 
 | mode | asks for | graded against |
 |---|---|---|
-| `running` | the running count after each batch of cards dealt from a real shoe | exact, to the half point for Wong Halves; starts at the IRC for KO and Red 7 |
+| `running` | the running count after each batch of cards dealt from a real shoe | exact, to the half point for Wong Halves; starts at the IRC for unbalanced systems; Red 7 shows sevens as `7r` / `7b` |
 | `true` | the true count for a running count and a depth | `CountSystem.true_count` with the simulator's half-deck estimation and the system's rounding |
-| `decks` | decks remaining, to the nearest half deck, from a described discard tray | within a quarter deck, plus what the miss does to a true count near +3 |
+| `decks` | decks remaining, to the nearest half deck, from a described discard tray | within a quarter deck; a miss is shown against the half-deck answer at a true count near +3 |
+
+An excerpt (the response time is illustrative):
 
 ```
 $ bj count --mode decks --seed 11
@@ -231,15 +233,26 @@ $ bj count --mode decks --seed 11
   Decks remaining? > 3.5
   [XX] you said 3.5, the answer is 4 (2.8 s)
        Actual: 3.80 decks.
-       At RC +11, dividing by 3.5 gives TC +3.14; the real figure is +2.89 (+0.25).
-       Truncated: +3 vs +2 -- a different true count at the table.
+       At RC +12, dividing by 3.5 gives TC +3.43 instead of +3.00 (+0.43).
+       Truncated: +3 vs +3 -- the same true count at the table.
+       (Rounding to half decks itself moves it by -0.16: the exact depth gives +3.16.)
 ```
 
 The running count carries through the shoe until the cut card, and you are told
 the right figure after each answer so one slip is graded once. Every answer is
-timed, and the session ends with accuracy and median time per mode. `--seed`
-replays a session exactly; `--rounding` overrides the system's true-count
-rounding; blank or `q` stops.
+timed, and the session ends with accuracy, median time and mean error per mode.
+Blank or `q` stops.
+
+| flag | default | meaning |
+|---|---|---|
+| `--mode` | `running` | `running`, `true` or `decks` |
+| `--system` | `hi-lo` | counting system: a `configs/counting` name or a built-in key |
+| `--rounds` | 10 | questions to ask |
+| `--decks` | 6 | decks in the shoe, 1 to 8 |
+| `--cards-per-group` | 2 | running mode: cards shown per line |
+| `--groups` | 5 | running mode: lines per question |
+| `--rounding` | the system's | true-count rounding: `none`, `floor`, `truncate` or `round` |
+| `--seed` | random | replays a session exactly |
 
 ### 9. Native core
 

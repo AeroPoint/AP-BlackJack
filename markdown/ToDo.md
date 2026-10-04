@@ -131,11 +131,12 @@ The terminal versions are built. What remains is depth and a UI.
 
 - [ ] **Counting drills.** *Mostly done.* `bj count` has three modes, each
   timed with a monotonic clock and reproducible from `--seed`: running count
-  from a real shoe in configurable flashes (any system, IRC for unbalanced ones,
-  half points for Wong Halves), true-count conversion graded by
-  `CountSystem.true_count` with the simulator's half-deck estimation and the
-  system's rounding, and deck estimation from a text description of the tray,
-  which reports what the miss does to a true count near +3. The core in
+  from a real shoe in configurable groups (any system, IRC for unbalanced ones,
+  half points for Wong Halves, red and black sevens for Red 7), true-count
+  conversion graded by `CountSystem.true_count` with the simulator's half-deck
+  estimation and the system's rounding, and deck estimation from a text
+  description of the tray, which shows a miss against the half-deck answer at a
+  true count near +3. The core in
   `train/counting_drill.py` is pure; the loop takes injected input, output and
   clock. **Remaining:** tray estimation from an image or a slider, which belongs
   in the web UI; true flashing (cards that disappear after a set time) instead
