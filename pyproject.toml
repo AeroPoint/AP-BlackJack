@@ -12,7 +12,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "AGPL-3.0-only"   # plus a commercial licence; see markdown/adr/ADR-0008-project-licence.md
 license-files = ["LICENSE"]
-authors = [{ name = "Sean Fennig" }]
+authors = [{ name = "AeroPoint" }]
 keywords = ["blackjack", "card-counting", "expected-value", "monte-carlo", "solver"]
 classifiers = [
   "Private :: Do Not Upload",

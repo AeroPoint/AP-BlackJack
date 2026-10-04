@@ -144,8 +144,8 @@ Dual-licensed:
 - **[AGPL-3.0-only](LICENSE)** for everyone. You may use, modify and share it,
   commercially too. If you distribute it, or run a modified version as a network
   service, you must publish your source under the same licence.
-- **A commercial licence** from the copyright holder, for use that cannot meet
-  those terms, such as a closed-source product.
+- **A commercial licence** from AeroPoint, the copyright holder, for use that
+  cannot meet those terms, such as a closed-source product.
 
 See [LICENSING.md](LICENSING.md).
 

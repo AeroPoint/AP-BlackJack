@@ -108,7 +108,7 @@ Use any name and email you are happy to have in public history. GitHub's
 **2. Licence grant.** By submitting a contribution you agree that:
 
 - your contribution is licensed to everyone under the **AGPL-3.0-only**; and
-- you also grant the project's copyright holder a perpetual, worldwide,
+- you also grant AeroPoint, the copyright holder, a perpetual, worldwide,
   non-exclusive, royalty-free, irrevocable licence to use, modify, sublicense and
   distribute your contribution under **any other licence terms**, including
   commercial ones.

@@ -1,6 +1,10 @@
 # Licensing
 
-This project is **dual-licensed**.
+Copyright (C) 2026 AeroPoint.
+
+This project is **dual-licensed**. **AeroPoint** is the copyright holder
+throughout: the party that grants the commercial licence below, and the party
+contributors grant relicensing rights to.
 
 ## Open source: AGPL-3.0-only
 
@@ -21,8 +25,7 @@ usually means nothing more than "keep the licence and share your changes".
 
 If you want to use this software in a way that does not meet the AGPL's terms,
 for example in a closed-source product or in a hosted service whose source you
-do not want to publish, a commercial licence is available from the copyright
-holder.
+do not want to publish, a commercial licence is available from AeroPoint.
 
 To ask about one, contact [@AeroPoint on GitHub](https://github.com/AeroPoint).
 Please do not put commercial or confidential details in a public issue.
@@ -30,7 +33,7 @@ Please do not put commercial or confidential details in a public issue.
 ## Contributions
 
 Contributions are accepted under the AGPL-3.0-only. They also carry a grant that
-lets the copyright holder include them in the commercial licence. The terms are
+lets AeroPoint include them in the commercial licence. The terms are
 in [CONTRIBUTING.md](CONTRIBUTING.md#licensing-of-contributions), and the
 reasoning is in
 [ADR-0008](markdown/adr/ADR-0008-project-licence.md).
