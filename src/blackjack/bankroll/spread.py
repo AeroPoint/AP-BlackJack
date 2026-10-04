@@ -68,6 +68,15 @@ after the runs of low cards that make a count positive. On a 1-8 Hi-Lo ramp that
 costs about 0.0007 units per round, or 10% of the win rate, which the model
 overstates by. :meth:`~blackjack.bankroll.counts.TrueCountDistribution.with_frequencies`
 swaps in a simulator's measured frequencies to remove it.
+
+For an unbalanced count the same gap is larger, with a second term in it: every
+shoe's first round is dealt at exactly the IRC, so rounds sample the top of the
+shoe more heavily than card positions do, and a KO count reaches its pivot only
+late in the shoe. On a 1-10 six-deck KO ramp keyed on the pivot the model's own
+frequencies are worth 0.00836 units per round against the simulator's 0.00710,
+18% high. Price an unbalanced spread on measured frequencies with
+:meth:`~blackjack.bankroll.counts.TrueCountDistribution.with_frequencies`
+wherever the figure matters.
 """
 
 from __future__ import annotations
@@ -260,7 +269,12 @@ def bin_edge_curve(
     for n, i in enumerate(wanted, start=1):
         dr = distribution.decks_remaining_of_bin(i) or default_dr
         tc = distribution.mean_of_bin(i)
-        out.append(_count_edge(rules, system, tc, dr, exact_variance, strategy))
+        # An unbalanced bin's label is the running count the player actually
+        # has; its mean sits a little off it (KO's about a hundredth, Red 7's
+        # about a quarter, half its counts being k + 1/2), and an index at a
+        # whole number must fire for the whole bin, as it does at the table.
+        player = None if system.balanced else distribution.counts[i]
+        out.append(_count_edge(rules, system, tc, dr, exact_variance, strategy, player))
         if progress:
             progress(n, len(wanted))
     return out
@@ -273,8 +287,14 @@ def _count_edge(
     dr: float,
     exact_variance: bool,
     strategy: PlayingStrategy | None,
+    player_count: float | None = None,
 ) -> CountEdge:
-    """Solve one count at one depth. See :func:`count_edge_curve`."""
+    """Solve one count at one depth. See :func:`count_edge_curve`.
+
+    ``player_count`` is the count the strategy's decisions are taken at, when
+    the caller knows it -- the bin label of an unbalanced system. Otherwise it
+    is the system's rounding applied to ``tc``.
+    """
     comp = tilted_composition(system, rules.decks, dr, tc)
     result = solve(rules, comp)
     variance = round_moments(rules, comp).variance if exact_variance else None
@@ -283,7 +303,10 @@ def _count_edge(
         edge = result.optimal_ev
         takes_insurance = insurance > 0.0
     else:
-        player_tc = apply_rounding(tc, system.rounding) if system.balanced else tc
+        if player_count is not None:
+            player_tc = player_count
+        else:
+            player_tc = apply_rounding(tc, system.rounding) if system.balanced else tc
         edge = _strategy_edge(rules, result, strategy, player_tc)
         takes_insurance = strategy.takes_insurance(player_tc)
     # The insurance bet is half the main bet, offered only against an ace.
@@ -373,8 +396,10 @@ class SpreadResult:
 
     def table(self) -> str:
         """Per-count contribution breakdown -- where the money actually comes from."""
+        # An unbalanced system's counts are running counts, not true counts.
+        label = "TC" if self.system.balanced else "RC"
         lines = [
-            f"{'TC':>5} {'freq':>8} {'bet':>7} {'edge':>9} {'contrib':>10} {'var':>8}",
+            f"{label:>5} {'freq':>8} {'bet':>7} {'edge':>9} {'contrib':>10} {'var':>8}",
             "----- -------- ------- --------- ---------- --------",
         ]
         for tc, p, bet, edge, variance in self.detail:

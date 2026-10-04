@@ -231,29 +231,83 @@ def test_count_frequencies_match_the_simulator(counted_play) -> None:
     assert at_zero > distribution.probability_at(0), "cut-card effect has changed sign"
 
 
-def test_unbalanced_count_frequencies_match_the_simulator() -> None:
-    """The same comparison for KO, whose count is the running count itself.
+def unbalanced_frequency_failures(system, decks, histogram, distribution) -> list[str]:
+    """Every way a simulated unbalanced histogram disagrees with the count model.
 
-    The model this replaced centred KO's running count on zero at every depth,
-    ignoring both the IRC the count starts from and the drift of its unbalanced
-    tags. It put the mean count at 0 where the simulator measures about -11, and
-    29% of rounds at or above the pivot where the simulator deals 6%: off by
-    several points in nearly every bin.
+    Returns the failures rather than asserting, so that a check of the check --
+    perturb the model, confirm this catches it -- can call it too.
 
-    One bin is held to a looser, one-sided standard: the IRC. Every shoe's first
-    round is dealt there exactly, which the model, weighting card positions
-    rather than rounds, spreads over the IRC's neighbours. The simulator has
-    about 2 points more in it and a few tenths less either side; the direction is
-    asserted, as the cut-card effect's is above.
+    The bands come from 3 million rounds of six-deck KO and Red 7 at 75%, where
+    a bin's sampling noise is a few hundredths of a point:
 
-    Three million rounds, about 35 seconds: a bin's noise is under 0.02 points.
+    * the IRC bin, where every shoe's first round is dealt, is 1.9 points high
+      in the simulator: the model spreads the top of the shoe over its first few
+      card positions. Asserted between 1 and 3 points;
+    * its two neighbours give that mass up: 0.2 to 0.35 points low, asserted
+      between 0 and 0.6 low;
+    * every other bin agrees to within 0.18 points, asserted within 0.4. A
+      model whose IRC is one count out misses that by 0.7 points or more;
+    * the spread of the count, its standard deviation over rounds, agrees to
+      0.5% (8.78 simulated against 8.74 modelled for KO), asserted within 2%. A
+      tag variance 10% too wide or narrow moves it by 6%, where the bins alone
+      can still pass;
+    * the mean running count is a quarter of a count lower in the simulator,
+      and the share of rounds at or above the pivot a few tenths of a point
+      lower -- the cut-card effect, rounds being sparser at high counts. Both
+      directions are asserted, as the Hi-Lo test above asserts its own.
     """
-    from blackjack.bankroll.counts import true_count_distribution
-    from blackjack.counting import KO
+    binned = distribution.binned(histogram)
+    rounds = sum(binned.values())
+    irc = system.initial_running_count(decks)
+    pivot = system.pivot
+    failures = []
+    for rc in range(int(irc) - 10, int(pivot) + 7):
+        measured = binned.get(float(rc), 0) / rounds
+        modelled = distribution.probability_at(rc)
+        gap = measured - modelled
+        if rc == irc:
+            ok, band = 0.01 < gap < 0.03, "(+0.01, +0.03)"
+        elif abs(rc - irc) == 1:
+            ok, band = -0.006 < gap < 0.0, "(-0.006, 0)"
+        else:
+            ok, band = abs(gap) < 0.004, "+/-0.004"
+        if not ok:
+            failures.append(
+                f"RC {rc:+d}: simulator {measured:.4f} vs model {modelled:.4f}, "
+                f"gap {gap:+.4f} outside {band}"
+            )
+
+    sim_mean = sum(rc * n for rc, n in binned.items()) / rounds
+    sim_sd = math.sqrt(sum(n * (rc - sim_mean) ** 2 for rc, n in binned.items()) / rounds)
+    label_mean = distribution.mean()
+    model_sd = math.sqrt(
+        sum(
+            p * (c - label_mean) ** 2
+            for c, p in zip(distribution.counts, distribution.probabilities, strict=True)
+        )
+    )
+    if not 0.98 < model_sd / sim_sd < 1.02:
+        failures.append(f"sd of RC: simulator {sim_sd:.3f} vs model {model_sd:.3f}")
+
+    raw_rounds = sum(histogram.values())
+    sim_mean = sum(rc * n for rc, n in histogram.items()) / raw_rounds
+    model_mean = sum(
+        p * m for p, m in zip(distribution.probabilities, distribution.means, strict=True)
+    )
+    if not -0.6 < sim_mean - model_mean < 0.0:
+        failures.append(f"mean RC: simulator {sim_mean:+.3f} vs model {model_mean:+.3f}")
+    at_pivot = sum(n for rc, n in histogram.items() if rc >= pivot) / raw_rounds
+    modelled_pivot = distribution.probability_at_or_above(pivot)
+    if not 0.0 < modelled_pivot - at_pivot < 0.01:
+        failures.append(f"P(RC >= pivot): simulator {at_pivot:.4f} vs model {modelled_pivot:.4f}")
+    return failures
+
+
+def simulate_unbalanced(system, rules, seeds=(11, 22, 33), rounds=1_000_000) -> dict[float, int]:
+    """Basic strategy on a 1-10 ramp keyed on the pivot, pooled count histogram."""
     from blackjack.sim.engine import BetRamp
 
-    rules = VEGAS_6D_H17
-    pivot = KO.pivot
+    pivot = system.pivot
     ramp = BetRamp(
         thresholds=(-99.0, pivot - 1, pivot, pivot + 1, pivot + 2, pivot + 3),
         units=(1.0, 2.0, 4.0, 6.0, 8.0, 10.0),
@@ -262,33 +316,40 @@ def test_unbalanced_count_frequencies_match_the_simulator() -> None:
     runs = [
         simulate(
             SimConfig(
-                rules=rules, strategy=strategy, system=KO, ramp=ramp, rounds=1_000_000, seed=seed
+                rules=rules, strategy=strategy, system=system, ramp=ramp, rounds=rounds, seed=seed
             )
         )
-        for seed in (11, 22, 33)
+        for seed in seeds
     ]
-    _, _, histogram = _pooled(runs)
-    rounds = sum(histogram.values())
-    distribution = true_count_distribution(KO, rules.decks, rules.penetration)
-    irc = KO.initial_running_count(rules.decks)
+    return _pooled(runs)[2]
 
-    for rc in range(int(irc) - 10, int(pivot) + 7):
-        measured = histogram.get(float(rc), 0) / rounds
-        modelled = distribution.probability_at(rc)
-        if rc == irc:
-            assert 0.0 < measured - modelled < 0.03, (
-                f"IRC {rc:+d}: simulator {measured:.4f} vs model {modelled:.4f}"
-            )
-            continue
-        assert measured == pytest.approx(modelled, abs=0.01), (
-            f"RC {rc:+d}: simulator {measured:.4f} vs model {modelled:.4f}"
-        )
 
-    sim_mean = sum(rc * n for rc, n in histogram.items()) / rounds
-    assert sim_mean == pytest.approx(distribution.mean(), abs=0.5)
-    # The model is about 0.4 points high here: the cut-card effect, as for Hi-Lo.
-    at_pivot = sum(n for rc, n in histogram.items() if rc >= pivot) / rounds
-    assert at_pivot == pytest.approx(distribution.probability_at_or_above(pivot), abs=0.01)
+@pytest.mark.parametrize("key", ["ko", "red-7"])
+def test_unbalanced_count_frequencies_match_the_simulator(key: str) -> None:
+    """The same comparison for KO and Red 7, whose count is the running count itself.
+
+    The model this replaced centred the running count on zero at every depth,
+    ignoring both the IRC the count starts from and the drift of its unbalanced
+    tags. For six-deck KO it put the mean count at 0 where the simulator
+    measures about -11, and 29% of rounds at or above the pivot where the
+    simulator deals 6%: off by several points in nearly every bin.
+
+    The simulator keys an unbalanced histogram by the raw running count, and Red
+    7's sevens are tagged +1/2, so its histogram is floored into the model's
+    ``[k, k + 1)`` bins first. The bands, and why the IRC bin and its neighbours
+    have their own, are in :func:`unbalanced_frequency_failures`.
+
+    Three million rounds per system, about 35 seconds each.
+    """
+    from blackjack.bankroll.counts import true_count_distribution
+    from blackjack.counting import SYSTEMS
+
+    system = SYSTEMS[key]
+    rules = VEGAS_6D_H17
+    histogram = simulate_unbalanced(system, rules)
+    distribution = true_count_distribution(system, rules.decks, rules.penetration)
+    failures = unbalanced_frequency_failures(system, rules.decks, histogram, distribution)
+    assert not failures, "\n".join(failures)
 
 
 def test_analytic_spread_matches_the_simulator(counted_play) -> None:

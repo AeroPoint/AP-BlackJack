@@ -377,6 +377,53 @@ def test_unbalanced_bin_mean_prices_a_neutral_shoe_at_its_expected_count() -> No
     assert running_count_of(comp, KO, decks) == pytest.approx(expected_rc, abs=1e-6)
 
 
+def test_an_unbalanced_histogram_is_floored_into_its_bins() -> None:
+    """Red 7's half-integer running counts belong to bin floor(count).
+
+    The simulator keys an unbalanced histogram by the raw running count, and a
+    Red 7 seven is tagged +1/2, so about half its rounds sit at k + 1/2. Looking
+    those up by the integer label dropped them: ``with_frequencies`` then
+    renormalised what was left, silently reweighting the bins.
+    """
+    dist = true_count_distribution(RED_SEVEN, 6, 0.75)
+    histogram = {-3.0: 10, -2.5: 30, -2.0: 20, -1.5: 40}
+    assert dist.binned(histogram) == {-3.0: 40, -2.0: 60}
+    reweighted = dist.with_frequencies(histogram)
+    assert reweighted.probability_at(-3) == pytest.approx(0.4)
+    assert reweighted.probability_at(-2) == pytest.approx(0.6)
+    # A balanced histogram is already keyed by the player's integer.
+    hi_lo = true_count_distribution(HI_LO, 6, 0.75)
+    assert hi_lo.binned({0.0: 5, 1.0: 3}) == {0.0: 5, 1.0: 3}
+
+
+def test_unbalanced_bins_play_the_strategy_at_their_label() -> None:
+    """An index at a whole running count must fire for the whole bin.
+
+    A KO bin's mean sits a hundredth or so below its label above the centre of
+    the count, so deciding at the mean missed an insurance index at exactly +4
+    for every round in bin +4. The player at the table has a count of 4 and
+    insures.
+    """
+    from blackjack.bankroll.spread import bin_edge_curve
+    from blackjack.sim.strategy import compile_strategy
+
+    dist = true_count_distribution(KO, 6, 0.75)
+    i = dist.counts.index(KO.pivot)
+    assert dist.mean_of_bin(i) < KO.pivot, "the test needs a mean below its label"
+    strategy = compile_strategy(solve(VEGAS_6D_H17).chart, insurance_index=KO.pivot)
+    (edge,) = bin_edge_curve(
+        VEGAS_6D_H17, KO, dist, lo=KO.pivot, hi=KO.pivot, exact_variance=False, strategy=strategy
+    )
+    assert edge.insurance_per_round != 0.0
+
+
+def test_unbalanced_tables_are_labelled_and_ranged_as_running_counts() -> None:
+    table = true_count_distribution(KO, 6, 0.75).table()
+    assert table.splitlines()[0].split()[0] == "RC"
+    assert "-20" in table  # the IRC, far outside the balanced -6..+10 default
+    assert true_count_distribution(HI_LO, 6, 0.75).table().startswith("   TC")
+
+
 def test_count_step_is_the_running_count_lattice() -> None:
     assert count_step(HI_LO) == 1.0
     assert count_step(WONG_HALVES) == 0.5

@@ -54,10 +54,12 @@ Every shoe's first round is dealt at exactly the IRC -- one round in 43 in
 six-deck KO -- and rounds sample the top of the shoe more heavily than the
 model's even spread of positions, so the simulator has about 2 points more in
 the IRC bin, a few tenths less in its two neighbours, and correspondingly fewer
-rounds late in the shoe. Every other bin agrees to within 0.1 points over 3
-million simulated six-deck KO rounds. But late in the shoe is where a KO count
-reaches the pivot, so the model's frequencies overstate a 1-10 ramp keyed on
-the pivot by about 0.0013 units per round: 0.00836 against 0.00710 priced on
+rounds late in the shoe. Over 3 million simulated rounds each of six-deck KO
+and Red 7, every other bin agrees to within 0.18 points. (The simulator keys an
+unbalanced histogram by raw running count; :meth:`TrueCountDistribution.binned`
+floors it into these bins.) But late in the shoe is where a KO count reaches
+the pivot, so the model's frequencies overstate a 1-10 ramp keyed on the pivot
+by about 0.0013 units per round: 0.00836 against 0.00710 priced on
 the simulator's frequencies, 18% high. Roughly 0.0008 of that is the
 top-of-shoe effect, by an endpoint-correction estimate, and the rest the
 cut-card effect. Where that matters, price the bins on measured frequencies with
@@ -227,6 +229,24 @@ class TrueCountDistribution:
         """Typical decks remaining in bin ``i``, or ``None`` if not computed."""
         return self.decks_remaining[i] if self.decks_remaining else None
 
+    def binned(self, histogram: dict[float, int]) -> dict[float, int]:
+        """A count histogram, such as a simulator's, collected into this model's bins.
+
+        A balanced system's histogram is already keyed by the integer the player
+        uses, so it is returned as it is. An unbalanced one is keyed by the raw
+        running count, and Red 7's sevens are tagged +1/2, so half its rounds
+        sit at half-integer counts: those belong in bin ``floor(count)``, as the
+        bins are ``[k, k + 1)``. Looking them up by label instead silently drops
+        them -- about half of all Red 7 rounds.
+        """
+        if self.system.balanced:
+            return histogram
+        out: dict[float, int] = {}
+        for count, n in histogram.items():
+            k = float(math.floor(count))
+            out[k] = out.get(k, 0) + n
+        return out
+
     def with_frequencies(self, histogram: dict[float, int]) -> TrueCountDistribution:
         """The same bins reweighted to measured frequencies, such as a simulator's.
 
@@ -241,11 +261,13 @@ class TrueCountDistribution:
         histogram has but the model lacks are dropped.
 
         Args:
-            histogram: Rounds observed at each (rounded) true count.
+            histogram: Rounds observed at each (rounded) true count, or at each
+                raw running count for an unbalanced system; see :meth:`binned`.
 
         Returns:
             A distribution over this one's bins with the measured probabilities.
         """
+        histogram = self.binned(histogram)
         observed = [float(histogram.get(c, 0)) for c in self.counts]
         total = sum(observed)
         if total <= 0:
@@ -277,9 +299,12 @@ class TrueCountDistribution:
     def mean(self) -> float:
         """Mean count over the bin labels.
 
-        Zero for a balanced system, by construction. For an unbalanced one it is
-        the depth-averaged expected running count, ``IRC + mean cards dealt *
-        deck_sum / 52``, which for KO is well below zero.
+        Zero for a balanced system, by construction. For an unbalanced one on a
+        whole-number lattice, such as KO, it is the depth-averaged expected
+        running count, ``IRC + mean cards dealt * deck_sum / 52`` (to within a
+        thousandth), which is well below zero. Red 7's labels floor its
+        half-integer counts, so its label mean sits about a quarter of a count
+        below that; the expectation over :attr:`means` is exact for every system.
         """
         return sum(c * p for c, p in zip(self.counts, self.probabilities, strict=True))
 
@@ -291,14 +316,40 @@ class TrueCountDistribution:
         """
         return sum(p * f(c) for c, p in zip(self.counts, self.probabilities, strict=True))
 
-    def table(self, lo: float = -6, hi: float = 10) -> str:
-        """A readable frequency table for reports."""
-        lines = [f"{'TC':>5} {'freq':>8}  {'>= TC':>8}"]
+    def table(self, lo: float | None = None, hi: float | None = None) -> str:
+        """A readable frequency table for reports.
+
+        Defaults to true counts -6 to +10 for a balanced system and, for an
+        unbalanced one, to the running counts holding at least 0.01% of rounds:
+        its counts are nowhere near -6 to +10.
+        """
+        if self.system.balanced:
+            lo = -6.0 if lo is None else lo
+            hi = 10.0 if hi is None else hi
+        else:
+            common = [c for c, p in zip(self.counts, self.probabilities, strict=True) if p >= 1e-4]
+            lo = min(common) if lo is None else lo
+            hi = max(common) if hi is None else hi
+        label = "TC" if self.system.balanced else "RC"
+        lines = [f"{label:>5} {'freq':>8}  {'>= ' + label:>8}"]
         for c, p in zip(self.counts, self.probabilities, strict=True):
             if lo <= c <= hi:
                 cumulative = self.probability_at_or_above(c) * 100
                 lines.append(f"{c:>5g} {p * 100:7.3f}% {cumulative:7.3f}%")
         return "\n".join(lines)
+
+
+def _running_count_moments(
+    dealt: float, total: int, sigma2: float, irc: float, drift: float
+) -> tuple[float, float]:
+    """Mean and variance of the running count after ``dealt`` of ``total`` cards.
+
+    The mean is the IRC plus the mean tag of the cards dealt so far, ``drift``
+    per card: zero throughout for a balanced system. The variance is the
+    finite-population sample-sum variance about that mean. Shared by the
+    distribution and its default range so the two cannot drift apart.
+    """
+    return irc + dealt * drift, dealt * (total - dealt) / (total - 1) * sigma2
 
 
 UNBALANCED_TAIL_SDS = 6.0
@@ -326,8 +377,8 @@ def unbalanced_bin_range(
     lo, hi = irc, irc
     for depth in range(depth_steps):
         dealt = cut * (depth + 0.5) / depth_steps
-        centre = irc + dealt * drift
-        reach = UNBALANCED_TAIL_SDS * math.sqrt(dealt * (total - dealt) / (total - 1) * sigma2)
+        centre, variance = _running_count_moments(dealt, total, sigma2, irc, drift)
+        reach = UNBALANCED_TAIL_SDS * math.sqrt(variance)
         lo, hi = min(lo, centre - reach), max(hi, centre + reach)
     return math.floor(lo), math.ceil(hi)
 
@@ -410,10 +461,8 @@ def true_count_distribution(
             divisor = max(estimation, round(exact_decks / estimation) * estimation)
         else:
             divisor = max(min_decks_remaining, exact_decks)
-        sd_rc = math.sqrt(max(dealt * remaining / (total - 1) * sigma2, 1e-12))
-        # Expected running count at this depth: the IRC plus the mean tag of the
-        # cards dealt so far. Zero throughout for a balanced system.
-        centre = irc + dealt * drift
+        centre, variance = _running_count_moments(dealt, total, sigma2, irc, drift)
+        sd_rc = math.sqrt(max(variance, 1e-12))
         # The mean is reported as an exact true count, which uses the real
         # number of decks left rather than the player's estimate of it.
         to_exact = 1.0 if not system.balanced else 1.0 / exact_decks

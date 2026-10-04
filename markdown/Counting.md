@@ -80,10 +80,12 @@ with `σ²` the tag variance about its mean. In six decks at 75% penetration the
 KO count starts at −20 and drifts by +18 over the shoe, so most rounds are dealt
 well below the pivot. An earlier version centred the count on zero at every
 depth, which put 29% of six-deck KO rounds at or above the pivot; the simulator
-deals 6%. Against 3 million simulated rounds the model now agrees to within 0.1
-points in every bin except the IRC, where the simulator has about 2 points more
-because every shoe's first round is dealt there, and its two neighbours, a few
-tenths less.
+deals 6%. Against 3 million simulated rounds each of KO and Red 7 the model now
+agrees to within 0.18 points in every bin except the IRC, where the simulator
+has about 2 points more because every shoe's first round is dealt there, and its
+two neighbours, a few tenths less. (The simulator keys an
+unbalanced histogram by raw running count, half-integers included for Red 7;
+`TrueCountDistribution.binned` floors it into the model's `[k, k+1)` bins.)
 
 That last difference matters more than its size suggests. The model weights
 card positions, the simulator rounds, and rounds sample the top of the shoe more
