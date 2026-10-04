@@ -190,12 +190,16 @@ answers "should you have known better?"; the cost answers "what did it lose?".
 last term starts as the generic model and shrinks toward **your** measured miss
 rate as evidence accumulates, so the drill follows you rather than the alphabet.
 
-Pass `--profile NAME` to `bj drill` or `bj play` and that evidence outlives the
-session: per-cell results are saved to `data/profiles/NAME.json` (gitignored --
-it is personal data) and the next drill starts from what you missed last time.
-Results are kept apart by rule set and by grading standard, because a miss
-under H17 is not a miss of the same decision under S17. Without `--profile`,
-nothing is written to disk.
+Pass `--player NAME` and that evidence outlives the session: `bj drill` and
+`bj play` record per-cell results in `data/profiles/NAME.json` (gitignored -- it
+is personal data), and the next `bj drill --player NAME` starts from what you
+missed last time. Only opening two-card decisions are kept, since that is the
+question a drill asks, and results are kept apart by rule set and by grading
+standard (and counting system, for `--standard count`), because a miss under H17
+is not a miss of the same decision under S17. A value with a path separator,
+such as `~/bj/me.json`, stores the file there instead, but never in a tracked
+part of the repository. Ending a session with `q`, Ctrl-C or end of input still
+records it. Without `--player`, nothing is written to disk.
 
 Sessions end with the leaks named:
 
@@ -273,7 +277,7 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
   view and trainer screens are not started. See
   [apps/web/README.md](../apps/web/README.md).
 - **Personal leak view.** Your measured miss rates persist across sessions
-  with `--profile`, and the drill uses them, but `bj chart --importance` and the
+  with `--player`, and the drill uses them, but `bj chart --importance` and the
   chart page still rank leaks with the generic error model rather than yours.
 - **Multi-spot play.** The solver assumes heads-up.
 

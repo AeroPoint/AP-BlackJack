@@ -206,23 +206,36 @@ The terminal versions are built. What remains is depth and a UI.
   re-analyse — so this is a presentation question, not a maths one.
 
 - [x] **Persist measured miss rates across sessions.** *Done.* `bj drill` and
-  `bj play` take `--profile NAME`, which loads a `PlayerHistory`
+  `bj play` take `--player NAME`, which loads a `PlayerHistory`
   (`train/history.py`) before the first question and folds the session into it
   after the last. `blended_error_rate` pools the stored attempts with the live
   session's, so the drill starts from what *you* missed last time rather than
-  from a generic learner, and a long history damps one bad session. The design
-  notes held up, with one addition:
+  from a generic learner, and a long history damps one bad session. The flag is
+  `--player`, not the `--profile` the plan named, because `--profile` already
+  means a config profile on `bj spread` and `bj sim`, and `bj drill --profile
+  default` would have quietly created a player file. The design notes held up,
+  with additions:
   - per-cell stats are keyed by rules slug, and also by **grading standard** --
     a miss against `--standard exact` (composition-perfect play) is not a miss
     of the chart, and pooling it would inflate the rate the drill consults just
-    as pooling H17 into S17 would. The drill reads the chart scope only;
+    as pooling H17 into S17 would. `count` is keyed by the counting system's name
+    and tags too, since the indices belong to the system. The drill reads the
+    chart scope only;
+  - only **opening** decisions (two cards, not off a split) are stored. `bj play`
+    grades hands hit into and split into as well, but those are different
+    decisions from the drill's two-card question and would dilute its rate;
+    they stay in the session report and are dropped from the history;
   - stored as `data/profiles/<name>.json`, gitignored; nothing is written
-    without `--profile`;
-  - carries `schema_version` and the engine version; a corrupt or newer-schema
-    file raises and is left untouched rather than read as empty, and the CLI
-    loads it *before* the session so that failure costs nothing;
-  - written atomically, and re-read at save time so two concurrent sessions on
-    one profile both land.
+    without `--player`, and a session with no opening decisions writes nothing.
+    A value containing a path separator is a `.json` path instead, refused if it
+    resolves into the repository outside `data/profiles/`;
+  - carries `schema_version` and the engine version; a corrupt, non-canonical or
+    newer-schema file raises and is left untouched rather than read as empty,
+    and the CLI loads it *before* the session so that failure costs nothing;
+  - written atomically, re-read at save time so two concurrent sessions on one
+    player both land, and a failed write is an error that leaves the old file;
+  - Ctrl-C and end of input at a prompt end the session like `q`, so an
+    interrupted session is still recorded.
   *Approximation, stated in the module:* history is pooled without decay, so a
   player who has improved is weighted toward old mistakes by
   `n_old / (n_old + n_new) * (p_old - p_new)` until new attempts outweigh them.
@@ -267,11 +280,11 @@ The terminal versions are built. What remains is depth and a UI.
 - Deep single-deck states can produce fractional compositions where a rank falls
   below one card; the engine clamps at zero and the induced error is below 1e-9,
   but it is an approximation rather than an exact treatment.
-- Measured miss rates persist only with `--profile`; without it they are
+- Measured miss rates persist only with `--player`; without it they are
   discarded at exit and the next session starts from the generic model. That is
   deliberate (nothing is written to disk unasked). The leak view in
   `bj chart --importance` and the chart page still use the generic model either
-  way: they do not read a profile.
+  way: they do not read a player's history.
 - The React web UI has never been opened in a browser. It typechecks and builds,
   and its data contract is tested, but the layout and palette are unreviewed —
   and it still colours the chart by leak alone, which the standalone chart page

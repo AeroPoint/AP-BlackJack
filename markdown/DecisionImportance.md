@@ -257,10 +257,11 @@ standalone HTML file.
 
 - **Empirical error rates in the leak view.** `bj drill` blends the modelled
   `error_likelihood` toward the player's own measured miss rate per cell, and
-  with `--profile` that measurement persists across sessions
+  with `--player` that measurement persists across sessions
   (`train/history.py`). What remains is for the leak view itself
-  (`bj chart --importance`, the chart page) to read a profile, which turns it
-  from a statement about learners in general into a statement about you.
+  (`bj chart --importance`, the chart page) to read a player's history, which
+  turns it from a statement about learners in general into a statement about
+  you.
 - **Importance under a count.** Margins move with the count; a cell that is
   negligible at neutral can be major at +4. The machinery exists — solve at a
   tilted composition and re-analyse.
