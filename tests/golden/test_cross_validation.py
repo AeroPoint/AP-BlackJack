@@ -231,6 +231,65 @@ def test_count_frequencies_match_the_simulator(counted_play) -> None:
     assert at_zero > distribution.probability_at(0), "cut-card effect has changed sign"
 
 
+def test_unbalanced_count_frequencies_match_the_simulator() -> None:
+    """The same comparison for KO, whose count is the running count itself.
+
+    The model this replaced centred KO's running count on zero at every depth,
+    ignoring both the IRC the count starts from and the drift of its unbalanced
+    tags. It put the mean count at 0 where the simulator measures about -15, and
+    29% of rounds at or above the pivot where the simulator deals 2%: off by
+    several points in nearly every bin.
+
+    One bin is held to a looser, one-sided standard: the IRC. Every shoe's first
+    round is dealt there exactly, which the model, weighting card positions
+    rather than rounds, spreads over the IRC's neighbours. The simulator has
+    about 2 points more in it and a few tenths less either side; the direction is
+    asserted, as the cut-card effect's is above.
+
+    Three million rounds, about 35 seconds: a bin's noise is under 0.02 points.
+    """
+    from blackjack.bankroll.counts import true_count_distribution
+    from blackjack.counting import KO
+    from blackjack.sim.engine import BetRamp
+
+    rules = VEGAS_6D_H17
+    pivot = KO.pivot
+    ramp = BetRamp(
+        thresholds=(-99.0, pivot - 1, pivot, pivot + 1, pivot + 2, pivot + 3),
+        units=(1.0, 2.0, 4.0, 6.0, 8.0, 10.0),
+    )
+    strategy = compile_strategy(solve(rules).chart)
+    runs = [
+        simulate(
+            SimConfig(
+                rules=rules, strategy=strategy, system=KO, ramp=ramp, rounds=1_000_000, seed=seed
+            )
+        )
+        for seed in (11, 22, 33)
+    ]
+    _, _, histogram = _pooled(runs)
+    rounds = sum(histogram.values())
+    distribution = true_count_distribution(KO, rules.decks, rules.penetration)
+    irc = KO.initial_running_count(rules.decks)
+
+    for rc in range(int(irc) - 10, int(pivot) + 7):
+        measured = histogram.get(float(rc), 0) / rounds
+        modelled = distribution.probability_at(rc)
+        if rc == irc:
+            assert 0.0 < measured - modelled < 0.03, (
+                f"IRC {rc:+d}: simulator {measured:.4f} vs model {modelled:.4f}"
+            )
+            continue
+        assert measured == pytest.approx(modelled, abs=0.01), (
+            f"RC {rc:+d}: simulator {measured:.4f} vs model {modelled:.4f}"
+        )
+
+    sim_mean = sum(rc * n for rc, n in histogram.items()) / rounds
+    assert sim_mean == pytest.approx(distribution.mean(), abs=0.5)
+    at_pivot = sum(n for rc, n in histogram.items() if rc >= pivot) / rounds
+    assert at_pivot == pytest.approx(distribution.probability_at_or_above(pivot), abs=0.005)
+
+
 def test_analytic_spread_matches_the_simulator(counted_play) -> None:
     """Same strategy, same count frequencies: the ramp's EV must agree, no allowance.
 

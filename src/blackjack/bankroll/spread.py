@@ -174,13 +174,54 @@ def count_edge_curve(
     return [_count_edge(rules, system, tc, dr, exact_variance, strategy) for tc in counts]
 
 
+UNBALANCED_UNSOLVED_TAIL = 1e-4
+"""Rounds an unbalanced system's default solve range may leave out, per tail."""
+
+
+def default_bin_range(
+    system: CountSystem, distribution: TrueCountDistribution
+) -> tuple[float, float]:
+    """The bins :func:`bin_edge_curve` solves when not told otherwise.
+
+    For a balanced system, true counts -6 to +10: the range a ramp is written
+    in, leaving about 1% of six-deck rounds below it and 0.07% above, each of
+    which borrows the edge of the nearest solved bin.
+
+    An unbalanced system's bins are running counts, and those are nowhere near
+    that range: 82% of six-deck KO rounds are dealt below -6, so a fixed -6 to
+    +10 would price most rounds at the edge of a count they never had. Its
+    range is instead the narrowest one leaving at most
+    :data:`UNBALANCED_UNSOLVED_TAIL` of the rounds out on either side: running
+    counts -43 to +18 in six-deck KO, 62 solves. Solving all 103 bins instead
+    moves a 1-10 ramp keyed on the pivot by under 0.00001 units per round.
+    """
+    if system.balanced:
+        return -6.0, 10.0
+    counts, probabilities = distribution.counts, distribution.probabilities
+    below = 0.0
+    lo = counts[0]
+    for c, p in zip(counts, probabilities, strict=True):
+        if below + p > UNBALANCED_UNSOLVED_TAIL:
+            lo = c
+            break
+        below += p
+    above = 0.0
+    hi = counts[-1]
+    for c, p in zip(reversed(counts), reversed(probabilities), strict=True):
+        if above + p > UNBALANCED_UNSOLVED_TAIL:
+            hi = c
+            break
+        above += p
+    return lo, hi
+
+
 def bin_edge_curve(
     rules: RuleSet,
     system: CountSystem,
     distribution: TrueCountDistribution,
     *,
-    lo: float = -6.0,
-    hi: float = 10.0,
+    lo: float | None = None,
+    hi: float | None = None,
     exact_variance: bool = True,
     strategy: PlayingStrategy | None = None,
     progress: Callable[[int, int], None] | None = None,
@@ -199,7 +240,8 @@ def bin_edge_curve(
         system: Counting system.
         distribution: The count bins to price.
         lo: Lowest bin to solve. Bins outside ``[lo, hi]`` borrow the nearest
-            solved edge in :func:`evaluate_ramp`.
+            solved edge in :func:`evaluate_ramp`. Defaults to
+            :func:`default_bin_range`.
         hi: Highest bin to solve.
         exact_variance: Also compute the exact per-bin variance.
         strategy: Price this fixed strategy instead of composition-perfect play.
@@ -210,6 +252,9 @@ def bin_edge_curve(
         One :class:`CountEdge` per bin in range, keyed by the bin's mean count.
     """
     default_dr = rules.decks / 2.0
+    auto_lo, auto_hi = default_bin_range(system, distribution)
+    lo = auto_lo if lo is None else lo
+    hi = auto_hi if hi is None else hi
     wanted = [i for i, c in enumerate(distribution.counts) if lo <= c <= hi]
     out: list[CountEdge] = []
     for n, i in enumerate(wanted, start=1):
@@ -359,7 +404,8 @@ def evaluate_ramp(
         rules: Table rules.
         system: Counting system.
         edges: Precomputed edge curve. Computed with :func:`bin_edge_curve`
-            if omitted: one solve per bin from -6 to +10, each at the bin's mean
+            if omitted: one solve per bin in :func:`default_bin_range` -- true
+            counts -6 to +10 for a balanced system -- each at the bin's mean
             count and typical depth.
         distribution: True-count frequencies. Built from the rules if omitted.
         variance_per_unit: Fallback variance of a one-unit round, used only for

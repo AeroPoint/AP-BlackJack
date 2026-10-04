@@ -66,6 +66,33 @@ over a deck, so the running count drifts as small cards leave, and an initial
 offset (IRC) is chosen so a fixed running count — the **pivot** — marks a known
 advantage. Easier at the table, slightly weaker in the maths.
 
+The count is the running count, IRC included: that is what the simulator bets
+on and what a KO ramp's thresholds are written in. The frequency model
+(`bankroll/counts.py`, [Math.md §8](Math.md#8-true-count-frequency)) therefore
+starts the count at the IRC and lets its expectation drift by the mean tag per
+card dealt:
+
+```
+E[RC] = IRC + d · deck_sum / 52        Var[RC] = d(N−d)/(N−1) · σ²
+```
+
+with `σ²` the tag variance about its mean. In six decks at 75% penetration the
+KO count drifts by +18 over the shoe, so most rounds are dealt well below the
+pivot. An earlier version
+centred the count on zero at every depth, which put 29% of six-deck KO rounds at
+or above the pivot; the simulator deals 2%. Against 3 million simulated rounds
+the model now agrees to within 0.1 points in every bin except the IRC, where
+the simulator has about 2 points more because every shoe's first round is dealt
+there, and its two neighbours, a few tenths less.
+
+That last difference matters more than its size suggests. The model weights
+card positions, the simulator rounds, and rounds sample the top of the shoe more
+heavily; together with the cut-card effect that leaves fewer late-shoe rounds,
+and late in the shoe is the only place a KO count reaches the pivot. On a 1-10
+ramp keyed on the pivot the model's frequencies are worth 0.00197 units per
+round and the simulator's 0.00109. For an unbalanced spread, reweight to measured
+frequencies with `TrueCountDistribution.with_frequencies`.
+
 ---
 
 ## Deriving indices

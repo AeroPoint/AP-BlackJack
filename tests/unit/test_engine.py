@@ -9,13 +9,16 @@ import pytest
 from blackjack.actions import Action
 from blackjack.bankroll.counts import count_step, true_count_distribution
 from blackjack.bankroll.metrics import BankrollMetrics, n0, risk_of_ruin
-from blackjack.cards import parse_hand, parse_rank
+from blackjack.bankroll.spread import default_bin_range
+from blackjack.cards import SINGLE_DECK_COUNTS, parse_hand, parse_rank
 from blackjack.counting import (
     HI_LO,
     KO,
+    RED_SEVEN,
     SYSTEMS,
     WONG_HALVES,
     ZEN_COUNT,
+    CountSystem,
     TrueCountRounding,
     apply_rounding,
 )
@@ -266,6 +269,81 @@ def test_truncated_bins_hold_the_counts_that_truncate_to_them() -> None:
             assert mean == pytest.approx(0.0, abs=1e-9)
     for i, tc in enumerate(rounded.counts):
         assert tc - 0.5 <= rounded.mean_of_bin(i) < tc + 0.5
+
+
+@pytest.mark.parametrize("system", [KO, RED_SEVEN], ids=["ko", "red-7"])
+@pytest.mark.parametrize(("decks", "penetration"), [(6, 0.75), (2, 0.7), (1, 0.65)])
+def test_unbalanced_distribution_tracks_the_drifting_running_count(
+    system: CountSystem, decks: int, penetration: float
+) -> None:
+    """An unbalanced count starts at the IRC and drifts by the mean tag per card.
+
+    Its depth-averaged centre is therefore ``IRC + deck_sum / 52 * cut / 2``,
+    not zero. The model this replaced centred every depth at zero, which for
+    six-deck KO put the mean at 0 where the simulator measures about -15, and
+    29% of rounds at or above the pivot where the simulator deals 2%.
+    """
+    dist = true_count_distribution(system, decks, penetration)
+    irc = system.initial_running_count(decks)
+    cut = decks * 52 * penetration
+    expected = irc + system.deck_sum / 52 * cut / 2
+    assert expected < -1.0, "the test needs a centre away from zero"
+    assert sum(dist.probabilities) == pytest.approx(1.0, abs=1e-9)
+    # The bin means are exact running counts, so they average to E[RC] exactly
+    # once the bins hold the whole distribution.
+    weighted = sum(p * m for p, m in zip(dist.probabilities, dist.means, strict=True))
+    assert weighted == pytest.approx(expected, abs=1e-6)
+    # The default range reaches down past the IRC, where every shoe starts.
+    assert dist.counts[0] < irc < dist.counts[-1]
+    if count_step(system) == 1.0:
+        # On an integer lattice each bin is a single count, so the labels
+        # average to the same centre, to within a thousandth: near the top of
+        # the shoe the spread is under one count, and a label is not its mean.
+        assert dist.mean() == pytest.approx(expected, abs=1e-3)
+
+
+def test_ko_pivot_is_reached_only_late_in_the_shoe() -> None:
+    """Six-deck KO rarely reaches its pivot: about 2% of rounds, not 29%."""
+    dist = true_count_distribution(KO, 6, 0.75)
+    assert 0.01 < dist.probability_at_or_above(KO.pivot) < 0.04
+    # The rounds that do reach it are late: well under half the shoe left.
+    at_pivot = dist.counts.index(KO.pivot)
+    assert dist.decks_remaining_of_bin(at_pivot) < 3.0
+
+
+def test_balanced_systems_keep_their_fixed_bin_range() -> None:
+    dist = true_count_distribution(HI_LO, 6, 0.75)
+    assert (dist.counts[0], dist.counts[-1]) == (-20.0, 20.0)
+    assert default_bin_range(HI_LO, dist) == (-6.0, 10.0)
+
+
+def test_unbalanced_solve_range_covers_the_rounds_actually_dealt() -> None:
+    """A KO spread must be solved at running counts, not at true counts -6..+10."""
+    dist = true_count_distribution(KO, 6, 0.75)
+    lo, hi = default_bin_range(KO, dist)
+    assert lo < KO.initial_running_count(6) and hi > KO.pivot + 6
+    outside = sum(
+        p for c, p in zip(dist.counts, dist.probabilities, strict=True) if not lo <= c <= hi
+    )
+    assert outside < 3e-4
+
+
+def test_unbalanced_bin_mean_prices_a_neutral_shoe_at_its_expected_count() -> None:
+    """The distribution and the tilt must read an unbalanced count the same way.
+
+    A bin's mean is a running count with the IRC included, and spread analysis
+    hands it to ``tilted_composition`` at the bin's depth. At the count a
+    neutral shoe is *expected* to show at that depth, the tilt must return the
+    neutral shoe itself. Reading the count without the IRC, or without the
+    drift, would tilt it instead.
+    """
+    decks, remaining = 6, 3.0
+    dealt = (decks - remaining) * 52
+    expected_rc = KO.initial_running_count(decks) + dealt * KO.deck_sum / 52
+    comp = tilted_composition(KO, decks, remaining, expected_rc)
+    neutral = [c * remaining for c in SINGLE_DECK_COUNTS]
+    assert comp == pytest.approx(neutral, abs=1e-6)
+    assert running_count_of(comp, KO, decks) == pytest.approx(expected_rc, abs=1e-6)
 
 
 def test_count_step_is_the_running_count_lattice() -> None:

@@ -173,7 +173,7 @@ def cmd_indices(args: argparse.Namespace) -> int:
 def cmd_spread(args: argparse.Namespace) -> int:
     """Evaluate a bet spread analytically."""
     from blackjack.bankroll.counts import true_count_distribution
-    from blackjack.bankroll.spread import bin_edge_curve, evaluate_ramp
+    from blackjack.bankroll.spread import bin_edge_curve, default_bin_range, evaluate_ramp
     from blackjack.config.loader import load_profile
     from blackjack.sim.engine import BetRamp
 
@@ -189,7 +189,8 @@ def cmd_spread(args: argparse.Namespace) -> int:
         ),
     )
     distribution = true_count_distribution(system, rules.decks, rules.penetration)
-    print("Solving the exact edge and variance in each true-count bin from -6 to +10...")
+    lo, hi = default_bin_range(system, distribution)
+    print(f"Solving the exact edge and variance in each count bin from {lo:+g} to {hi:+g}...")
     curve = bin_edge_curve(rules, system, distribution)
     result = evaluate_ramp(ramp, rules, system, edges=curve, distribution=distribution)
 

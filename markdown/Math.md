@@ -235,6 +235,19 @@ E[RC] = 0        Var[RC] = d(N−d)/(N−1) · σ²        TC = RC / ((N−d)/52
 Averaged over the depths actually played — uniformly from the top of the shoe to
 the cut card.
 
+**Unbalanced systems** (KO, Red 7) are played on the running count itself, IRC
+included, so there is no divisor. Their tags do not sum to zero, so the count
+starts at the IRC and its expectation drifts by the mean tag per card:
+
+```
+E[RC] = IRC + d · deck_sum / 52        Var[RC] = d(N−d)/(N−1) · σ²
+```
+
+with `σ²` the tag variance about that mean. Bin `k` holds the running counts in
+`[k, k+1)` on the count's lattice, and its mean is the conditional mean running
+count. Weighting card positions rather than rounds costs more here than for a
+balanced count; see [Counting.md](Counting.md#unbalanced-systems).
+
 **Bins follow the player's arithmetic.** A bin is labelled with the integer the
 player uses, so it collects every exact count the player's rounding maps there.
 Under truncation, bin +1 is `[1, 2)` and bin 0 is the double-width `(−1, 1)`.

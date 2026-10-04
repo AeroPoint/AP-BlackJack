@@ -23,6 +23,45 @@ draws is close to normal, and the true count is then
 Averaging over the depths actually played -- uniformly from the top of the shoe
 to the cut card -- gives the distribution the player experiences.
 
+Unbalanced systems
+------------------
+KO and Red 7 are played on the running count itself, so for them the "true
+count" is the running count -- initial running count included, exactly what
+:meth:`CountSystem.true_count` returns and what a ramp's thresholds are written
+in -- and there is no divisor. Two things change in the model, and both matter.
+The count starts at the IRC, not zero; and the tags no longer sum to zero, so
+every card dealt moves the expected count by the mean tag, ``deck_sum / 52``:
+
+    E[RC] = IRC + d * deck_sum / 52
+
+``sigma^2`` is the tag variance about that mean, so the finite-population
+variance above still describes the scatter around the drifting centre. KO in
+six decks drifts by +18 over a 75% shoe, so its count sits well below the pivot
+for most of the shoe. An earlier version centred every depth at zero, which put
+29% of six-deck KO rounds at or above the pivot where the simulator deals 2%,
+and cut off every bin below -20.
+
+Bin ``k`` of an unbalanced system holds the running counts in ``[k, k + 1)``, on
+the count's own lattice (offset by the IRC): the single count ``k`` for KO, ``k``
+and ``k + 1/2`` for Red 7. A bin's mean is its conditional mean running count.
+The default bin range follows the count from the IRC to six standard deviations
+either side of its centre at every depth, which a fixed range around zero cannot.
+
+Weighting card positions rather than rounds (see "What it does not model"
+below) costs more here than for a balanced count, and the size is worth stating.
+Every shoe's first round is dealt at exactly the IRC -- one round in 43 in
+six-deck KO -- and rounds sample the top of the shoe more heavily than the
+model's even spread of positions, so the simulator has about 2 points more in
+the IRC bin, a few tenths less in its two neighbours, and correspondingly fewer
+rounds late in the shoe. Every other bin agrees to within 0.1 points over 3
+million simulated six-deck KO rounds. But late in the shoe is the only place a
+KO count reaches the pivot, so the model's frequencies overstate a 1-10 ramp
+keyed on the pivot by about 0.0009 units per round: 0.00197 against 0.00109
+priced on the simulator's frequencies, nearly half its value. Roughly 0.0005 of
+that is the top-of-shoe effect, by an endpoint-correction estimate, and the rest
+the cut-card effect. For an unbalanced spread, price the bins on measured
+frequencies with :meth:`TrueCountDistribution.with_frequencies`.
+
 Binning is where the player's arithmetic enters
 -----------------------------------------------
 A bin is labelled with the integer the player *uses*, so it must collect every
@@ -235,7 +274,12 @@ class TrueCountDistribution:
         return self.probabilities[best]
 
     def mean(self) -> float:
-        """Mean true count. Zero for a balanced system, by construction."""
+        """Mean count over the bin labels.
+
+        Zero for a balanced system, by construction. For an unbalanced one it is
+        the depth-averaged expected running count, ``IRC + mean cards dealt *
+        deck_sum / 52``, which for KO is well below zero.
+        """
         return sum(c * p for c, p in zip(self.counts, self.probabilities, strict=True))
 
     def expectation(self, f: Callable[[float], float]) -> float:
@@ -256,6 +300,37 @@ class TrueCountDistribution:
         return "\n".join(lines)
 
 
+UNBALANCED_TAIL_SDS = 6.0
+"""How far past its expected value, in standard deviations, an unbalanced
+system's default bin range reaches at every depth. A normal tail beyond six
+standard deviations holds about one part in a billion."""
+
+
+def unbalanced_bin_range(
+    system: CountSystem, decks: int, penetration: float, *, depth_steps: int = 128
+) -> tuple[int, int]:
+    """Default integer bin range for an unbalanced system's running count.
+
+    A balanced count is centred on zero at every depth, so a fixed -20 to +20
+    holds all of it. An unbalanced count starts at the IRC and drifts by the mean
+    tag per card, so its range has to follow it: the lowest and highest
+    ``E[RC] -/+ 6 sd`` over the depths the model averages. In six-deck KO that
+    is -63 to +39, 103 bins rather than 41; the loop over them is still cheap.
+    """
+    total = decks * CARDS_PER_DECK
+    cut = total * penetration
+    sigma2 = tag_variance(system, decks)
+    irc = system.initial_running_count(decks)
+    drift = system.deck_sum / CARDS_PER_DECK
+    lo, hi = irc, irc
+    for depth in range(depth_steps):
+        dealt = cut * (depth + 0.5) / depth_steps
+        centre = irc + dealt * drift
+        reach = UNBALANCED_TAIL_SDS * math.sqrt(dealt * (total - dealt) / (total - 1) * sigma2)
+        lo, hi = min(lo, centre - reach), max(hi, centre + reach)
+    return math.floor(lo), math.ceil(hi)
+
+
 def true_count_distribution(
     system: CountSystem,
     decks: int,
@@ -263,12 +338,15 @@ def true_count_distribution(
     *,
     rounding: TrueCountRounding | None = None,
     estimation: float = 0.5,
-    lo: float = -20.0,
-    hi: float = 20.0,
+    lo: float | None = None,
+    hi: float | None = None,
     depth_steps: int = 128,
     min_decks_remaining: float = 0.25,
 ) -> TrueCountDistribution:
     """Distribution of the true count across the rounds of a shoe.
+
+    For an unbalanced system the count is the running count, IRC included, and
+    it drifts as the shoe is dealt; see the module docstring.
 
     Args:
         system: Counting system.
@@ -279,8 +357,12 @@ def true_count_distribution(
             decks remaining -- the same parameter as
             :meth:`CountSystem.true_count` and the simulator's
             ``deck_estimation``. ``0`` models a perfect estimate.
-        lo: Lowest integer bin.
-        hi: Highest integer bin.
+        lo: Lowest integer bin. Defaults to -20 for a balanced system. For an
+            unbalanced one it defaults to wherever the running count can reach:
+            six standard deviations below its expected value at the depth where
+            that is lowest (:func:`unbalanced_bin_range`).
+        hi: Highest integer bin. +20, or the matching upper reach for an
+            unbalanced system.
         depth_steps: Number of shoe depths to average over.
         min_decks_remaining: Floor on the true-count divisor when ``estimation``
             is zero, which keeps the last few cards of a deeply penetrated shoe
@@ -296,6 +378,19 @@ def true_count_distribution(
     cut = total * penetration
     sigma2 = tag_variance(system, decks)
     step = count_step(system)
+    # Where the count starts, and how far each card moves its expectation: both
+    # zero for a balanced system, which leaves its arithmetic exactly as it was.
+    irc = system.initial_running_count(decks)
+    drift = system.deck_sum / CARDS_PER_DECK if not system.balanced else 0.0
+    if lo is None or hi is None:
+        if system.balanced:
+            auto_lo, auto_hi = -20, 20
+        else:
+            auto_lo, auto_hi = unbalanced_bin_range(
+                system, decks, penetration, depth_steps=depth_steps
+            )
+        lo = auto_lo if lo is None else lo
+        hi = auto_hi if hi is None else hi
 
     mass: dict[int, float] = {}
     moment: dict[int, float] = {}
@@ -315,6 +410,9 @@ def true_count_distribution(
         else:
             divisor = max(min_decks_remaining, exact_decks)
         sd_rc = math.sqrt(max(dealt * remaining / (total - 1) * sigma2, 1e-12))
+        # Expected running count at this depth: the IRC plus the mean tag of the
+        # cards dealt so far. Zero throughout for a balanced system.
+        centre = irc + dealt * drift
         # The mean is reported as an exact true count, which uses the real
         # number of decks left rather than the player's estimate of it.
         to_exact = 1.0 if not system.balanced else 1.0 / exact_decks
@@ -323,20 +421,26 @@ def true_count_distribution(
             if system.balanced:
                 interval = _rounding_interval(k, mode)
             else:
-                interval = (k - 0.5, k + 0.5, True, False)
+                # The running count is already the number the player bets on.
+                # Bin k is [k, k + 1): on an integer lattice (KO) that is the
+                # single count k, and on Red 7's half-step lattice it pairs k
+                # with k + 1/2, which is how a ramp with whole-number
+                # thresholds -- and so the simulator -- treats k + 1/2.
+                interval = _rounding_interval(k, TrueCountRounding.FLOOR)
             lo_tc, hi_tc, lo_closed, hi_closed = interval
             rc_lo, rc_hi = lo_tc * divisor, hi_tc * divisor
             if step > 0:
-                span = _lattice_span(rc_lo, rc_hi, lo_closed, hi_closed, step)
+                # The lattice is the IRC plus whole multiples of the step.
+                span = _lattice_span(rc_lo - irc, rc_hi - irc, lo_closed, hi_closed, step)
                 if span is None:
                     continue
-                rc_lo, rc_hi = span[0] - step / 2.0, span[1] + step / 2.0
-            z_lo, z_hi = rc_lo / sd_rc, rc_hi / sd_rc
+                rc_lo, rc_hi = irc + span[0] - step / 2.0, irc + span[1] + step / 2.0
+            z_lo, z_hi = (rc_lo - centre) / sd_rc, (rc_hi - centre) / sd_rc
             p = _normal_cdf(z_hi) - _normal_cdf(z_lo)
             if p <= 0.0:
                 continue
             # Mean of a normal truncated to [rc_lo, rc_hi].
-            mean_rc = sd_rc * (_normal_pdf(z_lo) - _normal_pdf(z_hi)) / p
+            mean_rc = centre + sd_rc * (_normal_pdf(z_lo) - _normal_pdf(z_hi)) / p
             mass[k] = mass.get(k, 0.0) + p * weight
             moment[k] = moment.get(k, 0.0) + p * weight * mean_rc * to_exact
             inverse_decks[k] = inverse_decks.get(k, 0.0) + p * weight / exact_decks
