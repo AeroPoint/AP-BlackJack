@@ -100,9 +100,15 @@ worth building twice.
 - [ ] **Web UI: spread and risk explorer.** Ramp editor with live EV/hour, N0,
   SCORE and risk-of-ruin readouts, and the per-count contribution chart.
 
-- [ ] **Rule-delta explorer.** Pick two rule sets, see the EV difference and
+- [~] **Rule-delta explorer.** Pick two rule sets, see the EV difference and
   *which cells changed*. This is the tool that answers "is this table worth
   playing" in one screen.
+  *Engine, CLI and API done:* `ev/compare.py`, `bj compare A B`,
+  `GET /api/compare/{a}/{b}`, with the response types in `apps/web/src/api.ts`.
+  Reports both edges and their delta, one-rule-at-a-time attribution with the
+  interaction residual stated, and every changed cell priced as chart A's play
+  at table B (a play B does not offer falls back to chart A's second choice).
+  *Remaining:* the web screen. Nothing on the engine side blocks it.
 
 ---
 

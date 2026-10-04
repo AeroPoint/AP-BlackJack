@@ -302,6 +302,44 @@ mistake). The last two are separate scales on purpose. See
 This is currently the **only reviewed user interface in the project**, and it is
 where the feedback that shaped the importance presentation came from.
 
+### 11. Rule-delta comparison — "is this table worth playing?"
+
+Two rule sets, solved side by side: the edge difference, which rule it comes
+from, and every chart cell that changes — priced as what the chart you already
+know costs you at the other table.
+
+```
+$ bj compare vegas6-h17 vegas6-s17-ls --top 5
+                                 A         B       B - A
+  Basic strategy EV       -0.5498%  -0.2643% +0.2855 pts
+  Composition-perfect     -0.5498%  -0.2641% +0.2857 pts
+  Insurance off the top   -7.3955%  -7.3955% +0.0000 pts
+
+  2 rules differ. Each switched alone, starting from A:
+    hit_soft_17: True -> False             +0.2142 pts
+    surrender: none -> late                +0.0868 pts
+    interaction residual                   -0.0155 pts
+
+  7 chart cells change. Playing chart A at table B costs 0.0791% of a bet per round.
+
+   hand  vs  A says  B says  A at B   per hand   freq%   cost/100
+     16   T       H       R       H    0.03189   1.823    0.05813
+     15   T       H       R       H    0.00293   2.191    0.00643
+     11   A       D       H       D    0.01674   0.368    0.00616
+     16   A       H       R       H    0.01005   0.460    0.00462
+     16   9       H       R       H    0.00472   0.456    0.00215
+```
+
+Every delta is `B − A`. When several rules differ, each is switched alone from
+A, and the residual says how much the rules interact — here, surrender is worth
+less once the dealer stands on soft 17. The cell costs add up exactly to the
+wrong-chart total, and they run one way: a surrender chart at a no-surrender
+table falls back to its second choice ("Rh") and loses nothing, while the
+reverse forgoes the surrender. `bj compare vegas6-h17 6to5-trap` shows the other
+extreme: 1.36 points worse and not one cell changes. The same comparison is
+served at `GET /api/compare/{a}/{b}`. See `src/blackjack/ev/compare.py` for the
+approximations and their sizes.
+
 ---
 
 ## What is not built yet
@@ -313,7 +351,8 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
   but **nobody has looked at it in a browser**, so treat the layout and palette
   as a first draft. It also still carries the single leak colouring that the
   standalone chart page showed to be ambiguous. The spread explorer, rule-delta
-  view and trainer screens are not started. See
+  view and trainer screens are not started, though `GET /api/compare` already
+  serves everything the rule-delta view needs. See
   [apps/web/README.md](../apps/web/README.md).
 - **Personal leak view.** Your measured miss rates persist across sessions
   with `--player`, and the drill uses them, but `bj chart --importance` and the
@@ -345,6 +384,7 @@ See [environment/README.md](../environment/README.md).
 | command | what it does |
 |---|---|
 | `bj solve` | House edge and composition-dependent ceiling for a rule set |
+| `bj compare` | Two rule sets: edge delta, per-rule attribution, every chart cell that changes |
 | `bj chart` | The basic-strategy chart, optionally with importance rankings |
 | `bj indices` | Deviation indices derived for these rules and this system |
 | `bj spread` | Bet-ramp EV, SD, N0, SCORE and risk of ruin |

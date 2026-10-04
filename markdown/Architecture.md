@@ -47,6 +47,7 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | `ev/player.py` | Per-action EVs: stand, hit, double, split, surrender. |
 | `ev/solver.py` | Enumerates deals, aggregates into a chart, computes the house edge. |
 | `ev/importance.py` | Turns per-action EVs into margin, closeness, frequency, expected leak. |
+| `ev/compare.py` | Two solves side by side: edge deltas, per-rule attribution, changed cells priced at the other table. |
 | `strategy/deviations.py` | The count tilt and index generation. |
 | `sim/strategy.py` | Compiles a solved chart plus indices into flat lookup tables. |
 | `sim/engine.py` | Monte Carlo round loop. |
