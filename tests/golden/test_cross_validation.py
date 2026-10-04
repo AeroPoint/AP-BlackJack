@@ -234,8 +234,10 @@ def test_count_frequencies_match_the_simulator(counted_play) -> None:
 def unbalanced_frequency_failures(system, decks, histogram, distribution) -> list[str]:
     """Every way a simulated unbalanced histogram disagrees with the count model.
 
-    Returns the failures rather than asserting, so that a check of the check --
-    perturb the model, confirm this catches it -- can call it too.
+    Returns the failures rather than asserting, so the same checks can be run
+    against a deliberately perturbed model to confirm they catch it. During
+    review they caught an IRC one count out and a tag variance 5-10% off,
+    except KO at +5%, which slips through.
 
     The bands come from 3 million rounds of six-deck KO and Red 7 at 75%, where
     a bin's sampling noise is a few hundredths of a point:
@@ -249,8 +251,8 @@ def unbalanced_frequency_failures(system, decks, histogram, distribution) -> lis
       model whose IRC is one count out misses that by 0.7 points or more;
     * the spread of the count, its standard deviation over rounds, agrees to
       0.5% (8.78 simulated against 8.74 modelled for KO), asserted within 2%. A
-      tag variance 10% too wide or narrow moves it by 6%, where the bins alone
-      can still pass;
+      tag variance 10% too wide or narrow moves it by about 3%, where the bins
+      alone can still pass;
     * the mean running count is a quarter of a count lower in the simulator,
       and the share of rounds at or above the pivot a few tenths of a point
       lower -- the cut-card effect, rounds being sparser at high counts. Both

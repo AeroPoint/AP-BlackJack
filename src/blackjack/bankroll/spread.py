@@ -273,6 +273,9 @@ def bin_edge_curve(
         # has; its mean sits a little off it (KO's about a hundredth, Red 7's
         # about a quarter, half its counts being k + 1/2), and an index at a
         # whole number must fire for the whole bin, as it does at the table.
+        # This assumes whole-number index thresholds: a Red 7 index at k + 1/2
+        # would fire on only half the bin's counts, and pricing at the label
+        # would get that half wrong.
         player = None if system.balanced else distribution.counts[i]
         out.append(_count_edge(rules, system, tc, dr, exact_variance, strategy, player))
         if progress:
