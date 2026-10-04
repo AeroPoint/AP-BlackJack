@@ -223,7 +223,7 @@ Sessions end with the leaks named:
 |---|---|---|
 | `running` | the running count after each batch of cards dealt from a real shoe | exact, to the half point for Wong Halves; starts at the IRC for unbalanced systems; Red 7 shows sevens as `7r` / `7b` |
 | `true` | the true count for a running count and a depth | `CountSystem.true_count` with the simulator's half-deck estimation and the system's rounding |
-| `decks` | decks remaining, to the nearest half deck, from a described discard tray | within a quarter deck; a miss is shown against the half-deck answer at a true count near +3 |
+| `decks` | decks remaining, to the nearest half deck, from a described discard tray | within a quarter deck, or the half-deck answer itself; a miss is shown against the half-deck answer at a true count near +3 |
 
 An excerpt (the response time is illustrative):
 

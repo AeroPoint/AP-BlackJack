@@ -350,7 +350,9 @@ def _read_count(
         except ValueError:
             writer("  Not a number. Try +3, -2.5 or 0; blank or q to stop.")
             continue
-        if value is not None and positive and value <= 0:
+        # Below a hundredth of a deck is not an estimate, and dividing a running
+        # count by it overflows the true-count arithmetic.
+        if value is not None and positive and value < 0.01:
             writer("  Decks remaining must be more than zero.")
             continue
         return value

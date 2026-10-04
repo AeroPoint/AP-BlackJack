@@ -560,3 +560,31 @@ def test_cli_count_wiring(capsys: pytest.CaptureFixture[str]) -> None:
     assert "unbalanced" in capsys.readouterr().err
     assert main(["count", "--mode", "decks", "--decks", "0"]) == 1
     assert "decks must be between" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("penetration", [0.0, -0.1, 1.01, float("nan")])
+def test_every_generator_rejects_an_impossible_penetration(penetration: float) -> None:
+    """A cut card outside the shoe is refused before a single question is drawn."""
+    rng = random.Random(1)
+    with pytest.raises(ValueError, match="penetration"):
+        deck_question(rng, penetration=penetration)
+    with pytest.raises(ValueError, match="penetration"):
+        true_count_question(HI_LO, rng, penetration=penetration)
+    with pytest.raises(ValueError, match="penetration"):
+        RunningCountDrill(HI_LO, rng, penetration=penetration)
+
+
+def test_a_vanishing_deck_estimate_is_asked_again() -> None:
+    """An answer like 1e-320 would overflow the true-count arithmetic; re-ask instead."""
+    answers = iter(["1e-320", "3.5", ""])
+    out: list[str] = []
+    run_count_drill(
+        HI_LO,
+        mode=DrillMode.DECKS,
+        rounds=1,
+        seed=11,
+        reader=lambda _prompt: next(answers),
+        writer=out.append,
+        clock=lambda: 0.0,
+    )
+    assert any("more than zero" in line for line in out)

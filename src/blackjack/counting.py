@@ -93,11 +93,13 @@ def true_count_divisor(decks_remaining: float, estimation: float = 0.5) -> float
     an unfloored divisor would send the true count to infinity at the end of a
     deep shoe. ``estimation=0`` means a perfect estimate and returns the input.
 
-    This is the single definition, shared by :meth:`CountSystem.true_count` (and
-    so the simulator) and by the counting drills, so the divisor a player is
-    taught is the one the simulated counter uses. Exact ties go to Python's
-    round-half-to-even; the drills show depths to a tenth of a deck, which never
-    lands on a tie at half-deck granularity.
+    Shared by :meth:`CountSystem.true_count` (and so the simulator) and by the
+    counting drills, so the divisor a player is taught is the one the simulated
+    counter uses. (``bankroll.counts`` still carries the same expression inline
+    for its frequency model.) Exact ties go to Python's round-half-to-even.
+    True-count questions show depths to a tenth of a deck and so never tie;
+    deck-estimation questions phrased in cards can land on x.25 or x.75, and
+    their grading accepts both neighbours.
     """
     if estimation > 0:
         return max(estimation, round(decks_remaining / estimation) * estimation)
