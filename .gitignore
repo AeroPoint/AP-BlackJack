@@ -56,3 +56,8 @@ data/generated/
 .env
 .env.*
 !.env.example
+
+# --- Personal data ---
+# Player profiles from `bj drill/play --profile`: one person's measured miss
+# rates. Never commit them; the repository is public.
+data/profiles/

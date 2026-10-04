@@ -13,7 +13,7 @@ and nothing else.
 from __future__ import annotations
 
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from blackjack.actions import Action
 from blackjack.cards import rank_name
@@ -24,7 +24,7 @@ from blackjack.shoe import full_shoe
 from blackjack.sim.strategy import PlayingStrategy, compile_strategy
 from blackjack.train.drill import pick
 from blackjack.train.grading import Standard, Verdict, cell_key, grade
-from blackjack.train.session import Session, describe_cell
+from blackjack.train.session import CellKey, CellStats, Session, describe_cell
 from blackjack.train.table import Hand, Phase, RoundState, Table
 
 #: Single-key answers. Deliberately the same letters the chart prints.
@@ -72,6 +72,7 @@ def run_drill(
     seed: int | None = None,
     reader: Callable[[str], str] = input,
     chart: StrategyChart | None = None,
+    history: Mapping[CellKey, CellStats] | None = None,
 ) -> Session:
     """Serve strategy questions weighted by what they actually cost you.
 
@@ -82,6 +83,9 @@ def run_drill(
         seed: Seeds the question order, so a drill can be reproduced.
         reader: Input function; injected so the loop is testable.
         chart: A pre-solved chart, to skip re-solving.
+        history: Stored per-cell results from earlier sessions on these rules,
+            so the weighting starts from what you missed last time rather than
+            from the generic model. Read only; saving is the caller's choice.
 
     Returns:
         The completed session.
@@ -97,7 +101,7 @@ def run_drill(
     print("miss it, so the drill follows you rather than the alphabet.\n")
 
     for i in range(1, rounds + 1):
-        drill = pick(solved_chart, session, rng, exclude=last)
+        drill = pick(solved_chart, session, rng, exclude=last, history=history)
         last = drill.key
         cards, upcard = drill.cards, drill.cell.upcard
 

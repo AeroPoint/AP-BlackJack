@@ -7,8 +7,10 @@ one from :mod:`blackjack.ev.importance`:
     weight = margin x frequency x P(you get it wrong)
 
 The first two terms come from the solver. The third starts as a model and is
-replaced, cell by cell, with your measured miss rate as the session accumulates
-evidence -- see :class:`blackjack.train.session.Session`.
+replaced, cell by cell, with your measured miss rate as evidence accumulates --
+from the live session (:class:`blackjack.train.session.Session`) and, when a
+profile is in use, from every earlier session on the same rules
+(:class:`blackjack.train.history.PlayerHistory`).
 
 Blending rather than switching
 ------------------------------
@@ -26,10 +28,11 @@ here because the alternative -- hard switching -- makes the drill lurch.
 from __future__ import annotations
 
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from blackjack.ev.solver import ChartCell, StrategyChart
-from blackjack.train.session import CellKey, Session
+from blackjack.train.session import CellKey, CellStats, Session
 
 SMOOTHING = 6.0
 """Pseudo-observations of the modelled rate. Higher means the drill trusts the
@@ -55,28 +58,55 @@ class Drill:
         return (self.cell.category, self.cell.row, self.cell.upcard)
 
 
-def blended_error_rate(cell: ChartCell, session: Session | None) -> float:
+def blended_error_rate(
+    cell: ChartCell,
+    session: Session | None,
+    history: Mapping[CellKey, CellStats] | None = None,
+) -> float:
     """Chance this player misplays this cell.
 
     Starts at the modelled rate and shrinks toward the measured one as evidence
-    accumulates.
+    accumulates. The evidence is the live session's attempts *plus* the stored
+    history's, pooled: they are the same player on the same rules, so an attempt
+    last week and an attempt a minute ago are both one observation of the same
+    rate. ``n`` in the shrinkage formula is the pooled count, so a cell with a
+    long history barely moves on one more miss, and a cell never seen before
+    moves as fast as it always did. The history is not decayed; the lag that
+    causes is stated in :mod:`blackjack.train.history`.
+
+    Args:
+        cell: The chart cell.
+        session: The live session, or ``None``.
+        history: Stored per-cell results for *these rules* -- callers pass
+            ``PlayerHistory.cells(rules.slug())``, never another rule set's -- or
+            ``None``. It must not already include ``session``, or the session's
+            attempts would count twice; histories absorb a session only after it
+            ends.
     """
     modelled = cell.analysis.error_rate
-    if session is None:
-        return modelled
     key = (cell.category, cell.row, cell.upcard)
-    stats = session.stats.get(key)
-    if stats is None or stats.seen == 0:
+    seen = 0
+    errors = 0
+    for source in (history, session.stats if session is not None else None):
+        stats = source.get(key) if source is not None else None
+        if stats is not None:
+            seen += stats.seen
+            errors += stats.errors
+    if seen == 0:
         return modelled
-    measured = stats.error_rate
-    n = float(stats.seen)
+    measured = errors / seen
+    n = float(seen)
     return (n * measured + SMOOTHING * modelled) / (n + SMOOTHING)
 
 
-def drill_weight(cell: ChartCell, session: Session | None) -> float:
+def drill_weight(
+    cell: ChartCell,
+    session: Session | None,
+    history: Mapping[CellKey, CellStats] | None = None,
+) -> float:
     """How much attention this cell deserves right now."""
     a = cell.analysis
-    return max(MIN_WEIGHT, a.margin * a.frequency * blended_error_rate(cell, session))
+    return max(MIN_WEIGHT, a.margin * a.frequency * blended_error_rate(cell, session, history))
 
 
 def pick(
@@ -85,6 +115,7 @@ def pick(
     rng: random.Random | None = None,
     *,
     exclude: CellKey | None = None,
+    history: Mapping[CellKey, CellStats] | None = None,
 ) -> Drill:
     """Choose the next drill, sampled in proportion to :func:`drill_weight`.
 
@@ -98,6 +129,8 @@ def pick(
             model alone.
         rng: Seedable randomness, so a drill sequence can be reproduced.
         exclude: A cell to avoid repeating immediately.
+        history: Stored results from earlier sessions on these rules, if a
+            profile is in use. See :func:`blended_error_rate`.
 
     Returns:
         The next question.
@@ -112,7 +145,7 @@ def pick(
     if not cells:
         raise ValueError("chart has no cells to drill")
 
-    weights = [drill_weight(c, session) for c in cells]
+    weights = [drill_weight(c, session, history) for c in cells]
     cell = source.choices(cells, weights=weights, k=1)[0]
     members = cell.members or [(cell.row, cell.row)]
     cards = source.choice(members)
@@ -123,11 +156,15 @@ def curriculum(
     chart: StrategyChart,
     session: Session | None = None,
     limit: int = 20,
+    history: Mapping[CellKey, CellStats] | None = None,
 ) -> list[ChartCell]:
     """The cells worth studying, in order, without the randomness.
 
-    What ``bj chart --importance`` shows, but personalised once a session has
-    data. Useful as a study list rather than an interactive drill.
+    What ``bj chart --importance`` shows, but personalised once a session or a
+    stored history has data. Useful as a study list rather than an interactive
+    drill.
     """
-    ranked = sorted(chart.cells.values(), key=lambda c: drill_weight(c, session), reverse=True)
+    ranked = sorted(
+        chart.cells.values(), key=lambda c: drill_weight(c, session, history), reverse=True
+    )
     return ranked[:limit]
