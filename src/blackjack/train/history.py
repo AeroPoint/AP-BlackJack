@@ -252,14 +252,21 @@ class PlayerHistory:
 
 
 def _repository_root() -> Path | None:
-    """The checkout this engine runs from, or ``None`` for an install outside one."""
+    """The checkout this engine runs from, or ``None`` for an install outside one.
+
+    A ``configs/`` directory alone is not enough: an installed engine walking up
+    from site-packages can meet an unrelated ``~/configs`` and would then treat
+    the whole home directory as "the repository", refusing every player path in
+    it. The root must also carry this project's ``pyproject.toml``.
+    """
     from blackjack.config.loader import find_config_dir
     from blackjack.config.models import ConfigError
 
     try:
-        return find_config_dir().parent
+        root = find_config_dir().parent
     except ConfigError:
         return None
+    return root if (root / "pyproject.toml").is_file() else None
 
 
 def default_profile_dir() -> Path:
@@ -341,11 +348,18 @@ def load_history(path: Path) -> PlayerHistory:
         return PlayerHistory()
     try:
         text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise HistoryError(
+            f"{path} is not a text file ({exc}). It has been left untouched; move it "
+            f"aside to start a new history."
+        ) from exc
     except OSError as exc:
         raise HistoryError(f"{path}: cannot read player history: {exc}") from exc
     try:
         data = json.loads(text, object_pairs_hook=_no_duplicates)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, RecursionError) as exc:
+        # Not JSON, or nested past the parser's recursion limit: both are a
+        # damaged file, and both get the same guarantee.
         raise HistoryError(
             f"{path} is not valid JSON ({exc}). It has been left untouched; move it "
             f"aside to start a new history, or repair it to keep the old one."
@@ -368,6 +382,9 @@ def save_history(history: PlayerHistory, path: Path) -> None:
         HistoryError: if the file cannot be written. The previous file, if any,
             is unchanged.
     """
+    # Write through a symlink rather than over it: a player who links their
+    # file into a synced folder keeps the link.
+    path = path.resolve()
     tmp: str | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

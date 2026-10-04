@@ -220,6 +220,46 @@ def test_corrupt_file_raises_and_is_left_alone(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == '{"schema_version": 1, "records": {'
 
 
+def test_binary_and_deeply_nested_files_are_history_errors(tmp_path: Path) -> None:
+    """Damage the JSON parser does not report as JSONDecodeError still gets the guarantee."""
+    binary = tmp_path / "binary.json"
+    binary.write_bytes(b"\xff\xfe\x00garbage")
+    with pytest.raises(HistoryError, match="not a text file"):
+        load_history(binary)
+    assert binary.read_bytes() == b"\xff\xfe\x00garbage"
+
+    nested = tmp_path / "nested.json"
+    nested.write_text("[" * 100_000, encoding="utf-8")
+    with pytest.raises(HistoryError, match="not valid JSON"):
+        load_history(nested)
+
+
+def test_save_writes_through_a_symlink(tmp_path: Path) -> None:
+    """A player file linked into a synced folder keeps its link."""
+    target = tmp_path / "synced" / "me.json"
+    target.parent.mkdir()
+    link = tmp_path / "me.json"
+    link.symlink_to(target)
+    history = PlayerHistory()
+    history.absorb(H17, _session(stiff=(2, 1, 0.1)))
+    save_history(history, link)
+    assert link.is_symlink()
+    assert load_history(target) == history
+
+
+def test_repository_root_needs_the_project_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unrelated ``configs/`` above an install must not be taken for the checkout."""
+    from blackjack.config import loader
+
+    (tmp_path / "configs").mkdir()
+    monkeypatch.setattr(loader, "find_config_dir", lambda: tmp_path / "configs")
+    assert history_mod._repository_root() is None
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+    assert history_mod._repository_root() == tmp_path
+
+
 def test_future_schema_raises(tmp_path: Path) -> None:
     path = tmp_path / "me.json"
     data = PlayerHistory().to_dict() | {"schema_version": SCHEMA_VERSION + 1}
