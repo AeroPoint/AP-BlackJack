@@ -5,6 +5,7 @@ installable with no dependencies.  Colour is used when :mod:`rich` happens to be
 available and quietly skipped when it is not.
 
     bj solve --rules vegas6-h17
+    bj compare vegas6-h17 vegas6-s17-ls
     bj chart --rules vegas6-h17 --importance
     bj indices --rules vegas6-h17 --system hi-lo
     bj spread --profile default
@@ -92,6 +93,22 @@ def cmd_solve(args: argparse.Namespace) -> int:
         delta = (alt.basic_strategy_ev - result.basic_strategy_ev) * 100
         print(f"\n{alt.rules.name}: {alt.basic_strategy_ev * 100:+.4f}%")
         print(f"Difference vs {rules.name}: {delta:+.4f} percentage points")
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """Compare two tables: the edge, its attribution, and every cell that changes."""
+    from blackjack.config.models import rules_fingerprint
+    from blackjack.ev.compare import compare_rules
+
+    rules_a = _load_rules(args.rules_a)
+    rules_b = _load_rules(args.rules_b)
+    result = compare_rules(rules_a, rules_b, attribute=not args.no_attribution)
+    print(result.summary())
+    print(f"  Rules fingerprints: A {rules_fingerprint(rules_a)}, B {rules_fingerprint(rules_b)}\n")
+    if result.changes:
+        print("  CHANGED CELLS -- what chart A's play costs at table B, per 100 rounds")
+        print(result.table(args.top))
     return 0
 
 
@@ -525,6 +542,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rules", default="vegas6-h17")
     p.add_argument("--compare", help="second rule set to diff against")
     p.set_defaults(func=cmd_solve)
+
+    p = sub.add_parser(
+        "compare",
+        help="compare two rule sets: edge delta and every chart cell that changes",
+    )
+    p.add_argument("rules_a", help="the table whose chart you know")
+    p.add_argument("rules_b", help="the table you are thinking of playing")
+    p.add_argument("--top", type=int, default=15, help="changed cells to list (0 for all)")
+    p.add_argument(
+        "--no-attribution",
+        action="store_true",
+        help="skip the one-rule-at-a-time solves that attribute the edge delta",
+    )
+    p.set_defaults(func=cmd_compare)
 
     p = sub.add_parser("chart", help="print the basic-strategy chart")
     p.add_argument("--rules", default="vegas6-h17")

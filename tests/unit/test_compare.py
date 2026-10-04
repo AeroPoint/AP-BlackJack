@@ -180,3 +180,22 @@ def test_non_solve_fields_are_real_rule_fields() -> None:
     from dataclasses import fields
 
     assert NON_SOLVE_FIELDS.issubset(f.name for f in fields(RuleSet))
+
+
+def test_cli_prints_the_summary_and_the_ranked_cells(capsys) -> None:
+    from blackjack.cli import main
+
+    assert main(["compare", "vegas6-h17", "vegas6-s17-ls", "--top", "3"]) == 0
+    out = capsys.readouterr().out
+    assert "Basic strategy EV" in out
+    assert "hit_soft_17: True -> False" in out
+    assert "CHANGED CELLS" in out
+    assert "Rules fingerprints" in out
+    assert "... and" in out  # more than three cells change; the rest are elided
+
+
+def test_cli_reports_an_unknown_rule_set(capsys) -> None:
+    from blackjack.cli import main
+
+    assert main(["compare", "vegas6-h17", "no-such-table"]) == 1
+    assert "unknown rule set" in capsys.readouterr().err

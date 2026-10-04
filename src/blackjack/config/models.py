@@ -88,6 +88,23 @@ class SessionConfig:
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
+def rules_fingerprint(rules: RuleSet) -> str:
+    """Stable 16-character hash of every rule field, for results that need no session.
+
+    A solve or a rule comparison depends on the rules alone, so hashing a whole
+    :class:`SessionConfig` around them would tie the result to a counting system
+    and a bankroll it never read. :meth:`RuleSet.slug` is not a substitute: it
+    is a readable cache key and omits fields such as ``charlie`` and
+    ``hit_split_aces`` that do move the EV. Same scheme as
+    :meth:`SessionConfig.fingerprint` -- every field except the display name --
+    so a field added to :class:`RuleSet` is covered without anyone remembering to.
+    """
+    payload = to_plain(rules)
+    payload.pop("name", None)
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
 # --- Serialisation ------------------------------------------------------------
 # Hand-rolled rather than pydantic, to keep the engine dependency-free. The
 # surface is small: dataclasses, enums, Fractions and tuples.

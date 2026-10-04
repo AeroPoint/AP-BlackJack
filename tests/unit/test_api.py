@@ -90,6 +90,43 @@ def test_solve_unknown_rules_is_404(client) -> None:
     assert client.get("/api/solve/no-such-game").status_code == 404
 
 
+def test_compare_matches_the_engine(client, compare_solve_cache) -> None:
+    """Deltas, costs and provenance arrive intact, and B minus A means B minus A."""
+    from blackjack.ev.compare import compare_rules
+    from blackjack.rules import VEGAS_6D_H17, VEGAS_6D_S17_LS
+
+    payload = client.get("/api/compare/vegas6-h17/vegas6-s17-ls").json()
+    expected = compare_rules(VEGAS_6D_H17, VEGAS_6D_S17_LS)
+    assert payload["basic_strategy_ev_delta"] == pytest.approx(expected.basic_strategy_ev_delta)
+    assert payload["wrong_chart_cost"] == pytest.approx(expected.wrong_chart_cost)
+    assert payload["attribution_residual"] == pytest.approx(expected.attribution_residual)
+    assert len(payload["changes"]) == len(expected.changes)
+    assert [d["field"] for d in payload["differences"]] == ["hit_soft_17", "surrender"]
+    assert payload["differences"][1]["b"] == "late"
+
+    top = payload["changes"][0]
+    assert top["cost_per_100_rounds"] == pytest.approx(expected.changes[0].cost_per_100_rounds)
+    assert {top["action_a"], top["action_b"], top["played_at_b"]} <= set("SHDPR")
+
+    # Provenance: each side carries a fingerprint that the slug cannot stand in for.
+    assert payload["engine_version"] and payload["backend"]
+    assert len(payload["a"]["fingerprint"]) == 16
+    assert payload["a"]["fingerprint"] != payload["b"]["fingerprint"]
+
+
+def test_compare_without_attribution_sends_nulls_not_zeros(client, compare_solve_cache) -> None:
+    payload = client.get(
+        "/api/compare/vegas6-h17/vegas6-s17-ls", params={"attribute": False}
+    ).json()
+    assert payload["attribution_residual"] is None
+    assert all(d["ev_delta"] is None for d in payload["differences"])
+
+
+def test_compare_unknown_rules_is_404(client) -> None:
+    assert client.get("/api/compare/vegas6-h17/no-such-game").status_code == 404
+    assert client.get("/api/compare/no-such-game/vegas6-h17").status_code == 404
+
+
 def test_explain_prices_every_action(client) -> None:
     payload = client.get("/api/explain/vegas6-h17/A7/6").json()
     assert payload["best"] == "D"
@@ -285,7 +322,7 @@ def test_runner_evicts_old_jobs() -> None:
 # --- The contract with the front end ------------------------------------------
 
 
-def test_response_shape_matches_the_typescript_types(client) -> None:
+def test_response_shape_matches_the_typescript_types(client, compare_solve_cache) -> None:
     """Every field the web client declares must actually be sent.
 
     This is the failure a type checker cannot catch and a screenshot would not
@@ -308,7 +345,12 @@ def test_response_shape_matches_the_typescript_types(client) -> None:
         return set(re.findall(r"^\s+(\w+)[?]?:", match.group(1), re.M))
 
     solved = client.get("/api/solve/vegas6-h17").json()
+    compared = client.get("/api/compare/vegas6-h17/vegas6-s17-ls").json()
     for interface, payload in (
+        ("CompareResult", compared),
+        ("CompareSide", compared["a"]),
+        ("RuleDifference", compared["differences"][0]),
+        ("CellChange", compared["changes"][0]),
         ("SolveResult", solved),
         ("ChartCell", solved["chart"][0]),
         ("Health", client.get("/api/health").json()),

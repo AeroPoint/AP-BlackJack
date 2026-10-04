@@ -118,6 +118,12 @@ def solve(rules_name: str) -> dict[str, Any]:
     return _handle(service.solve, rules_name)
 
 
+@app.get("/api/compare/{rules_a}/{rules_b}")
+def compare(rules_a: str, rules_b: str, attribute: bool = Query(True)) -> dict[str, Any]:
+    """Compare two rule sets: edge deltas and every chart cell that changes."""
+    return _handle(service.compare, rules_a, rules_b, attribute)
+
+
 @app.get("/api/explain/{rules_name}/{hand}/{upcard}")
 def explain(rules_name: str, hand: str, upcard: str) -> dict[str, Any]:
     """Price every action for one hand."""

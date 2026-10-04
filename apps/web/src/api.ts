@@ -51,6 +51,62 @@ export interface SolveResult {
   chart: ChartCell[];
 }
 
+/** One side of a rule comparison. `fingerprint` hashes every rule field. */
+export interface CompareSide {
+  name: string;
+  slug: string;
+  fingerprint: string;
+  decks: number;
+  basic_strategy_ev: number;
+  optimal_ev: number;
+  house_edge: number;
+  insurance_ev: number;
+}
+
+/** A rule that differs, and its edge delta switched on its own from A. */
+export interface RuleDifference {
+  field: string;
+  a: unknown;
+  b: unknown;
+  ev_delta: number | null;
+}
+
+/** A chart square whose play differs, priced as chart A's play at table B. */
+export interface CellChange {
+  category: Category;
+  row: number;
+  upcard: number;
+  label: string;
+  action_a: Action;
+  action_b: Action;
+  played_at_b: Action;
+  offered_at_b: boolean;
+  frequency: number;
+  cost_per_occurrence: number;
+  cost_per_100_rounds: number;
+  evs_a: Partial<Record<Action, number>>;
+  evs_b: Partial<Record<Action, number>>;
+}
+
+/** `GET /compare/{a}/{b}`. Every delta is B minus A. */
+export interface CompareResult {
+  engine_version: string;
+  backend: string;
+  a: CompareSide;
+  b: CompareSide;
+  basic_strategy_ev_delta: number;
+  optimal_ev_delta: number;
+  insurance_ev_delta: number;
+  chart_a_at_b_ev: number;
+  wrong_chart_cost: number;
+  differences: RuleDifference[];
+  attribution_residual: number | null;
+  other_differences: string[];
+  changes: CellChange[];
+  only_in_a: ChartCell[];
+  only_in_b: ChartCell[];
+}
+
 export interface Configs {
   rules: string[];
   counting: string[];
@@ -99,6 +155,11 @@ export const api = {
   configs: (signal?: AbortSignal) => get<Configs>("/configs", signal),
   solve: (rules: string, signal?: AbortSignal) =>
     get<SolveResult>(`/solve/${encodeURIComponent(rules)}`, signal),
+  compare: (rulesA: string, rulesB: string, signal?: AbortSignal) =>
+    get<CompareResult>(
+      `/compare/${encodeURIComponent(rulesA)}/${encodeURIComponent(rulesB)}`,
+      signal,
+    ),
 };
 
 // --- Display helpers ---------------------------------------------------------

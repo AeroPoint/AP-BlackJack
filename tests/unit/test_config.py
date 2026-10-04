@@ -129,6 +129,19 @@ def test_fingerprint_changes_with_any_numeric_field(change: dict[str, object]) -
     assert base.fingerprint() != other.fingerprint(), change
 
 
+def test_rules_fingerprint_hashes_every_field_but_the_name() -> None:
+    """The slug omits charlie; the fingerprint must not, or a result could not be traced."""
+    from blackjack.config.models import rules_fingerprint
+
+    base = RuleSet()
+    assert rules_fingerprint(base) == rules_fingerprint(RuleSet())
+    assert rules_fingerprint(base) == rules_fingerprint(base.with_(name="relabelled"))
+    assert len(rules_fingerprint(base)) == 16
+    seven_card_charlie = base.with_(charlie=7)
+    assert seven_card_charlie.slug() == base.slug()
+    assert rules_fingerprint(seven_card_charlie) != rules_fingerprint(base)
+
+
 def test_fingerprint_changes_with_the_rules() -> None:
     base = SessionConfig(RuleSet(), HI_LO)
     other = SessionConfig(RuleSet(hit_soft_17=False), HI_LO)
