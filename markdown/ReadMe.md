@@ -188,8 +188,14 @@ answers "should you have known better?"; the cost answers "what did it lose?".
 
 `bj drill` serves cells weighted by `margin x frequency x P(you miss it)`. That
 last term starts as the generic model and shrinks toward **your** measured miss
-rate as the session accumulates evidence, so the drill follows you rather than
-the alphabet.
+rate as evidence accumulates, so the drill follows you rather than the alphabet.
+
+Pass `--profile NAME` to `bj drill` or `bj play` and that evidence outlives the
+session: per-cell results are saved to `data/profiles/NAME.json` (gitignored --
+it is personal data) and the next drill starts from what you missed last time.
+Results are kept apart by rule set and by grading standard, because a miss
+under H17 is not a miss of the same decision under S17. Without `--profile`,
+nothing is written to disk.
 
 Sessions end with the leaks named:
 
@@ -266,10 +272,9 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
   standalone chart page showed to be ambiguous. The spread explorer, rule-delta
   view and trainer screens are not started. See
   [apps/web/README.md](../apps/web/README.md).
-- **Persistent player statistics.** `bj drill` measures your miss rate per cell
-  and blends the drill weighting toward it, but discards it at exit. Until that
-  persists, the expected-leak model describes learners in general rather than
-  you.
+- **Personal leak view.** Your measured miss rates persist across sessions
+  with `--profile`, and the drill uses them, but `bj chart --importance` and the
+  chart page still rank leaks with the generic error model rather than yours.
 - **Multi-spot play.** The solver assumes heads-up.
 
 ---

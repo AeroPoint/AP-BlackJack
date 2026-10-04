@@ -205,23 +205,28 @@ The terminal versions are built. What remains is depth and a UI.
   accordingly. The machinery exists — solve at a tilted composition and
   re-analyse — so this is a presentation question, not a maths one.
 
-- [ ] **Persist measured miss rates across sessions.** *Next up, and the last
-  piece of the trainer work.* `bj drill` already blends the generic error model
-  toward the player's own rate within a session (`drill.blended_error_rate`),
-  but `Session` dies at exit. Persisting it turns the leak view from a claim
-  about learners in general into a claim about you, which is the point of the
-  whole model.
-  *Done when:* a `PlayerHistory` accumulates per-cell `seen/errors/cost` across
-  sessions, `blended_error_rate` consults it as well as the live session, and
-  `bj drill` / `bj play` take a `--profile` to load and save it.
-  *Design notes, decided but not yet built:*
-  - key per-cell stats by rules slug as well as cell, because a miss rate under
-    H17 is not a measurement of the same decision under S17;
-  - store under `data/profiles/`, gitignored -- it is personal data, and
-    AGENTS.md forbids committing session logs;
-  - carry `schema_version` and the engine version, as every other stored result
-    does;
-  - opt in via `--profile` rather than writing to disk unasked.
+- [x] **Persist measured miss rates across sessions.** *Done.* `bj drill` and
+  `bj play` take `--profile NAME`, which loads a `PlayerHistory`
+  (`train/history.py`) before the first question and folds the session into it
+  after the last. `blended_error_rate` pools the stored attempts with the live
+  session's, so the drill starts from what *you* missed last time rather than
+  from a generic learner, and a long history damps one bad session. The design
+  notes held up, with one addition:
+  - per-cell stats are keyed by rules slug, and also by **grading standard** --
+    a miss against `--standard exact` (composition-perfect play) is not a miss
+    of the chart, and pooling it would inflate the rate the drill consults just
+    as pooling H17 into S17 would. The drill reads the chart scope only;
+  - stored as `data/profiles/<name>.json`, gitignored; nothing is written
+    without `--profile`;
+  - carries `schema_version` and the engine version; a corrupt or newer-schema
+    file raises and is left untouched rather than read as empty, and the CLI
+    loads it *before* the session so that failure costs nothing;
+  - written atomically, and re-read at save time so two concurrent sessions on
+    one profile both land.
+  *Approximation, stated in the module:* history is pooled without decay, so a
+  player who has improved is weighted toward old mistakes by
+  `n_old / (n_old + n_new) * (p_old - p_new)` until new attempts outweigh them.
+  A decay would need a timescale nobody has measured.
 
 - [ ] **Session tracker import.** Import a player's own session log (CSV or
   XLSX: date, hours, rules, spread, result), compare realised results against
@@ -262,9 +267,11 @@ The terminal versions are built. What remains is depth and a UI.
 - Deep single-deck states can produce fractional compositions where a rank falls
   below one card; the engine clamps at zero and the induced error is below 1e-9,
   but it is an approximation rather than an exact treatment.
-- Per-cell miss rates are measured within a session and discarded at exit, so
-  the drill weighting and the leak view still describe a generic learner between
-  sessions. See the backlog item above; it is the last piece of the trainer work.
+- Measured miss rates persist only with `--profile`; without it they are
+  discarded at exit and the next session starts from the generic model. That is
+  deliberate (nothing is written to disk unasked). The leak view in
+  `bj chart --importance` and the chart page still use the generic model either
+  way: they do not read a profile.
 - The React web UI has never been opened in a browser. It typechecks and builds,
   and its data contract is tested, but the layout and palette are unreviewed —
   and it still colours the chart by leak alone, which the standalone chart page

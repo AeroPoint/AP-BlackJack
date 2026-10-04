@@ -60,6 +60,7 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | `train/grading.py` | Prices a decision against the live shoe. |
 | `train/session.py` | Per-cell statistics; measured error rates. |
 | `train/drill.py` | Weights and samples the next question. |
+| `train/history.py` | Per-cell results kept across sessions, opt in via `--profile`. |
 | `train/table.py` | A dealt game driven one action at a time. |
 | `train/loop.py` | Terminal front ends. ASCII only, and thin on purpose. |
 
