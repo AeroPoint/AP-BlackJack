@@ -30,10 +30,26 @@ antisymmetric.
 
 Approximations, with magnitudes
 -------------------------------
+The figures quoted below without a named rule pair come from one sample: 300
+random pairs drawn (seed 20261004) from a 720-table grid over decks (1, 2, 4,
+6, 8), soft 17, DAS, surrender (none, late, early), doubling (any two, 9-11,
+10-11), hole card (peek, ENHC) and resplitting aces. They indicate sizes; they
+are not bounds.
+
 * **Charts, not composition-perfect play.** Both sides of the wrong-chart cost
   are total-dependent charts, which is what a person actually memorises. The
-  composition-perfect ceiling is reported separately; it sits under 0.002
-  points above the chart in six decks and about 0.011 in single deck.
+  composition-perfect ceiling is reported separately. For the shipped presets it
+  sits 0.0000 to 0.0002 points above the chart in six and eight decks, 0.0009
+  in double deck and 0.0106 in single deck.
+* **Chart A governs only the first decision.** The cell results price each
+  action with everything after it -- the draws after a hit, the hands after a
+  split -- played composition-perfectly under table B's rules. So the visitor is
+  charged for chart A's opening plays and nothing else: a three-card soft 18
+  that chart A would play differently at B, or a post-split double that A's
+  chart allows and B's rules do not, costs nothing here. Chart B's own EV is
+  priced the same way, so the omission is only the *extra* loss of A's later
+  plays over B's; :attr:`RuleComparison.wrong_chart_cost` should be read as a
+  lower bound on what the wrong chart costs.
 * **One-at-a-time attribution is path-dependent.** Each differing rule is
   switched from A's value to B's *with every other rule held at A*. Rule effects
   interact -- late surrender is worth 0.087 points against a dealer who hits
@@ -41,25 +57,42 @@ Approximations, with magnitudes
   surrendering -- so the per-rule deltas do not sum to the total. The difference
   is reported as :attr:`RuleComparison.attribution_residual`. Between
   ``vegas6-h17`` and ``vegas6-s17-ls`` it is -0.016 points, about 5% of the
-  total; across random pairs drawn from a grid over decks, soft 17, DAS,
-  surrender, doubling and hole card, with four or five rules differing at once,
-  it reached 0.8 points. Attributing from B's side instead gives different
-  per-rule figures with the same residual; there is no unique answer, so this
-  module picks one and says so.
+  total. In the random sample it was under 0.1 points for 182 of 300 pairs
+  (median 0.07). The large ones come from rules that interact strongly: early
+  surrender together with a hole-card change reached 1.6 points, because early
+  surrender is worth far more against a dealer who does not peek, and without
+  early surrender in play the largest was 0.83. Attributing from B's side
+  instead gives different per-rule figures with the same residual. There is no
+  unique answer, so this module picks one and says so.
 * **A play table B does not offer** -- surrender at a no-surrender table,
   doubling 9 where only 10-11 may be doubled -- is replaced by the next action in
   chart A's own ranking for that cell. That is the "Rh" and "Dh" convention of a
   printed chart, and it models a player who knows their chart's second choice.
   :func:`blackjack.ev.solver.strategy_ev` instead falls back to each hand's
   best action, which would quietly credit the visitor with knowledge of chart B.
-* **Chart aggregation weights.** A chart cell's play is the argmax of its member
-  hands' EVs weighted by deal probability, while the round EV also weights each
-  member by the chance the dealer has no natural. Against an ace those chances
-  differ slightly between members (``T,6`` holds a ten, ``9,7`` does not), so a
-  cell decided by a hair can come out with a cost a hair below zero. Such costs
-  are reported as computed, not clamped. The largest seen over the same random
-  pairs was -1.6e-6 of a bet per round (16 against an ace, surrender versus
-  hit, single deck).
+* **This is not how the simulator and trainer degrade a play.**
+  :meth:`blackjack.sim.strategy.PlayingStrategy.action` turns a surrender it
+  cannot make into a hit, and a pair-table play that is not a split into the
+  totals table's play. Take the H17 late-surrender chart to an H17 table without
+  surrender: this module plays 17 against an ace as a stand and 8,8 against an
+  ace as a split (that chart's second choices), while the compiled strategy hits
+  both. Those two cells alone are 0.021 units per 100 rounds apart, so a
+  simulation of "chart A at table B" can come out lower than this module's
+  figure. The printed-chart convention is kept here because it is what a player
+  reading a chart does.
+* **Fall-through pairs are averaged into the totals rows.**
+  :func:`blackjack.ev.solver.build_chart` includes non-split pairs in the hard
+  and soft cells -- 8,8 in hard 16 -- but ``strategy_ev`` and this module play
+  every pair from the pair row. Chart B's play for a totals cell is therefore
+  tuned partly on hands that are never played from it, and in a near tie it can
+  be the wrong play for the hands that are. Chart A's play is then *better* at
+  table B than chart B's, and the cell's cost comes out negative. Re-weighting
+  the members by the chance of no dealer natural does not flip any such cell;
+  dropping the pairs does. Such costs are reported as computed, not clamped: 5 of
+  10,210 changed cells in the random sample, the largest -1.6e-6 of a bet per
+  round (16 against an ace in single deck, surrender against hit, where 8,8
+  pulls the hard-16 average to hit). The solver is left as it is; the chart it
+  builds is the chart people print.
 """
 
 from __future__ import annotations
@@ -139,7 +172,14 @@ class CellChange:
 
     @property
     def label(self) -> str:
-        """Row label, e.g. ``"16"``, ``"A,7"``, ``"8,8"``."""
+        """Row label, e.g. ``"16"``, ``"A,7"``, ``"8,8"``, unique across categories.
+
+        The chart labels soft 12 ``"A,A"``, which is also the pair row's label;
+        in a list of changes with no grid around it that is ambiguous, so soft
+        12 is spelled out here.
+        """
+        if self.cell_b.category is Category.SOFT and self.cell_b.row == 12:
+            return "soft 12"
         return self.cell_b.label
 
     @property
@@ -205,7 +245,21 @@ class RuleComparison:
     result_b: SolveResult
 
     changes: list[CellChange]
-    """Cells whose play differs, most expensive at table B first."""
+    """Cells whose play differs, most expensive at table B first.
+
+    Only cells some hand is actually played from. See :attr:`unplayed_changes`.
+    """
+
+    unplayed_changes: list[CellChange]
+    """Cells whose play differs but that no hand is ever played from.
+
+    A totals row made only of pairs -- soft 12 (A,A), hard 4 (2,2), hard 20
+    (T,T) -- exists on the chart because ``build_chart`` files each pair's
+    non-split values there too, but a player checks the pair row first, so
+    nothing is decided from it. These cost nothing, are kept out of the
+    headline count, and are listed so a chart-to-chart diff still accounts for
+    every square.
+    """
 
     only_in_a: list[ChartCell]
     """Cells chart A has and chart B does not. Empty for every shipped rule set:
@@ -265,10 +319,13 @@ class RuleComparison:
     def wrong_chart_cost(self) -> float:
         """Units per round a player loses at table B by playing chart A.
 
-        Chart B is the best a total-dependent player can do at table B, so this
-        is not below zero by more than the aggregation hair described in the
-        module docstring. It can be exactly zero while cells change, when every
-        change falls back to B's own play.
+        Chart B is not guaranteed to be the best total-dependent play at table
+        B: its totals rows are partly tuned on pairs that are played from the
+        pair rows (see the module docstring), so in a near tie chart A can do
+        marginally better on a cell, and a total made only of such cells could
+        come out a hair below zero. It is exactly zero while cells change when
+        every change falls back to B's own play. It covers opening decisions
+        only, so read it as a lower bound.
         """
         return self.result_b.basic_strategy_ev - self.chart_a_at_b_ev
 
@@ -335,6 +392,14 @@ class RuleComparison:
             f"  {n} chart cell{'' if n == 1 else 's'} change. Playing chart A at table B "
             f"costs {self.wrong_chart_cost * 100:.4f}% of a bet per round."
         )
+        if self.unplayed_changes:
+            squares = ", ".join(
+                f"{c.label} v {rank_name(c.cell_b.upcard)}" for c in self.unplayed_changes
+            )
+            lines.append(
+                f"  Also differ, but no hand is ever played from them (pairs go to the "
+                f"pair rows): {squares}."
+            )
         if self.only_in_a or self.only_in_b:
             lines.append(
                 f"  Cells in only one chart: A {len(self.only_in_a)}, B {len(self.only_in_b)}."
@@ -346,18 +411,29 @@ class RuleComparison:
         return "\n".join(lines)
 
     def table(self, limit: int | None = None) -> str:
-        """The changed cells, most expensive first, as a fixed-width table."""
+        """The changed cells, most expensive first, as a fixed-width table.
+
+        Args:
+            limit: Rows to show; ``None`` or ``0`` shows every row.
+
+        Raises:
+            ValueError: if ``limit`` is negative, which slicing would otherwise
+                silently turn into "all but the last few".
+        """
+        if limit is not None and limit < 0:
+            raise ValueError(f"limit must be zero or positive, not {limit}")
         rows = self.changes[:limit] if limit else self.changes
         if not rows:
             return "  (no chart cell changes)"
         lines = [
-            f"  {'hand':>5} {'vs':>3} {'A says':>7} {'B says':>7} {'A at B':>7} "
+            f"  {'table':<5} {'hand':>7} {'vs':>3} {'A says':>7} {'B says':>7} {'A at B':>7} "
             f"{'per hand':>10} {'freq%':>7} {'cost/100':>10}",
         ]
         for c in rows:
             note = "" if c.offered_at_b else f"  ({c.action_a.value} not offered at B)"
             lines.append(
-                f"  {c.label:>5} {rank_name(c.cell_b.upcard):>3} {c.action_a.value:>7} "
+                f"  {c.cell_b.category.value:<5} {c.label:>7} "
+                f"{rank_name(c.cell_b.upcard):>3} {c.action_a.value:>7} "
                 f"{c.action_b.value:>7} {c.played_at_b.value:>7} "
                 f"{c.cost_per_occurrence:10.5f} {c.frequency * 100:7.3f} "
                 f"{c.cost_per_100_rounds:10.5f}{note}"
@@ -380,9 +456,10 @@ def compare_rules(
         rules_a: The table whose chart the player already knows.
         rules_b: The table they are thinking of sitting at.
         attribute: Also solve one intermediate rule set per differing rule to
-            attribute the edge delta. That is one extra solve per rule -- about
-            30 ms each on the native core, 1.3 s in pure Python -- and none at
-            all when only one rule differs, because the total is then the answer.
+            attribute the edge delta. That is one extra solve per rule -- tens
+            of milliseconds on the native core, a second or two in pure Python
+            -- and none at all when only one rule differs, because the total is
+            then the answer.
         backend: Passed to :func:`~blackjack.ev.solver.solve`.
 
     Returns:
@@ -398,9 +475,12 @@ def compare_rules(
         if key not in cache:
             cache[key] = solve(rules, backend=backend)
         result = cache[key]
-        # Same numbers, but the result must still name the table asked about:
-        # A and B may differ only in a label or a simulator setting.
-        return result if result.rules == rules else replace(result, rules=rules)
+        if result.rules == rules:
+            return result
+        # Same numbers, but the result -- and its chart, which carries the rules
+        # too -- must still name the table asked about: A and B may differ only
+        # in a label or a simulator setting.
+        return replace(result, rules=rules, chart=replace(result.chart, rules=rules))
 
     result_a = solved(rules_a)
     result_b = solved(rules_b)
@@ -424,27 +504,29 @@ def compare_rules(
     chart_a, chart_b = result_a.chart, result_b.chart
     ev_a_at_b, costs, played, reach = _price_chart_at(chart_a, result_b)
 
-    changes = []
+    changes: list[CellChange] = []
+    unplayed: list[CellChange] = []
     for key, cell_b in chart_b.cells.items():
         cell_a = chart_a.cells.get(key)
         if cell_a is None or cell_a.action is cell_b.action:
             continue
-        changes.append(
-            CellChange(
-                cell_a=cell_a,
-                cell_b=cell_b,
-                played_at_b=played.get(key) or _fallback(cell_a, cell_b.analysis.all_evs),
-                cost_per_round=costs.get(key, 0.0),
-                frequency=reach.get(key, 0.0),
-            )
+        change = CellChange(
+            cell_a=cell_a,
+            cell_b=cell_b,
+            played_at_b=played.get(key) or _fallback(cell_a, cell_b.analysis.all_evs),
+            cost_per_round=costs.get(key, 0.0),
+            frequency=reach.get(key, 0.0),
         )
+        (changes if key in reach else unplayed).append(change)
     # Most expensive first; ties (typically zero-cost fallbacks) in chart order.
     changes.sort(key=lambda c: (-c.cost_per_round, _chart_order(c.key)))
+    unplayed.sort(key=lambda c: _chart_order(c.key))
 
     return RuleComparison(
         result_a=result_a,
         result_b=result_b,
         changes=changes,
+        unplayed_changes=unplayed,
         only_in_a=[c for k, c in chart_a.cells.items() if k not in chart_b.cells],
         only_in_b=[c for k, c in chart_b.cells.items() if k not in chart_a.cells],
         chart_a_at_b_ev=ev_a_at_b,
@@ -536,7 +618,11 @@ def _chart_order(key: CellKey) -> tuple[int, int, int]:
 
 
 def _show(value: object) -> str:
-    """Render a rule value the way the config files spell it."""
+    """Render a rule value for a person: payouts as ``3:2``, enums as in config.
+
+    The API sends the config-file form (``"3/2"``) for machines and this string
+    alongside it, so the two are never confused.
+    """
     if isinstance(value, Fraction):
         return f"{value.numerator}:{value.denominator}"
     if isinstance(value, Enum):

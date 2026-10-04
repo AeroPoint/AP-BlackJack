@@ -93,7 +93,19 @@ def cmd_solve(args: argparse.Namespace) -> int:
         delta = (alt.basic_strategy_ev - result.basic_strategy_ev) * 100
         print(f"\n{alt.rules.name}: {alt.basic_strategy_ev * 100:+.4f}%")
         print(f"Difference vs {rules.name}: {delta:+.4f} percentage points")
+        print(
+            f"For which rules and which plays account for it: "
+            f"bj compare {args.rules} {args.compare}"
+        )
     return 0
+
+
+def _non_negative(text: str) -> int:
+    """Parse a count where 0 means "all" and a negative is an argparse error."""
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"must be zero or positive, not {value}")
+    return value
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
@@ -540,7 +552,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("solve", help="solve a rule set and report the house edge")
     p.add_argument("--rules", default="vegas6-h17")
-    p.add_argument("--compare", help="second rule set to diff against")
+    p.add_argument(
+        "--compare",
+        help="second rule set: prints the bare EV difference (superseded by `bj compare`)",
+    )
     p.set_defaults(func=cmd_solve)
 
     p = sub.add_parser(
@@ -549,7 +564,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("rules_a", help="the table whose chart you know")
     p.add_argument("rules_b", help="the table you are thinking of playing")
-    p.add_argument("--top", type=int, default=15, help="changed cells to list (0 for all)")
+    p.add_argument(
+        "--top", type=_non_negative, default=15, help="changed cells to list (0 for all)"
+    )
     p.add_argument(
         "--no-attribution",
         action="store_true",

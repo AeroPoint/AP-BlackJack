@@ -7,9 +7,10 @@ directions and magnitudes the golden suite already pins down (S17 beats H17;
 6:5 costs about 1.36 points and changes no play) -- restated here only as
 consequences the comparison has to reproduce, not as new reference values.
 
-Every solve goes through the session-wide ``compare_solve_cache`` fixture, so
-the module costs five full solves however many comparisons it makes: a fraction
-of a second on the native core and several seconds in pure Python.
+Every solve goes through the ``compare_solve_cache`` fixture
+(``tests/unit/conftest.py``), so the module costs six full solves -- five six-deck
+tables and one single-deck -- however many comparisons it makes: a fraction of a
+second on the native core and several seconds in pure Python.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from blackjack.actions import Action
 from blackjack.ev.compare import NON_SOLVE_FIELDS, compare_rules
 from blackjack.ev.solver import Category, strategy_ev
 from blackjack.rules import (
+    SINGLE_DECK_S17,
     SIX_FIVE_TRAP,
     VEGAS_6D_H17,
     VEGAS_6D_S17_LS,
@@ -58,6 +60,7 @@ def test_a_label_or_a_simulator_setting_is_not_a_rule_change() -> None:
     # One solve serves both, but each side still reports its own table.
     assert result.rules_b.name == "renamed"
     assert result.rules_b.penetration == 0.5
+    assert result.result_b.chart.rules.name == "renamed"
     assert result.basic_strategy_ev_delta == 0.0
     assert result.changes == []
 
@@ -175,6 +178,50 @@ def test_charts_of_every_rule_set_share_their_cells() -> None:
     assert result.only_in_b == []
 
 
+def test_a_square_no_hand_is_played_from_is_kept_out_of_the_headline() -> None:
+    """Soft 12 is only ever A,A, which a player takes to the pair row.
+
+    The six-deck chart doubles soft 12 against a six and the single-deck chart
+    hits it, but nobody is ever dealt a soft 12 that the soft table decides.
+    """
+    result = compare_rules(H17, SINGLE_DECK_S17, attribute=False)
+    soft_12 = (Category.SOFT, 12, 6)
+    assert soft_12 not in {c.key for c in result.changes}
+    [unplayed] = [c for c in result.unplayed_changes if c.key == soft_12]
+    assert unplayed.frequency == 0.0
+    assert unplayed.cost_per_round == 0.0
+    # Spelled out, so it cannot be mistaken for the A,A pair row.
+    assert unplayed.label == "soft 12"
+    assert "no hand is ever played from them" in result.summary()
+    assert all(c.frequency > 0.0 for c in result.changes)
+    assert sum(c.cost_per_round for c in result.changes) == pytest.approx(
+        result.wrong_chart_cost, abs=1e-14
+    )
+
+
+def test_the_table_names_the_category_of_each_row() -> None:
+    result = compare_rules(H17, SINGLE_DECK_S17, attribute=False)
+    text = result.table()
+    assert "pair" in text and "hard" in text
+    with pytest.raises(ValueError, match="zero or positive"):
+        result.table(-1)
+
+
+def test_second_choices_follow_the_printed_chart() -> None:
+    """An H17 surrender chart at an H17 table without surrender.
+
+    17 against an ace falls back to its second choice, stand, and 8,8 against an
+    ace to split -- not to hit, which is what the compiled simulator strategy
+    does. The module docstring states that divergence; this pins the behaviour.
+    """
+    result = compare_rules(H17.with_(surrender=SurrenderRule.LATE), H17)
+    by_key = {c.key: c for c in result.changes}
+    assert by_key[(Category.HARD, 17, 1)].played_at_b is Action.STAND
+    assert by_key[(Category.PAIR, 8, 1)].played_at_b is Action.SPLIT
+    # Every surrender falls back to B's own play, so the chart costs nothing.
+    assert result.wrong_chart_cost == pytest.approx(0.0, abs=1e-15)
+
+
 def test_non_solve_fields_are_real_rule_fields() -> None:
     """A typo here would silently attribute a simulator setting to the edge."""
     from dataclasses import fields
@@ -192,6 +239,15 @@ def test_cli_prints_the_summary_and_the_ranked_cells(capsys) -> None:
     assert "CHANGED CELLS" in out
     assert "Rules fingerprints" in out
     assert "... and" in out  # more than three cells change; the rest are elided
+
+
+def test_cli_rejects_a_negative_top(capsys) -> None:
+    from blackjack.cli import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["compare", "vegas6-h17", "vegas6-s17-ls", "--top", "-1"])
+    assert exc.value.code == 2
+    assert "zero or positive" in capsys.readouterr().err
 
 
 def test_cli_reports_an_unknown_rule_set(capsys) -> None:
