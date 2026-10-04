@@ -33,8 +33,14 @@ import statistics
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from blackjack.cards import CARDS_PER_DECK
-from blackjack.counting import CountState, CountSystem, TrueCountRounding, apply_rounding
+from blackjack.cards import CARDS_PER_DECK, RANKS, SINGLE_DECK_COUNTS, rank_name
+from blackjack.counting import (
+    RED_SEVEN,
+    CountSystem,
+    TrueCountRounding,
+    apply_rounding,
+    true_count_divisor,
+)
 from blackjack.shoe import DealingShoe
 
 
@@ -63,11 +69,38 @@ finer than a tenth. Saying 1.4 or 1.5 passes; saying 1.3 does not."""
 REFERENCE_TRUE_COUNT = 3.0
 """True count used to show what a deck-estimation error costs.
 
-Around +3 is where a typical Hi-Lo ramp is already at a large bet and where a
-cluster of the most valuable indices sits (16 v T at 0, 12 v 2 at +3, 10 v A,
-insurance), so it is where a misjudged divisor does the most damage. At a
-running count near zero the divisor barely matters, which is exactly why players
-neglect it."""
+The divisor only matters in proportion to the running count: at a count near
+zero any divisor gives a true count near zero, which is exactly why players
+neglect it. Around +3 a typical ramp is already at a large bet and several
+indices sit nearby (``bj indices`` lists them for your rules and system), so it
+is where a misjudged divisor first changes what you do."""
+
+DEFAULT_DECKS = 6
+"""Decks in the drill shoe: the six-deck shoe of the default rules."""
+
+MAX_DECKS = 8
+"""Largest shoe the drills accept. Eight decks is the largest shoe in common
+use; beyond it the tray descriptions stop resembling anything at a table."""
+
+DEFAULT_PENETRATION = 0.75
+"""Fraction of the shoe dealt before the shuffle. The same as
+:attr:`RuleSet.penetration`'s default and ``configs/rules/vegas6-h17.yaml``, the
+rules the default profile simulates, so the depths drilled are the depths the
+simulated counter sees."""
+
+DEFAULT_ESTIMATION = 0.5
+"""Deck-estimation granularity for the true-count divisor: half a deck, the
+default of ``SimConfig.deck_estimation`` and ``RuleSet.deck_estimation``. The
+drill teaches the conversion the simulator models, not a more precise one."""
+
+DEFAULT_CARDS_PER_GROUP = 2
+"""Cards shown together. A hand's first two cards arrive together, and counting
+them as a pair -- letting a ten and a five cancel without adding either -- is the
+habit that makes a running count fast."""
+
+DEFAULT_GROUPS = 5
+"""Groups per running-count question. Ten cards is roughly what one round at a
+three-player table puts on the felt, the batch a counter updates between rounds."""
 
 QUIT = frozenset({"", "q", "quit", "exit"})
 """Answers that end the session. Blank is included so a player can stop with
@@ -77,8 +110,9 @@ a single Enter and so piped input ends cleanly."""
 def parse_answer(raw: str) -> float | None:
     """Read a count typed by a player, forgivingly.
 
-    Accepts ``+3``, ``-2.5``, ``3``, ``2,5`` (a decimal comma), stray spaces and
-    a Unicode minus sign pasted from elsewhere.
+    Accepts ``+3``, ``-2.5``, ``3``, ``2,5`` (a decimal comma), stray spaces, and
+    a Unicode minus sign or en dash in place of a hyphen, since both arrive from
+    phone keyboards and pasted text.
 
     Returns:
         The number, or ``None`` if the player asked to stop.
@@ -89,7 +123,7 @@ def parse_answer(raw: str) -> float | None:
     text = raw.strip().lower()
     if text in QUIT:
         return None
-    text = text.replace(" ", "").replace(",", ".").replace("\u2212", "-")
+    text = text.replace(" ", "").replace(",", ".").replace("\u2212", "-").replace("\u2013", "-")
     value = float(text)
     if not math.isfinite(value):
         raise ValueError(f"not a count: {raw!r}")
@@ -108,28 +142,34 @@ def signed(value: float) -> str:
 def nearest_half(decks: float) -> float:
     """Round a deck figure to the nearest half deck, never below one half.
 
-    The same rule :meth:`CountSystem.true_count` applies to its divisor with the
-    default ``estimation=0.5``, written out so the drills can show the player the
-    divisor they should have used.
+    :func:`blackjack.counting.true_count_divisor` at half-deck granularity: the
+    divisor the simulator's counter uses, so the drills grade against it.
     """
-    return max(0.5, round(decks * 2.0) / 2.0)
+    return true_count_divisor(decks, 0.5)
 
 
-def _divisor(decks_remaining: float, estimation: float) -> float:
-    """The true-count divisor exactly as :meth:`CountSystem.true_count` forms it."""
-    if estimation > 0:
-        return max(estimation, round(decks_remaining / estimation) * estimation)
-    return decks_remaining
+def check_shoe(decks: int, penetration: float) -> None:
+    """Reject a shoe the drills cannot deal from.
+
+    Raises:
+        ValueError: if ``decks`` is outside ``1..MAX_DECKS`` or ``penetration``
+            outside ``(0, 1]``.
+    """
+    if not 1 <= decks <= MAX_DECKS:
+        raise ValueError(f"decks must be between 1 and {MAX_DECKS}, got {decks}")
+    if not 0 < penetration <= 1:
+        raise ValueError(f"penetration must be in (0, 1], got {penetration}")
 
 
 ROUNDING_PHRASES: dict[TrueCountRounding, str] = {
     TrueCountRounding.NONE: "keep the fraction (to a tenth)",
-    TrueCountRounding.FLOOR: "round down (-1.5 becomes -2)",
-    TrueCountRounding.TRUNCATE: "drop the fraction (-1.5 becomes -1)",
-    TrueCountRounding.ROUND: "round to nearest, halves up (-1.5 becomes -1)",
+    TrueCountRounding.FLOOR: "round down (+1.6 becomes +1, -1.6 becomes -2)",
+    TrueCountRounding.TRUNCATE: "drop the fraction (+1.6 becomes +1, -1.6 becomes -1)",
+    TrueCountRounding.ROUND: "round to nearest, halves up (+1.6 becomes +2, -1.6 becomes -2)",
 }
-"""How each rounding mode is explained to the player, with the negative example
-that tells them apart."""
+"""How each rounding mode is explained to the player. The pair of examples is
+chosen so that no two modes give the same pair: floor and truncate part on the
+negative side, round and truncate on the positive."""
 
 PAST_TENSE: dict[TrueCountRounding, str] = {
     TrueCountRounding.NONE: "Unrounded",
@@ -159,10 +199,15 @@ class CountResult:
     """Cards counted to reach this answer. Running-count mode only; it turns the
     time into a speed."""
 
+    truth: float | None = None
+    """The exact quantity being estimated, when it differs from ``expected``.
+    Deck estimation grades against a half-deck answer but measures the error
+    against the real depth; otherwise ``None``."""
+
     @property
     def error(self) -> float:
-        """Signed error: positive means the answer was too high."""
-        return self.given - self.expected
+        """Signed error against the truth: positive means the answer was too high."""
+        return self.given - (self.expected if self.truth is None else self.truth)
 
 
 @dataclass(slots=True)
@@ -221,11 +266,46 @@ class CountSession:
 
 
 @dataclass(frozen=True, slots=True)
+class ColourSplit:
+    """A rank whose tag depends on the card's colour.
+
+    The engine carries no suits, so a colour-dependent tag is stored as its
+    expectation over the two colours -- Red 7 tags every seven +0.5. That is
+    exact for EV and correlation work, but no player at a table ever adds half a
+    point: they add one for a red seven and nothing for a black one. A drill
+    that asked for the averaged count would teach a count nobody keeps.
+    """
+
+    rank: int
+    red: float
+    black: float
+
+
+def colour_split(system: CountSystem) -> ColourSplit | None:
+    """The colour-dependent rank of ``system``, if it has one.
+
+    :class:`CountSystem` has no field for this, so Red 7 is recognised by what
+    defines it: unbalanced, with exactly the built-in Red 7 tag vector. A system
+    with those tags *is* Red 7 under another name, and the config file and the
+    built-in both match. Only red sevens count, so the red tag is twice the
+    engine's averaged one and the black tag is zero: the expectation per seven is
+    the engine's by construction.
+    """
+    if system.balanced or system.tags != RED_SEVEN.tags:
+        return None
+    return ColourSplit(rank=7, red=2.0 * system.tag(7), black=0.0)
+
+
+@dataclass(frozen=True, slots=True)
 class RunningQuestion:
     """A batch of cards to count, and the running count after them."""
 
-    flashes: tuple[tuple[int, ...], ...]
-    """Groups of cards, shown one group per line, like the cards of a round."""
+    groups: tuple[tuple[int, ...], ...]
+    """Ranks, one tuple per group, shown one group per line."""
+
+    labels: tuple[tuple[str, ...], ...]
+    """What the player sees for each card: ``"T"``, ``"5"``, or ``"7r"`` and
+    ``"7b"`` for a colour-dependent rank."""
 
     expected: float
     """Running count after the last card, counted from the shuffle."""
@@ -240,7 +320,7 @@ class RunningQuestion:
     @property
     def cards(self) -> int:
         """How many cards this question shows."""
-        return sum(len(f) for f in self.flashes)
+        return sum(len(g) for g in self.groups)
 
 
 class RunningCountDrill:
@@ -252,17 +332,23 @@ class RunningCountDrill:
     shoe the remaining cards really are skewed, which is the situation a counter
     has to be able to count through.
 
+    For a system with a colour-dependent rank (Red 7), each such card is given a
+    colour drawn without replacement from the shoe's real half-and-half split,
+    and is shown and tagged by that colour. The expectation per card is the
+    engine's averaged tag, so nothing the drill grades disagrees with the
+    solver; only the variance is the table's rather than the model's.
+
     Args:
         system: Counting system whose tags are being drilled.
-        rng: Seeded randomness; the same seed deals the same shoe.
+        rng: Seeded randomness; the same seed deals the same shoe and colours.
         decks: Decks in the shoe.
-        cards_per_flash: Cards shown together in one group.
-        flashes: Groups per question.
+        cards_per_group: Cards shown together on one line.
+        groups: Groups per question.
         penetration: Fraction of the shoe dealt before reshuffling.
 
     Raises:
-        ValueError: if a question would need more cards than the shoe holds, or
-            a size is not positive.
+        ValueError: for a shoe outside :func:`check_shoe`'s limits, a size that
+            is not positive, or a question larger than the shoe.
     """
 
     def __init__(
@@ -270,49 +356,77 @@ class RunningCountDrill:
         system: CountSystem,
         rng: random.Random,
         *,
-        decks: int = 6,
-        cards_per_flash: int = 2,
-        flashes: int = 5,
-        penetration: float = 0.75,
+        decks: int = DEFAULT_DECKS,
+        cards_per_group: int = DEFAULT_CARDS_PER_GROUP,
+        groups: int = DEFAULT_GROUPS,
+        penetration: float = DEFAULT_PENETRATION,
     ) -> None:
         """Shuffle a shoe and start the count. See the class docstring."""
-        if decks < 1 or cards_per_flash < 1 or flashes < 1:
-            raise ValueError("decks, cards per flash and flashes must all be at least 1")
-        if not 0 < penetration <= 1:
-            raise ValueError(f"penetration must be in (0, 1], got {penetration}")
-        if cards_per_flash * flashes > decks * CARDS_PER_DECK:
+        check_shoe(decks, penetration)
+        if cards_per_group < 1 or groups < 1:
+            raise ValueError("cards per group and groups must both be at least 1")
+        if cards_per_group * groups > decks * CARDS_PER_DECK:
             raise ValueError(
-                f"{cards_per_flash * flashes} cards per question will not fit in a "
-                f"{decks}-deck shoe"
+                f"{cards_per_group * groups} cards per question will not fit in a {decks}-deck shoe"
             )
         self.system = system
-        self.cards_per_flash = cards_per_flash
-        self.flashes = flashes
+        self.decks = decks
+        self.cards_per_group = cards_per_group
+        self.groups = groups
+        self.split = colour_split(system)
+        self._rng = rng
         self._shoe = DealingShoe(decks, penetration, rng)
-        self._count = CountState(system, decks)
+        self.irc = system.initial_running_count(decks)
+        self._running = self.irc
+        self._reds_left = 0
+        self._split_left = 0
+        self._reset_colours()
         self._fresh = True
+
+    def _reset_colours(self) -> None:
+        """Put every colour-split card back: half of them red, as in a real shoe."""
+        if self.split is not None:
+            per_deck = SINGLE_DECK_COUNTS[RANKS.index(self.split.rank)]
+            self._split_left = per_deck * self.decks
+            self._reds_left = self._split_left // 2
+
+    def _see(self, rank: int) -> tuple[str, float]:
+        """Label and tag for one card, drawing its colour if the tag needs one."""
+        if self.split is None or rank != self.split.rank:
+            return rank_name(rank), self.system.tag(rank)
+        red = self._rng.random() * self._split_left < self._reds_left
+        self._split_left -= 1
+        if red:
+            self._reds_left -= 1
+            return f"{rank_name(rank)}r", self.split.red
+        return f"{rank_name(rank)}b", self.split.black
 
     def next_question(self) -> RunningQuestion:
         """Deal the next batch and return it with the count it leads to."""
-        needed = self.cards_per_flash * self.flashes
+        needed = self.cards_per_group * self.groups
         fresh = self._fresh
         # Shuffle at the cut card, and also if the batch would run off the end
         # of the physical shoe -- possible when a question is larger than the
         # part of the shoe behind the cut card.
         if self._shoe.needs_shuffle or self._shoe.remaining < needed:
             self._shoe.shuffle()
-            self._count.reset()
+            self._running = self.irc
+            self._reset_colours()
             fresh = True
-        groups: list[tuple[int, ...]] = []
-        for _ in range(self.flashes):
-            cards = tuple(self._shoe.deal_many(self.cards_per_flash))
-            self._count.observe_all(cards)
-            groups.append(cards)
+        ranks: list[tuple[int, ...]] = []
+        labels: list[tuple[str, ...]] = []
+        for _ in range(self.groups):
+            cards = tuple(self._shoe.deal_many(self.cards_per_group))
+            seen = [self._see(c) for c in cards]
+            self._running += sum(tag for _, tag in seen)
+            ranks.append(cards)
+            labels.append(tuple(label for label, _ in seen))
         self._fresh = False
         return RunningQuestion(
-            flashes=tuple(groups),
-            expected=self._count.running,
-            irc=self._count.system.initial_running_count(self._count.decks),
+            groups=tuple(ranks),
+            labels=tuple(labels),
+            expected=self._running,
+            irc=self.irc,
             fresh_shoe=fresh,
         )
 
@@ -377,7 +491,7 @@ def make_true_count_question(
     decks: int,
     decks_remaining: float,
     *,
-    estimation: float = 0.5,
+    estimation: float = DEFAULT_ESTIMATION,
     rounding: TrueCountRounding | None = None,
 ) -> TrueCountQuestion:
     """Build a conversion question from explicit numbers.
@@ -401,7 +515,7 @@ def make_true_count_question(
         running=running,
         decks=decks,
         decks_remaining=decks_remaining,
-        divisor=_divisor(decks_remaining, estimation),
+        divisor=true_count_divisor(decks_remaining, estimation),
         rounding=mode,
         expected=system.true_count(running, decks_remaining, estimation=estimation, rounding=mode),
     )
@@ -411,9 +525,9 @@ def true_count_question(
     system: CountSystem,
     rng: random.Random,
     *,
-    decks: int = 6,
-    penetration: float = 0.75,
-    estimation: float = 0.5,
+    decks: int = DEFAULT_DECKS,
+    penetration: float = DEFAULT_PENETRATION,
+    estimation: float = DEFAULT_ESTIMATION,
     rounding: TrueCountRounding | None = None,
 ) -> TrueCountQuestion:
     """Draw a conversion question from a real shoe dealt to a random depth.
@@ -426,7 +540,11 @@ def true_count_question(
     rounding of the divisor unambiguous -- no shown value lies exactly between
     two half decks, so Python's round-half-to-even never decides an answer the
     player could not have known.
+
+    Raises:
+        ValueError: for a shoe outside :func:`check_shoe`'s limits.
     """
+    check_shoe(decks, penetration)
     total = decks * CARDS_PER_DECK
     dealt = rng.randint(1, max(1, round(total * penetration)))
     shoe = DealingShoe(decks, penetration, rng)
@@ -500,7 +618,7 @@ class DeckQuestion:
 
     @property
     def expected(self) -> float:
-        """The right answer to the nearest half deck."""
+        """The right answer to the nearest half deck: the simulator's divisor."""
         return nearest_half(self.remaining)
 
     def describe(self) -> str:
@@ -515,11 +633,22 @@ def make_deck_question(decks: int, cards_dealt: int, *, in_cards: bool) -> DeckQ
 
     In deck phrasing the remaining figure is derived from the *shown* tray
     (``decks - 2.3``), not from the card count behind it, so the answer follows
-    from the screen.
+    from the screen. The one exception is a tray that rounds up to the whole
+    shoe, where the shown figure would leave nothing to divide by; the exact
+    depth is used there instead.
+
+    Raises:
+        ValueError: if ``cards_dealt`` leaves no cards in the shoe, or the shoe
+            is outside :func:`check_shoe`'s limits.
     """
+    check_shoe(decks, 1.0)
+    total = decks * CARDS_PER_DECK
+    if not 0 <= cards_dealt < total:
+        raise ValueError(f"cards dealt must be in [0, {total}), got {cards_dealt}")
     tray = round(cards_dealt / CARDS_PER_DECK, 1)
-    exact = (decks * CARDS_PER_DECK - cards_dealt) / CARDS_PER_DECK
-    remaining = exact if in_cards else decks - tray
+    exact = (total - cards_dealt) / CARDS_PER_DECK
+    shown = decks - tray
+    remaining = exact if in_cards or shown <= 0 else shown
     return DeckQuestion(
         decks=decks,
         cards_dealt=cards_dealt,
@@ -529,10 +658,20 @@ def make_deck_question(decks: int, cards_dealt: int, *, in_cards: bool) -> DeckQ
     )
 
 
-def deck_question(rng: random.Random, *, decks: int = 6, penetration: float = 0.75) -> DeckQuestion:
-    """Draw a tray question at a random depth up to the cut card."""
+def deck_question(
+    rng: random.Random,
+    *,
+    decks: int = DEFAULT_DECKS,
+    penetration: float = DEFAULT_PENETRATION,
+) -> DeckQuestion:
+    """Draw a tray question at a random depth up to the cut card.
+
+    Raises:
+        ValueError: for a shoe outside :func:`check_shoe`'s limits.
+    """
+    check_shoe(decks, penetration)
     total = decks * CARDS_PER_DECK
-    dealt = rng.randint(1, max(1, round(total * penetration)))
+    dealt = rng.randint(1, min(total - 1, max(1, round(total * penetration))))
     return make_deck_question(decks, dealt, in_cards=rng.random() < 0.5)
 
 
@@ -548,44 +687,64 @@ def grade_decks(
 
     Right means within a quarter deck of the truth, which is what "to the
     nearest half deck" allows; when the truth sits exactly between two half
-    decks, both are accepted.
+    decks, both are accepted. The half-deck answer itself is always accepted,
+    including the half-deck floor near the end of a single deck, where the
+    truth can sit more than a quarter deck below it. The recorded error is
+    measured against the true depth, not against the half-deck answer, so the
+    session's mean error says how well you read trays.
 
-    The note is the point of the drill. It divides a running count that is about
-    :data:`REFERENCE_TRUE_COUNT` at the real depth by your estimate and by the
-    real figure, and shows both true counts, rounded and not. An error of half a
-    deck with five decks left is a rounding error; the same half deck with one
-    and a half left moves the true count by a full point and changes the bet.
+    The note is the point of the drill. A wrong estimate is compared with the
+    half-deck answer -- the divisor the drill asks for and the simulator's
+    counter uses -- at a running count worth about :data:`REFERENCE_TRUE_COUNT`
+    there, and the note says whether the rounded true count would differ at the
+    table. Half a deck with five decks left rarely moves it; the same half deck
+    with one and a half left moves it by a full point and changes the bet. The
+    exact depth is shown only as extra information: how far half-deck rounding
+    itself moves the count, which no counter can avoid.
 
     For an unbalanced system the note says the error costs nothing at the count,
     because there is no division -- that being the reason such systems exist.
     """
-    correct = given > 0 and abs(given - question.remaining) <= 0.25 + EXACT
+    target = question.expected
+    correct = given > 0 and (
+        abs(given - question.remaining) <= 0.25 + EXACT or abs(given - target) < EXACT
+    )
     lines = [f"Actual: {question.remaining:.2f} decks."]
     if not system.balanced:
         lines.append(f"{system.name} never divides, so this would not move your count.")
     elif given > 0:
         mode = rounding or system.rounding
-        rc = float(max(1, round(REFERENCE_TRUE_COUNT * question.remaining)))
-        yours = rc / given
-        real = rc / question.remaining
-        lines.append(
-            f"At RC {signed(rc)}, dividing by {given:g} gives TC {yours:+.2f}; "
-            f"the real figure is {real:+.2f} ({yours - real:+.2f})."
-        )
-        if mode is not TrueCountRounding.NONE:
-            yours_r = apply_rounding(yours, mode)
-            real_r = apply_rounding(real, mode)
-            same = "the same" if yours_r == real_r else "a different"
+        rc = float(max(1, round(REFERENCE_TRUE_COUNT * target)))
+        right = rc / target
+        if correct:
+            lines.append(f"At RC {signed(rc)}, dividing by {given:g} gives TC {rc / given:+.2f}.")
+        else:
+            yours = rc / given
             lines.append(
-                f"{PAST_TENSE[mode]}: {signed(yours_r)} vs {signed(real_r)} -- "
-                f"{same} true count at the table."
+                f"At RC {signed(rc)}, dividing by {given:g} gives TC {yours:+.2f} "
+                f"instead of {right:+.2f} ({yours - right:+.2f})."
+            )
+            if mode is not TrueCountRounding.NONE:
+                yours_r = apply_rounding(yours, mode)
+                right_r = apply_rounding(right, mode)
+                same = "the same" if yours_r == right_r else "a different"
+                lines.append(
+                    f"{PAST_TENSE[mode]}: {signed(yours_r)} vs {signed(right_r)} -- "
+                    f"{same} true count at the table."
+                )
+        exact = rc / question.remaining
+        if abs(exact - right) >= 0.005:
+            lines.append(
+                f"(Rounding to half decks itself moves it by {right - exact:+.2f}: "
+                f"the exact depth gives {exact:+.2f}.)"
             )
     note = "\n".join(lines)
     return CountResult(
         mode=DrillMode.DECKS,
-        expected=question.expected,
+        expected=target,
         given=given,
         seconds=seconds,
         correct=correct,
         note=note,
+        truth=question.remaining,
     )

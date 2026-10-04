@@ -433,8 +433,8 @@ def cmd_count(args: argparse.Namespace) -> int:
         mode=DrillMode(args.mode),
         rounds=args.rounds,
         decks=args.decks,
-        cards_per_flash=args.cards_per_flash,
-        flashes=args.flashes,
+        cards_per_group=args.cards_per_group,
+        groups=args.groups,
         rounding=TrueCountRounding(args.rounding) if args.rounding else None,
         seed=args.seed,
     )
@@ -603,6 +603,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_play)
 
+    # The drill's defaults carry their reasons in counting_drill; read them from
+    # there rather than restating the numbers.
+    from blackjack.train import counting_drill as count_defaults
+
     p = sub.add_parser("count", help="counting drills: running count, true count, deck estimation")
     p.add_argument(
         "--mode",
@@ -610,11 +614,30 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["running", "true", "decks"],
         help="running = keep the count, true = convert it, decks = read the discard tray",
     )
-    p.add_argument("--system", default="hi-lo")
+    p.add_argument(
+        "--system",
+        default="hi-lo",
+        help="counting system: a configs/counting name (bj list) or a built-in key",
+    )
     p.add_argument("--rounds", type=int, default=10, help="questions to ask")
-    p.add_argument("--decks", type=int, default=6)
-    p.add_argument("--cards-per-flash", type=int, default=2, help="cards shown per group")
-    p.add_argument("--flashes", type=int, default=5, help="groups per running-count question")
+    p.add_argument(
+        "--decks",
+        type=int,
+        default=count_defaults.DEFAULT_DECKS,
+        help=f"decks in the shoe, 1 to {count_defaults.MAX_DECKS}",
+    )
+    p.add_argument(
+        "--cards-per-group",
+        type=int,
+        default=count_defaults.DEFAULT_CARDS_PER_GROUP,
+        help="running mode: cards shown per line",
+    )
+    p.add_argument(
+        "--groups",
+        type=int,
+        default=count_defaults.DEFAULT_GROUPS,
+        help="running mode: lines per question",
+    )
     p.add_argument(
         "--rounding",
         default=None,

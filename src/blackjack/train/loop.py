@@ -24,11 +24,17 @@ from blackjack.rules import RuleSet
 from blackjack.shoe import full_shoe
 from blackjack.sim.strategy import PlayingStrategy, compile_strategy
 from blackjack.train.counting_drill import (
+    DEFAULT_CARDS_PER_GROUP,
+    DEFAULT_DECKS,
+    DEFAULT_ESTIMATION,
+    DEFAULT_GROUPS,
+    DEFAULT_PENETRATION,
     ROUNDING_PHRASES,
     CountResult,
     CountSession,
     DrillMode,
     RunningCountDrill,
+    check_shoe,
     deck_question,
     grade_decks,
     grade_running,
@@ -373,11 +379,11 @@ def run_count_drill(
     *,
     mode: DrillMode = DrillMode.RUNNING,
     rounds: int = 10,
-    decks: int = 6,
-    cards_per_flash: int = 2,
-    flashes: int = 5,
-    penetration: float = 0.75,
-    estimation: float = 0.5,
+    decks: int = DEFAULT_DECKS,
+    cards_per_group: int = DEFAULT_CARDS_PER_GROUP,
+    groups: int = DEFAULT_GROUPS,
+    penetration: float = DEFAULT_PENETRATION,
+    estimation: float = DEFAULT_ESTIMATION,
     rounding: TrueCountRounding | None = None,
     seed: int | None = None,
     reader: Callable[[str], str] = input,
@@ -388,7 +394,7 @@ def run_count_drill(
 
     The terminal cannot flash cards and take them away again without
     terminal-specific escape codes, so a running-count question prints all its
-    groups at once and the clock measures how long the count takes. That is a
+    groups at once, one per line, and the clock measures how long the count takes. That is a
     speed test, not a memory test; the memory half comes from the count carrying
     across questions until the shuffle.
 
@@ -401,8 +407,8 @@ def run_count_drill(
         mode: Which skill.
         rounds: Questions to ask.
         decks: Decks in the shoe.
-        cards_per_flash: Cards per group in running-count mode.
-        flashes: Groups per running-count question.
+        cards_per_group: Cards per line in running-count mode.
+        groups: Lines per running-count question.
         penetration: Fraction of the shoe dealt before the shuffle.
         estimation: Deck-estimation granularity for the true-count divisor, as
             in the simulator's ``deck_estimation``.
@@ -416,9 +422,11 @@ def run_count_drill(
         The completed session.
 
     Raises:
-        ValueError: for a true-count drill on an unbalanced system, or a
-            running-count question too large for the shoe.
+        ValueError: for a shoe outside ``1..MAX_DECKS`` decks, a true-count
+            drill on an unbalanced system, or a running-count question too large
+            for the shoe. All are raised before anything is printed.
     """
+    check_shoe(decks, penetration)
     rng = random.Random(seed)
     session = CountSession()
     rounding_mode = rounding or system.rounding
@@ -428,8 +436,8 @@ def run_count_drill(
             system,
             rng,
             decks=decks,
-            cards_per_flash=cards_per_flash,
-            flashes=flashes,
+            cards_per_group=cards_per_group,
+            groups=groups,
             penetration=penetration,
         )
     elif mode is DrillMode.TRUE and not system.balanced:
@@ -444,15 +452,27 @@ def run_count_drill(
         writer("Keep the running count through the shoe and type it after each batch.")
         writer("It carries on between questions -- you are told the right figure each")
         writer("time -- and restarts at the IRC when the shoe is shuffled.")
+        if running is not None and running.split is not None:
+            split = running.split
+            name = rank_name(split.rank)
+            writer(
+                f"{name}r is a red {name} ({signed(split.red)}), "
+                f"{name}b a black one ({signed(split.black)})."
+            )
     elif mode is DrillMode.TRUE:
-        writer("Divide by the decks remaining rounded to the nearest half deck, then")
-        writer(f"{ROUNDING_PHRASES[rounding_mode]}.")
+        if estimation > 0:
+            step = "half deck" if estimation == 0.5 else f"{estimation:g} deck"
+            writer(f"Divide by the decks remaining rounded to the nearest {step} (never")
+            writer(f"less than a {step}), then {ROUNDING_PHRASES[rounding_mode]}.")
+        else:
+            writer(f"Divide by the decks remaining, then {ROUNDING_PHRASES[rounding_mode]}.")
     else:
         writer("Estimate the decks remaining to the nearest half deck. Each answer")
         writer("shows what the error would do to a true count around +3.")
     writer("Blank line or q to stop.")
     writer("")
 
+    stopped = False
     for i in range(1, rounds + 1):
         result: CountResult
         if running is not None:
@@ -460,11 +480,12 @@ def run_count_drill(
             if rq.fresh_shoe:
                 writer(f"  -- fresh shoe, the count starts at {signed(rq.irc)} --")
             writer(f"[{i}/{rounds}]")
-            for group in rq.flashes:
-                writer("    " + " ".join(rank_name(c) for c in group))
+            for labels in rq.labels:
+                writer("    " + " ".join(labels))
             start = clock()
             answer = _read_count("  Running count? > ", reader, writer)
             if answer is None:
+                stopped = True
                 break
             result = grade_running(rq, answer, clock() - start)
         elif mode is DrillMode.TRUE:
@@ -483,6 +504,7 @@ def run_count_drill(
             start = clock()
             answer = _read_count("  True count? > ", reader, writer)
             if answer is None:
+                stopped = True
                 break
             result = grade_true_count(tq, answer, clock() - start)
         else:
@@ -491,12 +513,15 @@ def run_count_drill(
             start = clock()
             answer = _read_count("  Decks remaining? > ", reader, writer, positive=True)
             if answer is None:
+                stopped = True
                 break
             result = grade_decks(dq, answer, clock() - start, system, rounding=rounding)
         session.record(result)
         _feedback(result, writer)
 
-    writer("")
+    if stopped or not session.results:
+        # Feedback already ends in a blank line; a stop at a prompt does not.
+        writer("")
     writer(session.report())
     return session
 
