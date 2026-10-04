@@ -108,6 +108,8 @@ worth building twice.
   Reports both edges and their delta, one-rule-at-a-time attribution with the
   interaction residual stated, and every changed cell priced as chart A's play
   at table B (a play B does not offer falls back to chart A's second choice).
+  `bj solve --compare` (bare EV difference only) is superseded and now points
+  here.
   *Remaining:* the web screen. Nothing on the engine side blocks it.
 
 ---

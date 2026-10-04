@@ -81,6 +81,7 @@ Windows, macOS and Linux.
 | command | what it does |
 |---|---|
 | `bj solve` | House edge and composition-dependent ceiling for a rule set |
+| `bj compare` | Two rule sets: edge delta, per-rule attribution, every chart cell that changes |
 | `bj chart` | Basic-strategy chart, optionally ranked by importance |
 | `bj explain` | Full breakdown of one decision, pricing every alternative |
 | `bj indices` | Deviation indices derived for these rules and this counting system |

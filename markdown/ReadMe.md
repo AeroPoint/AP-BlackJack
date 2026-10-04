@@ -322,23 +322,30 @@ $ bj compare vegas6-h17 vegas6-s17-ls --top 5
 
   7 chart cells change. Playing chart A at table B costs 0.0791% of a bet per round.
 
-   hand  vs  A says  B says  A at B   per hand   freq%   cost/100
-     16   T       H       R       H    0.03189   1.823    0.05813
-     15   T       H       R       H    0.00293   2.191    0.00643
-     11   A       D       H       D    0.01674   0.368    0.00616
-     16   A       H       R       H    0.01005   0.460    0.00462
-     16   9       H       R       H    0.00472   0.456    0.00215
+  table    hand  vs  A says  B says  A at B   per hand   freq%   cost/100
+  hard       16   T       H       R       H    0.03189   1.823    0.05813
+  hard       15   T       H       R       H    0.00293   2.191    0.00643
+  hard       11   A       D       H       D    0.01674   0.368    0.00616
+  hard       16   A       H       R       H    0.01005   0.460    0.00462
+  hard       16   9       H       R       H    0.00472   0.456    0.00215
 ```
 
 Every delta is `B − A`. When several rules differ, each is switched alone from
 A, and the residual says how much the rules interact — here, surrender is worth
 less once the dealer stands on soft 17. The cell costs add up exactly to the
-wrong-chart total, and they run one way: a surrender chart at a no-surrender
-table falls back to its second choice ("Rh") and loses nothing, while the
-reverse forgoes the surrender. `bj compare vegas6-h17 6to5-trap` shows the other
-extreme: 1.36 points worse and not one cell changes. The same comparison is
-served at `GET /api/compare/{a}/{b}`. See `src/blackjack/ev/compare.py` for the
-approximations and their sizes.
+wrong-chart total, and they run one way. In the run above, forgoing surrender is
+0.071 of the 0.079 per 100 rounds. Take the S17 surrender chart to the H17
+table instead and every surrender cell falls back to its second choice ("Rh"),
+which is H17's own play, so those cells cost nothing; the 0.0037% that run does
+cost comes from the cells where H17 doubles and S17 does not. Only opening
+decisions are priced — what a chart prescribes after a hit is not compared — so
+the wrong-chart figure is a lower bound.
+
+`bj compare vegas6-h17 6to5-trap` shows the other extreme: 1.36 points worse
+and not one cell changes. The same comparison is served at
+`GET /api/compare/{a}/{b}`. See `src/blackjack/ev/compare.py` for the
+approximations and their sizes. `bj solve --compare B`, which predates this and
+prints only the bare EV difference, is superseded by it.
 
 ---
 
