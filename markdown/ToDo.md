@@ -120,8 +120,14 @@ The terminal versions are built. What remains is depth and a UI.
   a real shoe with a cut card and a live count; every two-card decision priced
   against the cards actually remaining. Three grading standards (chart, count,
   exact). Sessions end with total cost and the biggest leaks named.
-  Remaining: post-split decisions are played but not graded, because a single
-  chart cell does not capture the split context. Worth fixing.
+  **Every** decision is now priced, not just the opening one: hands reached by
+  hitting and hands off a split used to be played in silence. The stated reason
+  was that a chart cell cannot capture the split context, but
+  `PlayingStrategy.action` always took `after_split` and `num_cards` and
+  degraded illegal plays correctly -- the standard was expressible all along and
+  the loop never asked it. `ev/player.hand_action_evs` prices any hand;
+  `legal_actions` is now the single authority on legality and a test asserts it
+  returns exactly the keys the pricer scores.
 
 - [ ] **Counting drills.** Running-count speed, true-count conversion under a
   clock, deck estimation from a discard tray image or slider.
@@ -192,11 +198,23 @@ The terminal versions are built. What remains is depth and a UI.
   accordingly. The machinery exists — solve at a tilted composition and
   re-analyse — so this is a presentation question, not a maths one.
 
-- [ ] **Persist measured miss rates across sessions.** `bj drill` already blends
-  the generic error model toward the player's own rate within a session, but
-  throws it away at exit. Persisting it turns the leak view from a claim about
-  learners in general into a claim about you, which is the point of the whole
-  model. Highest-value remaining change to the importance work.
+- [ ] **Persist measured miss rates across sessions.** *Next up, and the last
+  piece of the trainer work.* `bj drill` already blends the generic error model
+  toward the player's own rate within a session (`drill.blended_error_rate`),
+  but `Session` dies at exit. Persisting it turns the leak view from a claim
+  about learners in general into a claim about you, which is the point of the
+  whole model.
+  *Done when:* a `PlayerHistory` accumulates per-cell `seen/errors/cost` across
+  sessions, `blended_error_rate` consults it as well as the live session, and
+  `bj drill` / `bj play` take a `--profile` to load and save it.
+  *Design notes, decided but not yet built:*
+  - key per-cell stats by rules slug as well as cell, because a miss rate under
+    H17 is not a measurement of the same decision under S17;
+  - store under `data/profiles/`, gitignored -- it is personal data, and
+    AGENTS.md forbids committing session logs;
+  - carry `schema_version` and the engine version, as every other stored result
+    does;
+  - opt in via `--profile` rather than writing to disk unasked.
 
 - [ ] **Session tracker import.** Import a player's own session log (CSV or
   XLSX: date, hours, rules, spread, result), compare realised results against
@@ -232,9 +250,9 @@ The terminal versions are built. What remains is depth and a UI.
 - Deep single-deck states can produce fractional compositions where a rank falls
   below one card; the engine clamps at zero and the induced error is below 1e-9,
   but it is an approximation rather than an exact treatment.
-- Post-split decisions are played in free play but not graded: a single chart
-  cell does not capture the split context, so the trainer stays quiet rather
-  than grading against the wrong standard.
+- Per-cell miss rates are measured within a session and discarded at exit, so
+  the drill weighting and the leak view still describe a generic learner between
+  sessions. See the backlog item above; it is the last piece of the trainer work.
 - The React web UI has never been opened in a browser. It typechecks and builds,
   and its data contract is tested, but the layout and palette are unreviewed —
   and it still colours the chart by leak alone, which the standalone chart page
