@@ -140,6 +140,25 @@ def test_rules_fingerprint_hashes_every_field_but_the_name() -> None:
     seven_card_charlie = base.with_(charlie=7)
     assert seven_card_charlie.slug() == base.slug()
     assert rules_fingerprint(seven_card_charlie) != rules_fingerprint(base)
+    # It identifies the rule set, not the numbers: a simulator-only field counts.
+    assert rules_fingerprint(base.with_(penetration=0.5)) != rules_fingerprint(base)
+
+
+def test_session_fingerprint_is_unchanged_by_the_shared_hash_helper() -> None:
+    """Factoring the hash out must not move a fingerprint already on a result.
+
+    The expected value is the hash the inline implementation produced before
+    the refactor, computed here the same way rather than pasted in.
+    """
+    import hashlib
+
+    from blackjack.config.models import to_plain
+
+    config = SessionConfig(rules=RuleSet(), system=HI_LO)
+    payload = to_plain(config)
+    payload.pop("name")
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    assert config.fingerprint() == hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
 def test_fingerprint_changes_with_the_rules() -> None:

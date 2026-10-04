@@ -63,9 +63,18 @@ export interface CompareSide {
   insurance_ev: number;
 }
 
-/** A rule that differs, and its edge delta switched on its own from A. */
+/**
+ * A rule that differs, and its edge delta switched on its own from A.
+ *
+ * `a` and `b` are in config-file form: booleans, integers, enum values such as
+ * `"late"`, and payouts as fraction strings such as `"3/2"`. `label` is the
+ * same difference rendered for a person, as the CLI prints it
+ * (`"blackjack_payout: 3:2 -> 6:5"`). `ev_delta` is null when attribution was
+ * not requested.
+ */
 export interface RuleDifference {
   field: string;
+  label: string;
   a: unknown;
   b: unknown;
   ev_delta: number | null;
@@ -83,12 +92,19 @@ export interface CellChange {
   offered_at_b: boolean;
   frequency: number;
   cost_per_occurrence: number;
+  cost_per_round: number;
   cost_per_100_rounds: number;
   evs_a: Partial<Record<Action, number>>;
   evs_b: Partial<Record<Action, number>>;
 }
 
-/** `GET /compare/{a}/{b}`. Every delta is B minus A. */
+/**
+ * `GET /compare/{a}/{b}?attribute=`. Every delta is B minus A, and cell costs
+ * price chart A's play at table B. With `attribute: false` the per-rule solves
+ * are skipped, so `ev_delta` and `attribution_residual` are null. Cells whose
+ * play differs but that no hand is ever played from (soft 12, hard 4, hard 20,
+ * which only pairs reach) are in `unplayed_changes`, not `changes`.
+ */
 export interface CompareResult {
   engine_version: string;
   backend: string;
@@ -103,8 +119,10 @@ export interface CompareResult {
   attribution_residual: number | null;
   other_differences: string[];
   changes: CellChange[];
+  unplayed_changes: CellChange[];
   only_in_a: ChartCell[];
   only_in_b: ChartCell[];
+  elapsed_seconds: number;
 }
 
 export interface Configs {
@@ -155,9 +173,14 @@ export const api = {
   configs: (signal?: AbortSignal) => get<Configs>("/configs", signal),
   solve: (rules: string, signal?: AbortSignal) =>
     get<SolveResult>(`/solve/${encodeURIComponent(rules)}`, signal),
-  compare: (rulesA: string, rulesB: string, signal?: AbortSignal) =>
+  compare: (
+    rulesA: string,
+    rulesB: string,
+    { attribute = true, signal }: { attribute?: boolean; signal?: AbortSignal } = {},
+  ) =>
     get<CompareResult>(
-      `/compare/${encodeURIComponent(rulesA)}/${encodeURIComponent(rulesB)}`,
+      `/compare/${encodeURIComponent(rulesA)}/${encodeURIComponent(rulesB)}` +
+        `?attribute=${attribute}`,
       signal,
     ),
 };

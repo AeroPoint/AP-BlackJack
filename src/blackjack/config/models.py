@@ -82,24 +82,39 @@ class SessionConfig:
         Deliberately excludes :attr:`name`, which is a label, and includes
         :attr:`seed`, which is not.
         """
-        payload = to_plain(self)
-        payload.pop("name", None)
-        blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+        return _hash_without_name(self)
 
 
 def rules_fingerprint(rules: RuleSet) -> str:
-    """Stable 16-character hash of every rule field, for results that need no session.
+    """Stable 16-character hash of a rule set, for results that need no session.
 
     A solve or a rule comparison depends on the rules alone, so hashing a whole
     :class:`SessionConfig` around them would tie the result to a counting system
     and a bankroll it never read. :meth:`RuleSet.slug` is not a substitute: it
     is a readable cache key and omits fields such as ``charlie`` and
-    ``hit_split_aces`` that do move the EV. Same scheme as
-    :meth:`SessionConfig.fingerprint` -- every field except the display name --
-    so a field added to :class:`RuleSet` is covered without anyone remembering to.
+    ``hit_split_aces`` that do move the EV.
+
+    Every field except the top-level ``name`` is hashed, so a field added to
+    :class:`RuleSet` is covered without anyone remembering to. Two consequences
+    worth knowing:
+
+    * It hashes simulator-only fields too (``penetration``, ``deck_estimation``,
+      ``max_hands_played``), so two tables with identical EVs can fingerprint
+      differently. It identifies the rule set, not the numbers.
+    * It is not a component of :meth:`SessionConfig.fingerprint`, which hashes
+      the rules nested inside the session *including* their name. Neither hash
+      can be derived from the other.
     """
-    payload = to_plain(rules)
+    return _hash_without_name(rules)
+
+
+def _hash_without_name(config: Any) -> str:
+    """First 16 hex characters of the SHA-256 of a config's fields, minus its name.
+
+    Only the top-level ``name`` is dropped; nested objects keep theirs, which
+    is the behaviour :meth:`SessionConfig.fingerprint` has always had.
+    """
+    payload = to_plain(config)
     payload.pop("name", None)
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest()[:16]

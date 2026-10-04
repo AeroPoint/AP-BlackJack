@@ -143,12 +143,37 @@ def compare(rules_a_name: str, rules_b_name: str, attribute: bool = True) -> dic
     Each side carries a rules fingerprint as well as the slug, because the slug
     omits fields that move the EV and a comparison is only as traceable as the
     two rule sets behind it.
+
+    Rule values in ``differences`` are in config-file form (``"3/2"``, ``"late"``,
+    ``true``); ``label`` is the same difference as the CLI prints it.
     """
+    import time
+
     from blackjack.ev.compare import compare_rules
 
     rules_a = resolve_rules(rules_a_name)
     rules_b = resolve_rules(rules_b_name)
+    started = time.perf_counter()
     result = compare_rules(rules_a, rules_b, attribute=attribute)
+    elapsed = time.perf_counter() - started
+
+    def change(c: Any) -> dict[str, Any]:
+        return {
+            "category": c.cell_b.category.value,
+            "row": c.cell_b.row,
+            "upcard": c.cell_b.upcard,
+            "label": c.label,
+            "action_a": c.action_a.value,
+            "action_b": c.action_b.value,
+            "played_at_b": c.played_at_b.value,
+            "offered_at_b": c.offered_at_b,
+            "frequency": c.frequency,
+            "cost_per_occurrence": c.cost_per_occurrence,
+            "cost_per_round": c.cost_per_round,
+            "cost_per_100_rounds": c.cost_per_100_rounds,
+            "evs_a": {a.value: v for a, v in c.cell_a.analysis.all_evs.items()},
+            "evs_b": {a.value: v for a, v in c.cell_b.analysis.all_evs.items()},
+        }
 
     def side(solved: Any) -> dict[str, Any]:
         rules = solved.rules
@@ -174,6 +199,7 @@ def compare(rules_a_name: str, rules_b_name: str, attribute: bool = True) -> dic
         differences=[
             {
                 "field": d.field,
+                "label": d.describe(),
                 "a": to_plain(d.value_a),
                 "b": to_plain(d.value_b),
                 # NaN is not JSON; an unattributed delta is absent, not zero.
@@ -183,26 +209,11 @@ def compare(rules_a_name: str, rules_b_name: str, attribute: bool = True) -> dic
         ],
         attribution_residual=result.attribution_residual if result.attributed else None,
         other_differences=result.other_differences,
-        changes=[
-            {
-                "category": c.cell_b.category.value,
-                "row": c.cell_b.row,
-                "upcard": c.cell_b.upcard,
-                "label": c.label,
-                "action_a": c.action_a.value,
-                "action_b": c.action_b.value,
-                "played_at_b": c.played_at_b.value,
-                "offered_at_b": c.offered_at_b,
-                "frequency": c.frequency,
-                "cost_per_occurrence": c.cost_per_occurrence,
-                "cost_per_100_rounds": c.cost_per_100_rounds,
-                "evs_a": {a.value: v for a, v in c.cell_a.analysis.all_evs.items()},
-                "evs_b": {a.value: v for a, v in c.cell_b.analysis.all_evs.items()},
-            }
-            for c in result.changes
-        ],
+        changes=[change(c) for c in result.changes],
+        unplayed_changes=[change(c) for c in result.unplayed_changes],
         only_in_a=[_cell(c) for c in result.only_in_a],
         only_in_b=[_cell(c) for c in result.only_in_b],
+        elapsed_seconds=elapsed,
     )
 
 

@@ -106,6 +106,14 @@ def test_compare_matches_the_engine(client, compare_solve_cache) -> None:
 
     top = payload["changes"][0]
     assert top["cost_per_100_rounds"] == pytest.approx(expected.changes[0].cost_per_100_rounds)
+    # The headline is per round, so each cell is offered per round too, and they add up.
+    assert sum(c["cost_per_round"] for c in payload["changes"]) == pytest.approx(
+        payload["wrong_chart_cost"]
+    )
+    assert payload["unplayed_changes"] == []
+    assert payload["elapsed_seconds"] > 0
+    # Config-file form for machines, the CLI's rendering alongside it.
+    assert payload["differences"][0]["label"] == "hit_soft_17: True -> False"
     assert {top["action_a"], top["action_b"], top["played_at_b"]} <= set("SHDPR")
 
     # Provenance: each side carries a fingerprint that the slug cannot stand in for.

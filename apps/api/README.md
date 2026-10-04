@@ -22,6 +22,7 @@ Anything that finishes in milliseconds is a plain request.
 | `GET /api/configs` | available configuration files by kind |
 | `GET /api/solve/{rules}` | full solve plus the annotated chart (~31 ms) |
 | `GET /api/explain/{rules}/{hand}/{upcard}` | one decision, fully priced |
+| `GET /api/compare/{a}/{b}?attribute=` | two rule sets: edge deltas, per-rule attribution (`attribute=false` skips its extra solves), every changed cell priced as chart A's play at table B |
 | `GET /api/sidebet/{name}?decks=` | side bet against each known paytable |
 | `GET /api/systems/{rules}?decks=` | effect of removal and per-system BC/IC |
 
