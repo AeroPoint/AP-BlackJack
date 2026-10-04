@@ -108,6 +108,10 @@ def _non_negative(text: str) -> int:
     return value
 
 
+# argparse names the type function in its "invalid ... value" message.
+_non_negative.__name__ = "count"
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     """Compare two tables: the edge, its attribution, and every cell that changes."""
     from blackjack.config.models import rules_fingerprint

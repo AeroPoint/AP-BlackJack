@@ -366,3 +366,18 @@ def test_response_shape_matches_the_typescript_types(client, compare_solve_cache
     ):
         missing = declared(interface) - set(payload)
         assert not missing, f"{interface}: the client expects {sorted(missing)}"
+
+    # The compare types were written for this endpoint, so they must match it
+    # exactly in both directions -- including an unplayed change, which only
+    # appears when the two charts differ on a row no hand is played from.
+    unplayed = client.get("/api/compare/vegas6-h17/sd-s17").json()["unplayed_changes"]
+    assert unplayed, "expected soft 12 v 6 to differ between these tables"
+    for interface, payload in (
+        ("CompareResult", compared),
+        ("CompareSide", compared["a"]),
+        ("RuleDifference", compared["differences"][0]),
+        ("CellChange", compared["changes"][0]),
+        ("CellChange", unplayed[0]),
+    ):
+        extra = set(payload) - declared(interface)
+        assert not extra, f"{interface}: the server sends undeclared {sorted(extra)}"

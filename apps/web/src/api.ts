@@ -80,7 +80,12 @@ export interface RuleDifference {
   ev_delta: number | null;
 }
 
-/** A chart square whose play differs, priced as chart A's play at table B. */
+/**
+ * A chart square whose play differs, priced as chart A's play at table B.
+ *
+ * Join on `category`, `row` and `upcard`, not on `label`: `label` is for
+ * display and says "soft 12" where a `ChartCell` says "A,A" for the same cell.
+ */
 export interface CellChange {
   category: Category;
   row: number;
