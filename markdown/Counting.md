@@ -77,21 +77,21 @@ E[RC] = IRC + d · deck_sum / 52        Var[RC] = d(N−d)/(N−1) · σ²
 ```
 
 with `σ²` the tag variance about its mean. In six decks at 75% penetration the
-KO count drifts by +18 over the shoe, so most rounds are dealt well below the
-pivot. An earlier version
-centred the count on zero at every depth, which put 29% of six-deck KO rounds at
-or above the pivot; the simulator deals 2%. Against 3 million simulated rounds
-the model now agrees to within 0.1 points in every bin except the IRC, where
-the simulator has about 2 points more because every shoe's first round is dealt
-there, and its two neighbours, a few tenths less.
+KO count starts at −20 and drifts by +18 over the shoe, so most rounds are dealt
+well below the pivot. An earlier version centred the count on zero at every
+depth, which put 29% of six-deck KO rounds at or above the pivot; the simulator
+deals 6%. Against 3 million simulated rounds the model now agrees to within 0.1
+points in every bin except the IRC, where the simulator has about 2 points more
+because every shoe's first round is dealt there, and its two neighbours, a few
+tenths less.
 
 That last difference matters more than its size suggests. The model weights
 card positions, the simulator rounds, and rounds sample the top of the shoe more
 heavily; together with the cut-card effect that leaves fewer late-shoe rounds,
-and late in the shoe is the only place a KO count reaches the pivot. On a 1-10
-ramp keyed on the pivot the model's frequencies are worth 0.00197 units per
-round and the simulator's 0.00109. For an unbalanced spread, reweight to measured
-frequencies with `TrueCountDistribution.with_frequencies`.
+and late in the shoe is where a KO count reaches the pivot. On a 1-10 ramp keyed
+on the pivot the model's frequencies are worth 0.00836 units per round and the
+simulator's 0.00710: the model is 18% high. Where that matters, reweight to
+measured frequencies with `TrueCountDistribution.with_frequencies`.
 
 ---
 

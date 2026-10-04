@@ -180,10 +180,10 @@ The terminal versions are built. What remains is depth and a UI.
   analytic model weights card positions and cannot see it;
   `TrueCountDistribution.with_frequencies` removes it with a simulator's
   histogram.
-  It is far larger for an unbalanced count. On a 1-10 six-deck KO ramp keyed on
-  the pivot the model's frequencies are worth 0.00197 units per round and the
-  simulator's 0.00109, because a KO count reaches the pivot only late in the
-  shoe, where rounds are thinnest. About 0.0005 of that gap is a second
+  It is larger for an unbalanced count. On a 1-10 six-deck KO ramp keyed on the
+  pivot the model's frequencies are worth 0.00836 units per round and the
+  simulator's 0.00710, 18% high, because a KO count reaches the pivot late in
+  the shoe, where rounds are thinnest. About 0.0008 of that gap is a second
   rounds-versus-cards term the Hi-Lo figure hides: every shoe's first round is
   dealt at exactly the IRC (one round in 43), so rounds sample the top of the
   shoe more heavily than the model's even spread of card positions.
@@ -253,9 +253,9 @@ The terminal versions are built. What remains is depth and a UI.
   shipped rule sets still resolve. Custom YAML files do not.
 - `Charlie` rules are honoured by the solver but not by the simulator.
 - On its own count frequencies the analytic spread model overstates a six-deck
-  KO ramp keyed on the pivot by nearly half, because those frequencies weight
-  card positions rather than rounds (see the cut-card item above). Price
-  unbalanced spreads on a simulator's histogram with
+  KO ramp keyed on the pivot by 18%, because those frequencies weight card
+  positions rather than rounds (see the cut-card item above). Price unbalanced
+  spreads on a simulator's histogram with
   `TrueCountDistribution.with_frequencies` until that item is done.
 - The `OBO` hole-card rule is treated as `PEEK`; the distinction only matters for
   a rule variant nobody currently models.

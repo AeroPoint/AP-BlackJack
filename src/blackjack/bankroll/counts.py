@@ -36,10 +36,11 @@ every card dealt moves the expected count by the mean tag, ``deck_sum / 52``:
 
 ``sigma^2`` is the tag variance about that mean, so the finite-population
 variance above still describes the scatter around the drifting centre. KO in
-six decks drifts by +18 over a 75% shoe, so its count sits well below the pivot
-for most of the shoe. An earlier version centred every depth at zero, which put
-29% of six-deck KO rounds at or above the pivot where the simulator deals 2%,
-and cut off every bin below -20.
+six decks starts at -20 and drifts by +18 over a 75% shoe, so its count sits
+well below the pivot for most of the shoe. An earlier version centred every
+depth at zero, which put 29% of six-deck KO rounds at or above the pivot where
+the simulator deals 6%, and cut off every bin below -20, where 14% of the
+rounds are.
 
 Bin ``k`` of an unbalanced system holds the running counts in ``[k, k + 1)``, on
 the count's own lattice (offset by the IRC): the single count ``k`` for KO, ``k``
@@ -54,13 +55,13 @@ six-deck KO -- and rounds sample the top of the shoe more heavily than the
 model's even spread of positions, so the simulator has about 2 points more in
 the IRC bin, a few tenths less in its two neighbours, and correspondingly fewer
 rounds late in the shoe. Every other bin agrees to within 0.1 points over 3
-million simulated six-deck KO rounds. But late in the shoe is the only place a
-KO count reaches the pivot, so the model's frequencies overstate a 1-10 ramp
-keyed on the pivot by about 0.0009 units per round: 0.00197 against 0.00109
-priced on the simulator's frequencies, nearly half its value. Roughly 0.0005 of
-that is the top-of-shoe effect, by an endpoint-correction estimate, and the rest
-the cut-card effect. For an unbalanced spread, price the bins on measured
-frequencies with :meth:`TrueCountDistribution.with_frequencies`.
+million simulated six-deck KO rounds. But late in the shoe is where a KO count
+reaches the pivot, so the model's frequencies overstate a 1-10 ramp keyed on
+the pivot by about 0.0013 units per round: 0.00836 against 0.00710 priced on
+the simulator's frequencies, 18% high. Roughly 0.0008 of that is the
+top-of-shoe effect, by an endpoint-correction estimate, and the rest the
+cut-card effect. Where that matters, price the bins on measured frequencies with
+:meth:`TrueCountDistribution.with_frequencies`.
 
 Binning is where the player's arithmetic enters
 -----------------------------------------------
@@ -315,7 +316,7 @@ def unbalanced_bin_range(
     holds all of it. An unbalanced count starts at the IRC and drifts by the mean
     tag per card, so its range has to follow it: the lowest and highest
     ``E[RC] -/+ 6 sd`` over the depths the model averages. In six-deck KO that
-    is -63 to +39, 103 bins rather than 41; the loop over them is still cheap.
+    is -59 to +43, 103 bins rather than 41; the loop over them is still cheap.
     """
     total = decks * CARDS_PER_DECK
     cut = total * penetration

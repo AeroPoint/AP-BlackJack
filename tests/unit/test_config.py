@@ -184,6 +184,32 @@ def test_shipped_configs_all_load() -> None:
         assert profile.unit > 0
 
 
+@pytest.mark.parametrize("key", ["ko", "red-7"])
+def test_shipped_unbalanced_systems_start_where_the_built_ins_do(key: str) -> None:
+    """The YAML and the built-in must agree on the IRC, which moves every number.
+
+    KO's YAML said ``IRC = 4 - 4*decks`` in its notes while the engine started at
+    ``-4 * decks``; the offset field is what makes the two say the same thing.
+    """
+    pytest.importorskip("yaml", reason="YAML configs need the cli extra")
+    from blackjack.counting import SYSTEMS
+
+    loaded, built_in = load_system(key), SYSTEMS[key]
+    for decks in (1, 2, 6, 8):
+        assert loaded.initial_running_count(decks) == built_in.initial_running_count(decks)
+    assert loaded.pivot == built_in.pivot
+
+
+def test_fingerprint_changes_with_the_initial_running_count() -> None:
+    from dataclasses import replace
+
+    from blackjack.counting import KO
+
+    base = SessionConfig(RuleSet(), KO)
+    other = SessionConfig(RuleSet(), replace(KO, irc_offset=0.0))
+    assert base.fingerprint() != other.fingerprint()
+
+
 def test_preset_keys_match_config_filenames() -> None:
     """Without PyYAML the CLI falls back to presets, so the names must line up."""
     from blackjack.rules import PRESETS

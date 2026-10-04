@@ -98,7 +98,15 @@ class CountSystem:
             reach its published playing efficiency.
         irc_per_deck: For unbalanced systems, the IRC contributed per deck. KO
             uses -4, Red 7 uses -2. Ignored when ``balanced``.
+        irc_offset: For unbalanced systems, the part of the IRC that does not
+            scale with the shoe. KO's IRC is ``4 - 4 * decks``, so its offset is
+            +4; Red 7's is ``-2 * decks`` and has none. Ignored when
+            ``balanced``.
         pivot: Running count at which an unbalanced system's advantage is known.
+            Both published systems choose the IRC so that a full shoe's tags
+            bring the count to exactly the pivot,
+            ``IRC + decks * deck_sum == pivot``, whatever the number of decks:
+            that is what lets one pivot serve every game.
         rounding: Default true-count rounding for this system.
         notes: Free text carried into reports.
     """
@@ -109,6 +117,7 @@ class CountSystem:
     level: int = 1
     side_count_aces: bool = False
     irc_per_deck: float = 0.0
+    irc_offset: float = 0.0
     pivot: float = 0.0
     rounding: TrueCountRounding = TrueCountRounding.TRUNCATE
     notes: str = ""
@@ -130,8 +139,8 @@ class CountSystem:
         return self.tags[rank - 1]
 
     def initial_running_count(self, decks: int) -> float:
-        """IRC for a ``decks``-deck shoe."""
-        return 0.0 if self.balanced else self.irc_per_deck * decks
+        """IRC for a ``decks``-deck shoe: ``irc_offset + irc_per_deck * decks``."""
+        return 0.0 if self.balanced else self.irc_offset + self.irc_per_deck * decks
 
     def running_count(self, cards: tuple[int, ...], decks: int) -> float:
         """Running count after seeing ``cards`` from a fresh ``decks``-deck shoe."""
@@ -243,7 +252,10 @@ KO = CountSystem(
     tags=(-1, 1, 1, 1, 1, 1, 1, 0, 0, -1),
     balanced=False,
     level=1,
+    # Vancura and Fuchs, *Knock-Out Blackjack* (1998): IRC = 4 - 4 * decks --
+    # 0 in one deck, -20 in six -- so a full shoe ends at the +4 pivot.
     irc_per_deck=-4.0,
+    irc_offset=4.0,
     pivot=4.0,
     notes="Unbalanced: no true-count division. IRC = 4 - 4*decks, pivot at +4.",
 )
@@ -256,6 +268,8 @@ RED_SEVEN = CountSystem(
     tags=(-1, 1, 1, 1, 1, 1, 0.5, 0, 0, -1),
     balanced=False,
     level=1,
+    # Snyder, *Blackbelt in Blackjack*: IRC = -2 * decks, so a full shoe ends at
+    # the pivot of 0.
     irc_per_deck=-2.0,
     pivot=0.0,
     notes="Unbalanced. Sevens tagged +0.5 because suits are not modelled; see "

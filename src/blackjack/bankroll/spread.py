@@ -188,11 +188,11 @@ def default_bin_range(
     which borrows the edge of the nearest solved bin.
 
     An unbalanced system's bins are running counts, and those are nowhere near
-    that range: 82% of six-deck KO rounds are dealt below -6, so a fixed -6 to
+    that range: 70% of six-deck KO rounds are dealt below -6, so a fixed -6 to
     +10 would price most rounds at the edge of a count they never had. Its
     range is instead the narrowest one leaving at most
     :data:`UNBALANCED_UNSOLVED_TAIL` of the rounds out on either side: running
-    counts -43 to +18 in six-deck KO, 62 solves. Solving all 103 bins instead
+    counts -39 to +22 in six-deck KO, 62 solves. Solving all 103 bins instead
     moves a 1-10 ramp keyed on the pivot by under 0.00001 units per round.
     """
     if system.balanced:

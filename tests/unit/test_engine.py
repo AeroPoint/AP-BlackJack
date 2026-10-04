@@ -10,7 +10,7 @@ from blackjack.actions import Action
 from blackjack.bankroll.counts import count_step, true_count_distribution
 from blackjack.bankroll.metrics import BankrollMetrics, n0, risk_of_ruin
 from blackjack.bankroll.spread import default_bin_range
-from blackjack.cards import SINGLE_DECK_COUNTS, parse_hand, parse_rank
+from blackjack.cards import RANKS, SINGLE_DECK_COUNTS, parse_hand, parse_rank
 from blackjack.counting import (
     HI_LO,
     KO,
@@ -161,7 +161,38 @@ def test_balanced_systems_sum_to_zero_over_a_deck() -> None:
 
 def test_unbalanced_systems_do_not() -> None:
     assert KO.deck_sum != 0
-    assert KO.initial_running_count(6) == -24
+    assert KO.initial_running_count(6) == -20
+
+
+@pytest.mark.parametrize(
+    ("decks", "ko", "red_seven"), [(1, 0, -2), (2, -4, -4), (6, -20, -12), (8, -28, -16)]
+)
+def test_unbalanced_initial_running_counts_are_the_published_ones(
+    decks: int, ko: float, red_seven: float
+) -> None:
+    """KO starts at 4 - 4 * decks (Vancura and Fuchs), Red 7 at -2 * decks (Snyder).
+
+    An earlier definition started KO at -4 * decks, four counts low in every
+    game, which put the +4 pivot where a published KO player would be at +8.
+    """
+    assert KO.initial_running_count(decks) == ko
+    assert RED_SEVEN.initial_running_count(decks) == red_seven
+
+
+@pytest.mark.parametrize("system", [KO, RED_SEVEN], ids=["ko", "red-7"])
+@pytest.mark.parametrize("decks", [1, 2, 6, 8])
+def test_a_full_shoe_ends_at_the_pivot(system: CountSystem, decks: int) -> None:
+    """The defining property of an unbalanced IRC: the whole shoe counts to the pivot.
+
+    That is what lets one pivot serve every number of decks, and it is why the
+    IRC is what it is. It also pins the IRC in the frame ``tilted_composition``
+    uses: a fully dealt shoe's running count is IRC plus every tag.
+    """
+    every_card = tuple(
+        rank for rank, n in zip(RANKS, SINGLE_DECK_COUNTS, strict=True) for _ in range(n * decks)
+    )
+    assert system.running_count(every_card, decks) == system.pivot
+    assert system.initial_running_count(decks) + decks * system.deck_sum == system.pivot
 
 
 @pytest.mark.parametrize(
@@ -280,14 +311,14 @@ def test_unbalanced_distribution_tracks_the_drifting_running_count(
 
     Its depth-averaged centre is therefore ``IRC + deck_sum / 52 * cut / 2``,
     not zero. The model this replaced centred every depth at zero, which for
-    six-deck KO put the mean at 0 where the simulator measures about -15, and
-    29% of rounds at or above the pivot where the simulator deals 2%.
+    six-deck KO put the mean at 0 where the simulator measures about -11, and
+    29% of rounds at or above the pivot where the simulator deals 6%.
     """
     dist = true_count_distribution(system, decks, penetration)
     irc = system.initial_running_count(decks)
     cut = decks * 52 * penetration
     expected = irc + system.deck_sum / 52 * cut / 2
-    assert expected < -1.0, "the test needs a centre away from zero"
+    assert abs(expected) > 1.0, "the test needs a centre away from zero"
     assert sum(dist.probabilities) == pytest.approx(1.0, abs=1e-9)
     # The bin means are exact running counts, so they average to E[RC] exactly
     # once the bins hold the whole distribution.
@@ -303,9 +334,9 @@ def test_unbalanced_distribution_tracks_the_drifting_running_count(
 
 
 def test_ko_pivot_is_reached_only_late_in_the_shoe() -> None:
-    """Six-deck KO rarely reaches its pivot: about 2% of rounds, not 29%."""
+    """Six-deck KO seldom reaches its pivot: about 6% of rounds, not 29%."""
     dist = true_count_distribution(KO, 6, 0.75)
-    assert 0.01 < dist.probability_at_or_above(KO.pivot) < 0.04
+    assert 0.04 < dist.probability_at_or_above(KO.pivot) < 0.08
     # The rounds that do reach it are late: well under half the shoe left.
     at_pivot = dist.counts.index(KO.pivot)
     assert dist.decks_remaining_of_bin(at_pivot) < 3.0
