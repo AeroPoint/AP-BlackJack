@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields, replace
 from fractions import Fraction
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from blackjack.config.models import (
     session_to_dict,
     system_from_dict,
 )
-from blackjack.counting import HI_LO
+from blackjack.counting import HI_LO, CountSystem
 from blackjack.rules import DoubleRule, HoleCardRule, RuleSet, SurrenderRule
 
 # --- Schema enforcement -------------------------------------------------------
@@ -184,29 +185,51 @@ def test_shipped_configs_all_load() -> None:
         assert profile.unit > 0
 
 
-@pytest.mark.parametrize("key", ["ko", "red-7"])
-def test_shipped_unbalanced_systems_start_where_the_built_ins_do(key: str) -> None:
-    """The YAML and the built-in must agree on the IRC, which moves every number.
+def _shipped_counting_systems() -> list[str]:
+    return sorted(list_available("counting"))
 
-    KO's YAML said ``IRC = 4 - 4*decks`` in its notes while the engine started at
-    ``-4 * decks``; the offset field is what makes the two say the same thing.
+
+@pytest.mark.parametrize("key", _shipped_counting_systems())
+def test_shipped_counting_systems_match_the_built_ins(key: str) -> None:
+    """A YAML system and its built-in must agree on every field but the notes.
+
+    Without PyYAML the CLI falls back to the built-ins, so any difference makes
+    the numbers -- and the config fingerprint -- depend on whether an optional
+    extra is installed. KO showed both ways this goes wrong: its YAML notes said
+    ``IRC = 4 - 4*decks`` while the engine started at ``-4 * decks``, and its
+    YAML said ``rounding: none`` while the built-in truncated.
     """
     pytest.importorskip("yaml", reason="YAML configs need the cli extra")
     from blackjack.counting import SYSTEMS
 
     loaded, built_in = load_system(key), SYSTEMS[key]
-    for decks in (1, 2, 6, 8):
-        assert loaded.initial_running_count(decks) == built_in.initial_running_count(decks)
-    assert loaded.pivot == built_in.pivot
+    differing = [
+        f.name
+        for f in fields(CountSystem)
+        if f.name != "notes" and getattr(loaded, f.name) != getattr(built_in, f.name)
+    ]
+    assert not differing, f"{key}: YAML and built-in differ in {differing}"
+
+
+def test_an_unbalanced_irc_that_misses_the_pivot_is_rejected() -> None:
+    """The KO definition that started at -4 * decks would no longer construct."""
+    ko = {
+        "name": "KO typo",
+        "tags": [-1, 1, 1, 1, 1, 1, 1, 0, 0, -1],
+        "balanced": False,
+        "irc_per_deck": -4,
+        "pivot": 4,
+    }
+    with pytest.raises(ValueError, match="must count to the pivot"):
+        system_from_dict(ko)
+    assert system_from_dict({**ko, "irc_offset": 4}).initial_running_count(6) == -20
 
 
 def test_fingerprint_changes_with_the_initial_running_count() -> None:
-    from dataclasses import replace
-
     from blackjack.counting import KO
 
     base = SessionConfig(RuleSet(), KO)
-    other = SessionConfig(RuleSet(), replace(KO, irc_offset=0.0))
+    other = SessionConfig(RuleSet(), replace(KO, irc_offset=0.0, pivot=0.0))
     assert base.fingerprint() != other.fingerprint()
 
 

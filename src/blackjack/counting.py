@@ -9,9 +9,10 @@ Terminology
 running count (RC)
     The sum of tags over every card seen since the shuffle.
 initial running count (IRC)
-    Where the count starts. Zero for balanced systems; negative for unbalanced
-    ones like KO and Red 7, which use the offset instead of a true-count
-    conversion.
+    Where the count starts: ``irc_offset + irc_per_deck * decks``. Zero for
+    balanced systems. Unbalanced ones like KO and Red 7 start low -- KO at
+    ``4 - 4 * decks``, so -20 in six decks and 0 in one -- and use that offset
+    instead of a true-count conversion.
 true count (TC)
     ``RC / decks_remaining``. This is the quantity that actually correlates
     with advantage, because one extra small card matters far more with one deck
@@ -125,9 +126,31 @@ class CountSystem:
     # -- validation / derived -------------------------------------------------
 
     def __post_init__(self) -> None:
-        """Reject a tag vector of the wrong length."""
+        """Reject a tag vector of the wrong length, or an IRC that misses the pivot.
+
+        An unbalanced system's IRC exists to make a full shoe count to exactly
+        the pivot, ``IRC + decks * deck_sum == pivot``, in every game. For that
+        to hold at every number of decks, ``irc_per_deck`` must be
+        ``-deck_sum`` and ``irc_offset`` must be the pivot. Both published
+        systems are built that way, and a definition that is not almost
+        certainly has a typo in it: KO once started at ``-4 * decks``, four
+        counts low, with notes that said otherwise. A system that really wants
+        a different reference count should express it in its ramp and indices,
+        which take any thresholds, rather than in the pivot.
+        """
         if len(self.tags) != NUM_RANKS:
             raise ValueError(f"{self.name}: expected {NUM_RANKS} tags, got {len(self.tags)}")
+        if not self.balanced:
+            per_deck_ok = abs(self.irc_per_deck + self.deck_sum) < 1e-9
+            offset_ok = abs(self.irc_offset - self.pivot) < 1e-9
+            if not (per_deck_ok and offset_ok):
+                raise ValueError(
+                    f"{self.name}: a full shoe must count to the pivot, IRC + decks * "
+                    f"deck_sum == pivot, so irc_per_deck must be -deck_sum "
+                    f"({-self.deck_sum:+g}) and irc_offset must equal the pivot "
+                    f"({self.pivot:+g}); got irc_per_deck {self.irc_per_deck:+g}, "
+                    f"irc_offset {self.irc_offset:+g}"
+                )
 
     @property
     def deck_sum(self) -> float:
@@ -257,6 +280,9 @@ KO = CountSystem(
     irc_per_deck=-4.0,
     irc_offset=4.0,
     pivot=4.0,
+    # The count is the running count, so there is nothing to round; this
+    # matches configs/counting/ko.yaml, and so the config fingerprint does too.
+    rounding=TrueCountRounding.NONE,
     notes="Unbalanced: no true-count division. IRC = 4 - 4*decks, pivot at +4.",
 )
 
@@ -271,7 +297,9 @@ RED_SEVEN = CountSystem(
     # Snyder, *Blackbelt in Blackjack*: IRC = -2 * decks, so a full shoe ends at
     # the pivot of 0.
     irc_per_deck=-2.0,
+    irc_offset=0.0,
     pivot=0.0,
+    rounding=TrueCountRounding.NONE,
     notes="Unbalanced. Sevens tagged +0.5 because suits are not modelled; see "
     "markdown/Counting.md for why that is exact for EV purposes.",
 )

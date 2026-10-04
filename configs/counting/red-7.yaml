@@ -4,6 +4,7 @@ tags: [-1, 1, 1, 1, 1, 1, 0.5, 0, 0, -1]
 balanced: false
 level: 1
 irc_per_deck: -2
+irc_offset: 0
 pivot: 0
 rounding: none
 notes: >
