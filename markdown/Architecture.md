@@ -62,6 +62,7 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | `train/drill.py` | Weights and samples the next question. |
 | `train/history.py` | Per-cell results kept across sessions, opt in via `--player`. |
 | `train/table.py` | A dealt game driven one action at a time. |
+| `train/counting_drill.py` | Counting drills: question generators and graders, no I/O. |
 | `train/loop.py` | Terminal front ends. ASCII only, and thin on purpose. |
 
 ### Interface

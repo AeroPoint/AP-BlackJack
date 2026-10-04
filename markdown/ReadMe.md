@@ -215,6 +215,32 @@ Sessions end with the leaks named:
     12 v 4         3/4 missed, 0.4180 units (10.45)
 ```
 
+#### Counting drills
+
+`bj count` drills the three things that have to be right before any index is:
+
+| mode | asks for | graded against |
+|---|---|---|
+| `running` | the running count after each batch of cards dealt from a real shoe | exact, to the half point for Wong Halves; starts at the IRC for KO and Red 7 |
+| `true` | the true count for a running count and a depth | `CountSystem.true_count` with the simulator's half-deck estimation and the system's rounding |
+| `decks` | decks remaining, to the nearest half deck, from a described discard tray | within a quarter deck, plus what the miss does to a true count near +3 |
+
+```
+$ bj count --mode decks --seed 11
+[1/10]  2.2 decks in the tray of a 6-deck shoe
+  Decks remaining? > 3.5
+  [XX] you said 3.5, the answer is 4 (2.8 s)
+       Actual: 3.80 decks.
+       At RC +11, dividing by 3.5 gives TC +3.14; the real figure is +2.89 (+0.25).
+       Truncated: +3 vs +2 -- a different true count at the table.
+```
+
+The running count carries through the shoe until the cut card, and you are told
+the right figure after each answer so one slip is graded once. Every answer is
+timed, and the session ends with accuracy and median time per mode. `--seed`
+replays a session exactly; `--rounding` overrides the system's true-count
+rounding; blank or `q` stops.
+
 ### 9. Native core
 
 The Rust accelerator in `crates/blackjack-core` is implemented and validated. It
@@ -315,6 +341,7 @@ See [environment/README.md](../environment/README.md).
 | `bj systems` | Counting-system correlations from derived effect-of-removal |
 | `bj drill` | Strategy drill, weighted by what you personally get wrong |
 | `bj play` | Free play with live grading against the real shoe |
+| `bj count` | Counting drills: running count, true-count conversion, deck estimation |
 | `bj list` | Available configuration files |
 
 ---
