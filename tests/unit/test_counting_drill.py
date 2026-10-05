@@ -588,3 +588,22 @@ def test_a_vanishing_deck_estimate_is_asked_again() -> None:
         clock=lambda: 0.0,
     )
     assert any("more than zero" in line for line in out)
+
+
+def test_ctrl_c_ends_a_count_drill_like_quit() -> None:
+    """Ctrl-C at the prompt ends the session with a report, as in bj drill."""
+
+    def interrupt(_prompt: str) -> str:
+        raise KeyboardInterrupt
+
+    out: list[str] = []
+    session = run_count_drill(
+        HI_LO,
+        mode=DrillMode.TRUE,
+        rounds=3,
+        seed=1,
+        reader=interrupt,
+        writer=out.append,
+        clock=lambda: 0.0,
+    )
+    assert session.results == []

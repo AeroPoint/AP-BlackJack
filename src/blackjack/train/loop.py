@@ -337,13 +337,14 @@ def _read_count(
 ) -> float | None:
     """Read one numeric answer, re-asking on anything unparseable.
 
-    End of input counts as quitting, so answers piped in from a file finish the
-    session with a report instead of a traceback.
+    End of input and Ctrl-C count as quitting, as they do in the strategy
+    drill, so answers piped in from a file finish the session with a report
+    instead of a traceback.
     """
     while True:
         try:
             raw = reader(prompt)
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
             return None
         try:
             value = parse_answer(raw)
