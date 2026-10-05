@@ -235,11 +235,21 @@ def test_binary_and_deeply_nested_files_are_history_errors(tmp_path: Path) -> No
 
 
 def test_save_writes_through_a_symlink(tmp_path: Path) -> None:
-    """A player file linked into a synced folder keeps its link."""
+    """A player file linked into a synced folder keeps its link.
+
+    Skipped where the host will not make a symlink. Windows reserves that to
+    administrators and to accounts with Developer Mode on (WinError 1314), so
+    this fails for an ordinary Windows contributor even though CI passes --
+    GitHub's Windows runners are elevated. Skipping on the real error rather
+    than on ``sys.platform`` keeps it running wherever it actually can.
+    """
     target = tmp_path / "synced" / "me.json"
     target.parent.mkdir()
     link = tmp_path / "me.json"
-    link.symlink_to(target)
+    try:
+        link.symlink_to(target)
+    except OSError as exc:  # pragma: no cover - host-dependent
+        pytest.skip(f"cannot create a symlink here: {exc}")
     history = PlayerHistory()
     history.absorb(H17, _session(stiff=(2, 1, 0.1)))
     save_history(history, link)
