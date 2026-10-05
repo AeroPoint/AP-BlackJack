@@ -5,9 +5,17 @@ on:
     branches: [main, master]
   pull_request:
 
+# Supersede an in-flight run only on a branch, never on main. Cancelling
+# redundant pull-request runs is the point of this block -- a force-push should
+# not leave the old commit's jobs burning minutes. But main is the branch whose
+# green badge is load-bearing, and two merges landing close together used to
+# cancel each other: the run for the superseded commit died, the run for the new
+# one died to the merge after it, and the last *successful* run on main was from
+# before either. A cancelled run is not a failing run, so nothing shouts -- the
+# head just silently has no verdict. Pushes to main now queue instead.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # The engine has no dependencies, so this job proves it: a bare Python with
