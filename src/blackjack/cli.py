@@ -195,16 +195,29 @@ def cmd_indices(args: argparse.Namespace) -> int:
         format_index_table,
         generate_indices,
         insurance_index,
+        neutral_count,
     )
 
     rules = _load_rules(args.rules)
     system = _load_system(args.system)
     print(f"{rules.name}  --  {system.name} indices")
     print("Derived from the exact solver for these rules, not copied from a book.\n")
-    ins = insurance_index(rules, system)
-    print(f"  Insurance: take at true count {ins:+.2f} or above\n")
+    # An unbalanced system's indices are running counts, IRC included, and only
+    # hold at the depth they were derived for: say both rather than "true count".
+    if system.balanced:
+        count_name, count_label = "true count", "TC"
+    else:
+        dr = args.decks_remaining if args.decks_remaining is not None else rules.decks / 2.0
+        count_name, count_label = "running count", "RC"
+        neutral = neutral_count(system, rules.decks, dr)
+        print(
+            f"Running counts, IRC included, evaluated with {dr:g} decks remaining,"
+            f" where a neutral shoe counts {neutral:+g}.\n"
+        )
+    ins = insurance_index(rules, system, decks_remaining=args.decks_remaining)
+    print(f"  Insurance: take at {count_name} {ins:+.2f} or above\n")
     indices = generate_indices(rules, system, decks_remaining=args.decks_remaining)
-    print(format_index_table(indices, args.top))
+    print(format_index_table(indices, args.top, count_label=count_label))
     return 0
 
 

@@ -183,6 +183,9 @@ def test_index_job_runs_to_completion(client) -> None:
     assert finished["progress"] == 1.0
 
     result = finished["result"]
+    # Hi-Lo is balanced: its indices are true counts, measured from zero.
+    assert result["count"] == "true"
+    assert result["neutral_count"] == 0.0
     assert result["insurance_index"] == pytest.approx(3.0, abs=0.3)
     # The solver should rediscover the famous ones.
     labels = {(i["label"], i["upcard"]) for i in result["indices"]}

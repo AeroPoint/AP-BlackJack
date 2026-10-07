@@ -345,25 +345,34 @@ def indices_job(
     decks_remaining: float | None,
 ) -> tuple[Any, str | None]:
     """Build the callable and fingerprint for an index-generation job."""
-    from blackjack.strategy.deviations import generate_indices, insurance_index
+    from blackjack.strategy.deviations import generate_indices, insurance_index, neutral_count
 
     rules = resolve_rules(rules_name)
     system = resolve_system(system_name)
     config = SessionConfig(rules=rules, system=system)
+    depth = decks_remaining if decks_remaining else rules.decks / 2.0
 
     def run(progress: Any) -> dict[str, Any]:
         # The sweep has no natural progress signal of its own, so the two phases
         # are reported as coarse steps. Better a truthful two-step bar than a
         # smooth one that is invented.
         progress(0, 2)
-        insurance = insurance_index(rules, system)
+        # Insurance is evaluated at the same depth as the other indices. For an
+        # unbalanced system that depth also fixes the neutral running count the
+        # whole search is measured from.
+        insurance = insurance_index(rules, system, decks_remaining=decks_remaining)
         progress(1, 2)
         indices = generate_indices(rules, system, decks_remaining=decks_remaining)
         progress(2, 2)
         return _envelope(
             rules={"name": rules.name, "slug": rules.slug()},
             system=system.name,
-            decks_remaining=decks_remaining if decks_remaining else rules.decks / 2.0,
+            decks_remaining=depth,
+            # What every index below is compared against. An unbalanced system's
+            # indices are running counts, IRC included, measured from the count
+            # a neutral shoe shows at this depth rather than from zero.
+            count="true" if system.balanced else "running",
+            neutral_count=neutral_count(system, rules.decks, depth),
             insurance_index=None if insurance == float("inf") else insurance,
             indices=[
                 {
