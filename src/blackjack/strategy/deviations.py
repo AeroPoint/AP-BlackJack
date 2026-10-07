@@ -143,6 +143,40 @@ def running_count_of(comp: Composition, system: CountSystem, decks: int) -> floa
     return system.initial_running_count(decks) + (full_tag_sum - remaining)
 
 
+def neutral_count(system: CountSystem, decks: int, decks_remaining: float) -> float:
+    """The count a neutral shoe shows with ``decks_remaining`` decks left.
+
+    Zero for a balanced system, at every depth: that is what balanced means. An
+    unbalanced count is a running count with the IRC included, and its tags do
+    not sum to zero, so the count a neutral shoe *expects* drifts as cards are
+    dealt -- by the mean tag per card, ``deck_sum / 52``::
+
+        neutral = IRC + (decks - decks_remaining) * deck_sum
+
+    Six-deck KO starts at -20 and gains 4 a deck, so half way through the shoe a
+    neutral count is -8. At exactly this count :func:`tilted_composition`
+    returns the full-shoe proportions, untilted, so the best play there is basic
+    strategy. Anything that treats an unbalanced count of 0 as neutral is
+    reading the chart from a shoe eight counts rich.
+    """
+    if system.balanced:
+        return 0.0
+    dealt_decks = decks - decks_remaining
+    return system.initial_running_count(decks) + dealt_decks * system.deck_sum
+
+
+def _count_scale(system: CountSystem, decks_remaining: float) -> float:
+    """Running-count units per unit of default search width.
+
+    A balanced system's widths are true counts, which mean much the same shoe at
+    any depth. An unbalanced system has no divisor, so the same tilt is
+    ``decks_remaining`` times as many running counts: one true count is three KO
+    counts with three decks left. Scaling the default widths by this keeps the
+    two kinds of system searching the same range of shoes.
+    """
+    return 1.0 if system.balanced else decks_remaining
+
+
 @dataclass(frozen=True, slots=True)
 class Index:
     """A single deviation: the count at which one cell's correct play changes."""
@@ -157,7 +191,9 @@ class Index:
     """Correct play at :attr:`index` and above."""
 
     index: float
-    """True count of the crossover, to the resolution of the search."""
+    """Count of the crossover, to the resolution of the search, in the system's
+    own units: a true count, or for an unbalanced system the running count with
+    the IRC included -- the number a KO player actually compares against."""
 
     gain_per_100: float
     """Units gained per 100 rounds by knowing this index: the EV edge, weighted
@@ -312,19 +348,37 @@ def insurance_index(
     system: CountSystem,
     *,
     decks_remaining: float | None = None,
-    lo: float = -5.0,
-    hi: float = 15.0,
+    lo: float | None = None,
+    hi: float | None = None,
     resolution: float = 0.05,
 ) -> float:
-    """True count at which insurance becomes a positive-EV bet.
+    """Count at which insurance becomes a positive-EV bet.
 
     Insurance is the cleanest index in the game: it depends on nothing but the
     density of tens, so it is the first one to trust and the first to verify a
     counting system against.
+
+    The result is in the system's own units: a true count, or for an unbalanced
+    system the running count with the IRC included. The search runs from ``lo``
+    to ``hi`` *relative to the neutral count* (:func:`neutral_count`) at the
+    evaluation depth. They default to -5 and +15 true counts, or for an
+    unbalanced system the same tilt in running counts, ``-5`` and ``+15`` times
+    the decks remaining. Searching from a fixed -5 instead would start an
+    unbalanced search at whatever shoe that running count happens to mean at
+    this depth.
+
+    Returns:
+        The lowest count, at ``resolution``, at which insurance has positive EV,
+        or ``inf`` if none in the search range does.
     """
     dr = decks_remaining if decks_remaining is not None else rules.decks / 2.0
-    tc = lo
-    while tc <= hi:
+    origin = neutral_count(system, rules.decks, dr)
+    scale = _count_scale(system, dr)
+    # For a balanced system origin is 0 and scale 1, so these are exactly the
+    # historical -5.0 and 15.0 and the sweep visits the same counts.
+    tc = origin + (-5.0 * scale if lo is None else lo)
+    top = origin + (15.0 * scale if hi is None else hi)
+    while tc <= top:
         comp = tilted_composition(system, rules.decks, dr, tc)
         if insurance_ev(remove_many(comp, [1]), rules) > 0.0:
             return round(tc, 4)
@@ -338,11 +392,11 @@ def generate_indices(
     *,
     cells: list[tuple[Category, int, int]] | None = None,
     decks_remaining: float | None = None,
-    lo: float = -8.0,
-    hi: float = 8.0,
+    lo: float | None = None,
+    hi: float | None = None,
     coarse_step: float = 1.0,
     precision: float = 0.05,
-    max_index_magnitude: float = 8.0,
+    max_index_magnitude: float | None = None,
     distribution: TrueCountDistribution | None = None,
 ) -> list[Index]:
     """Find every count at which a chart cell's correct play changes.
@@ -352,6 +406,16 @@ def generate_indices(
     bisection gets both, because the action is monotone in the count over any
     bracket that contains exactly one crossing.
 
+    Everything is measured from the *neutral* count at the evaluation depth
+    (:func:`neutral_count`): the sweep, the basic play an index departs from,
+    and the magnitude filter. For a balanced system that is zero and changes
+    nothing. For an unbalanced one it is the running count a neutral shoe shows
+    at ``decks_remaining`` -- -8 half way through six-deck KO, not 0 -- and
+    measuring from 0 instead read "basic strategy" off a shoe eight counts rich,
+    so the chart a KO index departed from was not the chart. Reported indices
+    stay in the system's own units, the running count with the IRC included,
+    because that is the number a KO player compares against at the table.
+
     Args:
         rules: Table rules.
         system: Counting system.
@@ -359,15 +423,23 @@ def generate_indices(
             classic candidate set; pass an explicit list to mine the whole chart.
         decks_remaining: Undealt decks to evaluate at. Defaults to half the shoe,
             which is roughly where counted decisions are actually made.
-        lo: Lowest true count to test.
-        hi: Highest true count to test.
-        coarse_step: Bracketing resolution.
+        lo: Lowest count to test, relative to the neutral count. Defaults to
+            -8 true counts; for an unbalanced system, the same tilt in running
+            counts, -8 times the decks remaining (-24 half way through six
+            decks, so KO sweeps running counts -32 to +16).
+        hi: Highest count to test, relative to the neutral count. Defaults to
+            +8 true counts, or +8 times the decks remaining.
+        coarse_step: Bracketing resolution, in the system's own units.
         precision: Bisection tolerance on the returned index.
-        max_index_magnitude: Discard crossovers beyond this. An index of +14 is
-            real and will never occur often enough to be worth a memory slot.
+        max_index_magnitude: Discard crossovers further than this from the
+            neutral count. An index of +14 is real and will never occur often
+            enough to be worth a memory slot. Defaults to 8 true counts, or 8
+            times the decks remaining in running counts.
         distribution: True-count frequency model used to value each index.
             Defaults to the exact-count distribution for the rules'
-            penetration: no rounding, perfect deck estimation.
+            penetration: no rounding, perfect deck estimation. For an
+            unbalanced system its bins are running counts; see
+            :func:`_index_value` for how they are priced.
 
     Returns:
         Indices sorted by value per 100 rounds, descending -- which is the order
@@ -375,6 +447,13 @@ def generate_indices(
     """
     dr = decks_remaining if decks_remaining is not None else rules.decks / 2.0
     targets = cells if cells is not None else default_candidates()
+    # For a balanced system origin is 0 and scale 1, so the defaults are exactly
+    # the historical -8, +8 and 8 and every count visited is the same float.
+    origin = neutral_count(system, rules.decks, dr)
+    scale = _count_scale(system, dr)
+    sweep_lo = origin + (-8.0 * scale if lo is None else lo)
+    sweep_hi = origin + (8.0 * scale if hi is None else hi)
+    magnitude = 8.0 * scale if max_index_magnitude is None else max_index_magnitude
     # An index is valued for a player who knows the exact count: that is the
     # value of the index itself, before the player's rounding costs any of it.
     # Binning by the player's rounding instead would value "+1.31" as though it
@@ -390,17 +469,24 @@ def generate_indices(
     out: list[Index] = []
     for category, row, upcard in targets:
         try:
-            samples = _coarse_sweep(category, row, upcard, rules, system, dr, lo, hi, coarse_step)
+            samples = _coarse_sweep(
+                category, row, upcard, rules, system, dr, sweep_lo, sweep_hi, coarse_step
+            )
+            # The chart's play is the play at the neutral count. The sweep
+            # usually lands on it; when a custom range or step steps over it,
+            # solve it directly rather than guess from the middle of the range.
+            basic = next((a for tc, a in samples if abs(tc - origin) < 1e-9), None)
+            if basic is None:
+                basic, _ = row_action_at_count(category, row, upcard, rules, system, origin, dr)
         except ValueError:
             continue
-        basic = next((a for tc, a in samples if abs(tc) < 1e-9), samples[len(samples) // 2][1])
         for (tc_lo, act_lo), (tc_hi, act_hi) in pairwise(samples):
             if act_lo is act_hi:
                 continue
             index = _bisect_crossover(
                 category, row, upcard, rules, system, dr, tc_lo, tc_hi, act_lo, precision
             )
-            if abs(index) > max_index_magnitude:
+            if abs(index - origin) > magnitude:
                 continue
             deviation = act_lo if act_hi is basic else act_hi
             value = _index_value(
@@ -508,6 +594,29 @@ def _index_value(
     minuscule EV margin -- the count sits near zero constantly -- and why an
     elegant index at +6 is usually not worth learning.
 
+    Which shoe a count bin stands for depends on the kind of count. A true count
+    means much the same shoe at any depth, so a balanced bin is priced at
+    ``dr``, the depth the index was found at. An unbalanced bin is a *running*
+    count, and that does not: six-deck KO's -20 is the neutral shoe at the top
+    and a shoe twelve counts short of tens half way down, and most rounds at -20
+    are dealt near the top. Pricing every bin at ``dr`` therefore charged the
+    early-shoe rounds at the bottom of the count to mid-shoe ten-poor shoes,
+    and made the low-side indices look two to three times their worth. So an
+    unbalanced bin is priced at its own typical depth,
+    :meth:`TrueCountDistribution.decks_remaining_of_bin` -- the same choice
+    spread analysis makes -- and the player is assumed to apply the index at the
+    same running count all shoe, which is how an unbalanced count is played.
+
+    Approximation, and its size: a bin's rounds are spread over many depths and
+    are priced at one, the harmonic-mean depth, and an edge where the deviation
+    loses at that depth is dropped rather than netted, as for a balanced count.
+    Against an explicit integral over 48 depths of the normal running-count
+    model, netting the rounds where an all-shoe running-count index fires and
+    loses, the values of six-deck H17 KO's top ten indices agree to within 11%
+    (12 v 4: 0.0033 against 0.0037 per 100 rounds; 16 v T: 0.0050 against
+    0.0047), most within 3%, in the same order. It moves an index's value, not
+    the index itself.
+
     Args:
         category: Chart table the cell belongs to.
         row: Hand total, or paired rank for pair rows.
@@ -522,22 +631,24 @@ def _index_value(
             index almost always means the opposite: the departure from the chart
             happens on the *low* side, and valuing the high side instead makes
             deep-negative indices look falsely important.
-        freq: True-count frequency model used to weight the counts.
+        freq: True-count frequency model used to weight the counts. Its bins
+            are running counts, IRC included, for an unbalanced system.
 
     Returns:
         Units per 100 rounds.
     """
     total = 0.0
-    for tc, p_count in zip(freq.counts, freq.probabilities, strict=True):
+    for i, (tc, p_count) in enumerate(zip(freq.counts, freq.probabilities, strict=True)):
         if p_count <= 0.0:
             continue
         if above and tc < index:
             continue
         if not above and tc >= index:
             continue
+        depth = dr if system.balanced else (freq.decks_remaining_of_bin(i) or dr)
         try:
-            comp = tilted_composition(system, rules.decks, dr, tc)
-            _, evs = row_action_at_count(category, row, upcard, rules, system, tc, dr, comp=comp)
+            comp = tilted_composition(system, rules.decks, depth, tc)
+            _, evs = row_action_at_count(category, row, upcard, rules, system, tc, depth, comp=comp)
         except ValueError:  # pragma: no cover - extreme counts only
             continue
         if deviation not in evs or basic not in evs:
@@ -571,8 +682,17 @@ def default_candidates() -> list[tuple[Category, int, int]]:
     return cells
 
 
-def format_index_table(indices: list[Index], limit: int | None = None) -> str:
-    """Render indices the way a counter would write them on a card."""
+def format_index_table(
+    indices: list[Index], limit: int | None = None, *, count_label: str = "TC"
+) -> str:
+    """Render indices the way a counter would write them on a card.
+
+    Args:
+        indices: Indices to show, in order.
+        limit: Show at most this many.
+        count_label: What the index is compared against: ``"TC"``, or ``"RC"``
+            for an unbalanced system, whose indices are running counts.
+    """
     rows = indices[:limit] if limit else indices
     if not rows:
         return "(no deviations found in the search range)"
@@ -584,7 +704,7 @@ def format_index_table(indices: list[Index], limit: int | None = None) -> str:
     for i in rows:
         up = rank_name(i.upcard)
         sign = "+" if i.index >= 0 else ""
-        when = f"TC {'>=' if i.applies_above else '<'} {sign}{i.index:g}"
+        when = f"{count_label} {'>=' if i.applies_above else '<'} {sign}{i.index:g}"
         lines.append(
             f"{i.label:>{width}}  {up:>2}  {i.deviation.label:<11}  {when:<12}  "
             f"{i.basic_action.label:<11}  {i.gain_per_100:9.4f}"
