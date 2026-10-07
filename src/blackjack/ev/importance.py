@@ -44,6 +44,7 @@ chart teaches.
 from __future__ import annotations
 
 import math
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -214,6 +215,20 @@ class DecisionAnalysis:
         """The 51/49 reading, e.g. ``"50.4 / 49.6"``."""
         pct = self.closeness * 100.0
         return f"{pct:.1f} / {100.0 - pct:.1f}"
+
+    def best_among(self, allowed: Collection[Action]) -> Action | None:
+        """The highest-ranked action that is in ``allowed``, or ``None``.
+
+        This is the second choice a printed chart encodes as "Rh", "Dh" or
+        "Ds": when the best play is not on offer, play the best of the rest,
+        ranked by the same EVs the best play was chosen from. Ties are broken
+        exactly as :func:`analyse` breaks them, so ``best_among(all_evs)`` is
+        always :attr:`best`.
+        """
+        for action, _ in sorted(self.all_evs.items(), key=lambda kv: kv[1], reverse=True):
+            if action in allowed:
+                return action
+        return None
 
     def explain(self, unit: float = 1.0) -> str:
         """A sentence the trainer can show after a wrong decision.

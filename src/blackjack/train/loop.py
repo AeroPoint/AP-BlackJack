@@ -284,9 +284,11 @@ def _grade_here(
     Every decision the table asks for is graded: an opening hand, a hand reached
     by hitting, and a hand off a split. The last two used to be skipped, on the
     grounds that a chart cell does not capture the split context -- but the
-    compiled strategy has always taken ``after_split`` and ``num_cards`` and
-    degraded illegal plays correctly, so the standard was expressible all along
-    and the trainer simply never asked it.
+    compiled strategy has always taken ``after_split`` and ``num_cards``, so the
+    standard was expressible all along and the trainer simply never asked it.
+    A play the hand cannot make is replaced by the chart cell's own second
+    choice ("Rs", "Dh", ...), derived from the cell's EVs by
+    :func:`~blackjack.sim.strategy.compile_strategy`.
     """
     cards = tuple(hand.cards)
     upcard = state.upcard
