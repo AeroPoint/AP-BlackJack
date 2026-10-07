@@ -343,8 +343,12 @@ the wrong-chart figure is a lower bound.
 
 `bj compare vegas6-h17 6to5-trap` shows the other extreme: 1.36 points worse
 and not one cell changes. The same comparison is served at
-`GET /api/compare/{a}/{b}`. See `src/blackjack/ev/compare.py` for the
-approximations and their sizes. `bj solve --compare B`, which predates this and
+`GET /api/compare/{a}/{b}`, and the web app's **Compare tables** screen draws
+it: both edges and the delta, the per-rule attribution with its residual, table
+B's chart with every changed square marked and priced, a sortable table of the
+changes, and both directions of the wrong-chart cost side by side, with a swap
+button (see [apps/web/README.md](../apps/web/README.md)). See
+`src/blackjack/ev/compare.py` for the approximations and their sizes. `bj solve --compare B`, which predates this and
 prints only the bare EV difference, is superseded by it.
 
 ---
@@ -353,13 +357,14 @@ prints only the bare EV difference, is superseded by it.
 
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
-- **Web front end.** The React strategy-chart screen is built — interactive grid,
-  colouring toggle, per-action pricing panel — and typechecks and builds clean,
-  but **nobody has looked at it in a browser**, so treat the layout and palette
-  as a first draft. It also still carries the single leak colouring that the
-  standalone chart page showed to be ambiguous. The spread explorer, rule-delta
-  view and trainer screens are not started, though `GET /api/compare` already
-  serves everything the rule-delta view needs. See
+- **Web front end.** Two screens are built: the strategy chart and the
+  rule-delta comparison. Both typecheck and build clean and share the chart
+  page's light and dark palette. The comparison screen has been rendered in a
+  headless browser at desktop and phone widths, but **no person has reviewed
+  either screen's design**, so treat both as a first draft. The chart screen
+  still carries the single leak colouring that the standalone chart page showed
+  to be ambiguous, and neither screen has per-rule controls yet. The spread
+  explorer and trainer screens are not started. See
   [apps/web/README.md](../apps/web/README.md).
 - **Personal leak view.** Your measured miss rates persist across sessions
   with `--player`, and the drill uses them, but `bj chart --importance` and the

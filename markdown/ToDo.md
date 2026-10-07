@@ -92,15 +92,17 @@ worth building twice.
   every action, and a rule selector that re-solves in ~31 ms. Typechecks under
   strict TypeScript and builds clean; the API contract is enforced by a test
   that parses `apps/web/src/api.ts`.
-  *Remaining:* nobody has looked at it in a browser. Layout and palette are a
-  first draft. It also still has the **single leak colouring** that the chart
+  It now shares the chart page's palette in light and dark, and sits beside the
+  compare screen under a tab bar.
+  *Remaining:* no person has reviewed it in a browser; the layout is a first
+  draft. It also still has the **single leak colouring** that the chart
   page proved unreadable — porting the two-scale split and the per-rule controls
   across is the first thing to do here, and is worth more than any new screen.
 
 - [ ] **Web UI: spread and risk explorer.** Ramp editor with live EV/hour, N0,
   SCORE and risk-of-ruin readouts, and the per-count contribution chart.
 
-- [~] **Rule-delta explorer.** Pick two rule sets, see the EV difference and
+- [x] **Rule-delta explorer.** Pick two rule sets, see the EV difference and
   *which cells changed*. This is the tool that answers "is this table worth
   playing" in one screen.
   *Engine, CLI and API done:* `ev/compare.py`, `bj compare A B`,
@@ -110,7 +112,18 @@ worth building twice.
   at table B (a play B does not offer falls back to chart A's second choice).
   `bj solve --compare` (bare EV difference only) is superseded and now points
   here.
-  *Remaining:* the web screen. Nothing on the engine side blocks it.
+  *Web screen built:* **Compare tables** in `apps/web`. Both edges and the
+  delta, the attribution as diverging bars with the residual, the wrong-chart
+  cost in both directions (it is asymmetric, so the reverse is fetched and
+  shown beside it, and a swap button turns the screen round), table B's chart
+  with each changed square marked `A→B` and shaded on the chart page's absolute
+  per-100-rounds or per-occurrence scale, a detail panel pricing every action
+  at both tables, a sortable table of the changes, and the never-played squares
+  listed apart. Rendered in headless Chromium at desktop and phone widths,
+  light and dark.
+  *Remaining:* a design review by a person; and picking tables rule by rule
+  rather than from the preset configs, which wants the same per-rule controls
+  the chart screen still needs.
 
 ---
 
@@ -303,10 +316,12 @@ The terminal versions are built. What remains is depth and a UI.
   deliberate (nothing is written to disk unasked). The leak view in
   `bj chart --importance` and the chart page still use the generic model either
   way: they do not read a player's history.
-- The React web UI has never been opened in a browser. It typechecks and builds,
-  and its data contract is tested, but the layout and palette are unreviewed —
-  and it still colours the chart by leak alone, which the standalone chart page
-  established is ambiguous.
+- No person has reviewed the React web UI's design. It typechecks and builds,
+  its data contract is tested, and the compare screen has been rendered in a
+  headless browser at desktop and phone widths in both themes, but that checks
+  that it renders, not that it reads well. The chart screen still colours the
+  chart by leak alone, which the standalone chart page established is
+  ambiguous.
   The standalone page under `scripts/chart_page/` *has* been reviewed; it is the
   only user interface in this project that has.
 - The chart page reimplements the importance model in JavaScript. It is a
