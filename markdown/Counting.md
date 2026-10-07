@@ -151,6 +151,74 @@ Indices depend on decks remaining. The default evaluates at half the shoe, which
 is roughly where counted decisions are actually made; `--decks-remaining`
 overrides it.
 
+### Indices for unbalanced systems
+
+A KO or Red 7 index is a **running count, IRC included**: the number the player
+compares against at the table, and what the simulator compares it with. But that
+count is not zero when the shoe is neutral. It starts at the IRC and drifts by
+the mean tag per card, so with `decks_remaining` left a neutral shoe counts
+
+```
+neutral = IRC + (decks − decks_remaining) · deck_sum
+```
+
+which is −8 half way through six-deck KO. Index generation therefore measures
+everything from there: the sweep (±8 true counts' worth, i.e. ±8 × decks
+remaining in running counts, so −32 to +16 for six-deck KO), the basic play an
+index departs from, and the magnitude filter. At the neutral count the tilt
+returns the full-shoe proportions exactly, so the "basic" play is the basic
+chart, for every system.
+
+An earlier version took 0 as neutral for every system. For six-deck KO that
+read basic strategy off a shoe eight counts rich: 12 of the 22 indices it found
+departed from a play that was not the chart's (16 v T was "hit below −4.09",
+basic stand), and a sweep of ±8 around 0 could not reach most low-side indices.
+
+```
+$ bj indices --rules vegas6-h17 --system ko
+Running counts, IRC included, evaluated with 3 decks remaining, where a neutral shoe counts -8.
+
+  Insurance: take at running count +1.25 or above
+
+hand  vs  deviate to   when          instead of   value/100
+  16   T  Stand        RC >= -4.09   Hit             0.0050
+  12   3  Stand        RC >= -5.56   Hit             0.0044
+  12   4  Hit          RC < -10.31   Stand           0.0033
+  11   A  Hit          RC < -10.59   Double          0.0029
+ T,T   6  Split        RC >= +6.56   Stand           0.0025
+   9   2  Double       RC >= -7.59   Hit             0.0023
+ T,T   5  Split        RC >= +8.56   Stand           0.0019
+  12   2  Stand        RC >= -0.84   Hit             0.0017
+  10   T  Double       RC >= +1.5    Hit             0.0015
+  10   A  Double       RC >= -0.56   Hit             0.0015
+```
+
+Largely the same plays as Hi-Lo's top ten, and each sits close to
+`neutral + 3 × (the Hi-Lo index)`: 16 v T at −4.09 against −4.07, 12 v 4 at
+−10.31 against −10.34. KO and Hi-Lo differ only in the seven.
+
+**Valuing them.** An index's value weights each count bin by how often it
+occurs. A true count means much the same shoe at any depth; a running count does
+not — KO's −20 is the neutral shoe at the top and a shoe twelve counts short of
+tens half way down, and most rounds at −20 are dealt near the top. So an
+unbalanced bin is priced at its own typical depth (the same choice spread
+analysis makes), and the player is assumed to apply the index at that running
+count all shoe, as KO is played. Pricing every bin at half a shoe made the
+low-side indices look two to three times their worth (12 v 4 at 0.0149 per 100
+rounds against Hi-Lo's 0.0061; now 0.0033). Pricing at one typical depth per
+bin is itself an approximation: against an explicit integral over the depths,
+the top ten KO indices' values agree to within 11% (12 v 4's integral is
+0.0037), in the same order.
+
+**Against the book.** Published KO indices are a single running count for the
+whole shoe; these are exact at one depth, so expect them to differ by how far
+the count drifts between the two. KO insurance is usually quoted at +3 in
+multi-deck. Here it is +1.25 at half a shoe, rising to +1.9 with two decks left
+and +2.55 with one, because the running count that means "a third of the cards
+are tens" climbs as the shoe is dealt: a single quoted +3 is a late-shoe figure.
+That comparison is reported, not asserted in the tests; matching a book's
+rounding is not the job.
+
 ---
 
 ## What a system is worth

@@ -181,6 +181,28 @@ The terminal versions are built. What remains is depth and a UI.
   rounding — the best integer vector at a level is not always the rounded one,
   and constraints like "leave the ace neutral" should be expressible.
 
+- [x] **Indices for unbalanced systems.** *Done.* `generate_indices` took a count
+  of 0 as neutral for every system, but an unbalanced count is a running count
+  with the IRC included, and a neutral shoe counts `IRC + dealt · deck_sum / 52`
+  (−8 half way through six-deck KO). So KO's "basic" play was read off a shoe
+  eight counts rich — 12 of the 22 indices it found departed from a play that
+  was not the chart's, 16 v T among them — and most low-side indices fell
+  outside the sweep. The sweep, the basic play, the magnitude filter and the
+  insurance search are now measured from `neutral_count`, with default widths
+  of ±8 true counts' worth (±8 × decks remaining in running counts); indices
+  are still reported as running counts. Six-deck KO now finds 73 indices, every
+  one departing from the basic chart, at about `neutral + 3 × Hi-Lo`. Each
+  running-count bin is valued at its own typical depth, not half a shoe, which
+  had made the low-side indices look two to three times their worth. Hi-Lo
+  output is byte-identical. `bj indices` labels unbalanced indices `RC`, and it
+  and the API indices job now evaluate insurance at the requested depth too.
+  See [Counting.md](Counting.md#indices-for-unbalanced-systems).
+  *Remaining:* an unbalanced index is exact at one depth and played at every
+  depth. A whole-shoe index — the running count that maximises value across the
+  depths a player meets it at, which is what published KO tables are — would
+  need the valuation to choose the threshold rather than the crossover at one
+  depth.
+
 - [ ] **Side-bet counting.** EOR per side bet exists in `sidebets/base.py`;
   needs the index generation and a dedicated side-count recommendation.
   Lucky Ladies is the obvious first target.
