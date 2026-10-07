@@ -70,16 +70,15 @@ are not bounds.
   printed chart, and it models a player who knows their chart's second choice.
   :func:`blackjack.ev.solver.strategy_ev` instead falls back to each hand's
   best action, which would quietly credit the visitor with knowledge of chart B.
-* **This is not how the simulator and trainer degrade a play.**
-  :meth:`blackjack.sim.strategy.PlayingStrategy.action` turns a surrender it
-  cannot make into a hit, and a pair-table play that is not a split into the
-  totals table's play. Take the H17 late-surrender chart to an H17 table without
-  surrender: this module plays 17 against an ace as a stand and 8,8 against an
-  ace as a split (that chart's second choices), while the compiled strategy hits
-  both. Those two cells alone are 0.021 units per 100 rounds apart, so a
-  simulation of "chart A at table B" can come out lower than this module's
-  figure. The printed-chart convention is kept here because it is what a player
-  reading a chart does.
+* **The simulator and trainer degrade a play the same way.**
+  :func:`blackjack.sim.strategy.compile_strategy` takes the second choice from
+  the same ranking (:meth:`~blackjack.ev.importance.DecisionAnalysis.best_among`),
+  and compiled with ``rules=`` set to table B it plays every opening hand as
+  this module prices it: the H17 late-surrender chart at an H17 table without
+  surrender stands on 17 against an ace and splits 8,8 against an ace. The test
+  suite holds the compiled strategy's EV at B to :attr:`RuleComparison.chart_a_at_b_ev`
+  exactly. (Before the strategy derived its fallbacks it hit both, 0.021 units
+  per 100 rounds below this module's figure.)
 * **Fall-through pairs are averaged into the totals rows.**
   :func:`blackjack.ev.solver.build_chart` includes non-split pairs in the hard
   and soft cells -- 8,8 in hard 16 -- but ``strategy_ev`` and this module play
@@ -592,13 +591,13 @@ def _fallback(cell_a: ChartCell, offered: dict[Action, float]) -> Action:
     """Chart A's best-ranked play among those ``offered``: "Rh", "Dh", "Ds".
 
     Ranked by chart A's own averaged EVs, because that ordering is what the
-    player learned. If chart A ranks none of the offered actions -- which no
+    player learned; the compiled simulator strategy degrades a play from the
+    same ranking. If chart A ranks none of the offered actions -- which no
     shipped rule set produces -- the hand's own best offered action is used.
     """
-    ranking = sorted(cell_a.analysis.all_evs.items(), key=lambda kv: kv[1], reverse=True)
-    for action, _ in ranking:
-        if action in offered:
-            return action
+    chosen = cell_a.analysis.best_among(offered)
+    if chosen is not None:
+        return chosen
     return max(offered, key=lambda a: offered[a])
 
 

@@ -54,6 +54,32 @@ worth building twice.
   solver plays composition-perfect after the first decision where the simulator
   follows the chart.
 
+- [x] **Second choices for plays a hand cannot make.** *Done.* The compiled
+  strategy the simulator, the trainer and fixed-strategy spread pricing all
+  play from turned a surrender it could not make into a hit, a double into a
+  hand-written "stand on soft 18 and 19, otherwise hit", and a pair the pair row
+  did not split into its totals row's play. So the H17 late-surrender chart hit
+  a three-card 17 against an ace, and hit 8,8 against an ace off a split.
+  `compile_strategy` now stores, per cell, the best play with surrender struck
+  out, with double struck out and with both, read from the cell's own EV
+  ranking (`DecisionAnalysis.best_among`), and plays pairs from the pair row
+  (a firing totals-row index still governs a pair that is not split). "Rh",
+  "Rs", "Dh" and "Ds" fall out of the solver rather than being written in.
+  `compile_strategy(chart, rules=table)` plays a chart at another table, and its
+  EV there equals `compare_rules`' `chart_a_at_b_ev` exactly, where it used to
+  be 0.021 units per 100 rounds lower for H17 LS to H17.
+  *No shipped simulation moved:* every play is unchanged for the shipped rule
+  sets, flat and with the top 18 Hi-Lo indices on the six-deck tables, so the
+  slow suite's simulations play every round as before, except single deck's 7,7
+  against a ten, which now stands as its pair row says (0.0004 units per 100
+  rounds). In an H17 surrender game three plays change; the module docstring of
+  `sim/strategy.py` has them with their margins.
+  Follow-up, small: an index has no second choice of its own, so a hand that
+  cannot take an index's surrender plays the chart's neutral-count second
+  choice. Past the stand index that hits where standing is better (16 v T at +2
+  to +4 by 0.005-0.019 of a bet). Indices generated with surrender struck out
+  would fix it.
+
 - [ ] **Result cache with provenance.** *Demoted — the native core removed most
   of the need.* An index sweep is 1.7 s and a spread analysis 0.5 s, so this is
   now a convenience rather than a fix. Worth doing when the UI starts re-solving
@@ -131,9 +157,10 @@ The terminal versions are built. What remains is depth and a UI.
   **Every** decision is now priced, not just the opening one: hands reached by
   hitting and hands off a split used to be played in silence. The stated reason
   was that a chart cell cannot capture the split context, but
-  `PlayingStrategy.action` always took `after_split` and `num_cards` and
-  degraded illegal plays correctly -- the standard was expressible all along and
-  the loop never asked it. `ev/player.hand_action_evs` prices any hand;
+  `PlayingStrategy.action` always took `after_split` and `num_cards` -- the
+  standard was expressible all along and the loop never asked it. (Its
+  replacement for an illegal play is now the chart cell's own second choice;
+  see the P0 item on second choices.) `ev/player.hand_action_evs` prices any hand;
   `legal_actions` is now the single authority on legality and a test asserts it
   returns exactly the keys the pricer scores.
 

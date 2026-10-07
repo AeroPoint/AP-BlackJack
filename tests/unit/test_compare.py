@@ -21,13 +21,14 @@ from fractions import Fraction
 import pytest
 
 from blackjack.actions import Action
-from blackjack.ev.compare import NON_SOLVE_FIELDS, compare_rules
+from blackjack.ev.compare import NON_SOLVE_FIELDS, RuleComparison, compare_rules
 from blackjack.ev.solver import Category, strategy_ev
 from blackjack.rules import (
     SINGLE_DECK_S17,
     SIX_FIVE_TRAP,
     VEGAS_6D_H17,
     VEGAS_6D_S17_LS,
+    DoubleRule,
     RuleSet,
     SurrenderRule,
 )
@@ -211,8 +212,9 @@ def test_second_choices_follow_the_printed_chart() -> None:
     """An H17 surrender chart at an H17 table without surrender.
 
     17 against an ace falls back to its second choice, stand, and 8,8 against an
-    ace to split -- not to hit, which is what the compiled simulator strategy
-    does. The module docstring states that divergence; this pins the behaviour.
+    ace to split -- not to hit. The compiled simulator strategy used to hit both;
+    it now degrades from the same ranking, and the test below holds the two
+    together.
     """
     result = compare_rules(H17.with_(surrender=SurrenderRule.LATE), H17)
     by_key = {c.key: c for c in result.changes}
@@ -220,6 +222,48 @@ def test_second_choices_follow_the_printed_chart() -> None:
     assert by_key[(Category.PAIR, 8, 1)].played_at_b is Action.SPLIT
     # Every surrender falls back to B's own play, so the chart costs nothing.
     assert result.wrong_chart_cost == pytest.approx(0.0, abs=1e-15)
+
+
+def _compiled_ev_at_b(result: RuleComparison) -> float:
+    """EV at table B of chart A compiled for table B, priced hand by hand."""
+    from blackjack.hand import hand_value
+    from blackjack.sim.strategy import compile_strategy
+
+    rules = result.rules_b
+    play = compile_strategy(result.result_a.chart, rules=rules)
+    total = 0.0
+    for cell in result.result_b.cell_results:
+        if cell.is_natural:
+            total += cell.probability * cell.round_ev(rules)
+            continue
+        hand_total, soft = hand_value(cell.cards)
+        pair = cell.cards[0] if cell.cards[0] == cell.cards[1] else None
+        action = play.action(hand_total, soft, cell.upcard, pair_rank=pair)
+        assert action in cell.evs, f"{cell.cards} v {cell.upcard}: {action} is not legal at B"
+        total += cell.probability * cell.round_ev(rules, action)
+    return total
+
+
+@pytest.mark.parametrize(
+    ("rules_a", "rules_b"),
+    [
+        (H17.with_(surrender=SurrenderRule.LATE), H17),
+        (S17_LS, H17),
+        (H17, H17.with_(double_rule=DoubleRule.TEN_ELEVEN, double_after_split=False)),
+        (SINGLE_DECK_S17, H17),
+    ],
+)
+def test_the_compiled_strategy_plays_chart_a_at_b_as_priced_here(rules_a, rules_b) -> None:
+    """The simulator's strategy and this module degrade an unoffered play alike.
+
+    Compiled for table B, chart A's strategy must make exactly the opening plays
+    the comparison prices -- second choices from chart A's own ranking, pairs
+    from the pair row -- so the two EVs are one number. Before the strategy
+    derived its fallbacks, the first pair here was 0.021 units per 100 rounds
+    apart.
+    """
+    result = compare_rules(rules_a, rules_b, attribute=False)
+    assert _compiled_ev_at_b(result) == pytest.approx(result.chart_a_at_b_ev, abs=1e-15)
 
 
 def test_non_solve_fields_are_real_rule_fields() -> None:
