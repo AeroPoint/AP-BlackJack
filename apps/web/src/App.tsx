@@ -1,34 +1,71 @@
 /**
- * The strategy-chart screen.
+ * The application shell: the masthead, the screen switcher and the state the
+ * screens share.
  *
- * One screen, done properly, rather than four half-built ones. Pick a rule set,
- * see the chart, toggle between the colouring everyone knows and the one that
- * shows where the money is, click a square for the full pricing.
+ * Two screens, each built properly rather than several half-built ones: the
+ * strategy chart for one table, and the rule-delta comparison between two.
  *
- * Everything numeric comes from the service. The only arithmetic here is
- * sorting and formatting.
+ * The screen lives in the URL hash (`#/chart`, `#/compare/{a}/{b}`) so a
+ * comparison can be linked to and survives a reload. A screen stays mounted
+ * once visited, hidden rather than torn down, so switching back does not lose
+ * its selection or re-solve.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, api, signedPct } from "./api";
-import type { ChartCell, Configs, Health, SolveResult } from "./api";
-import { Chart, Legend, useSelectedCell } from "./Chart";
-import type { Colouring } from "./Chart";
-import { CellDetail } from "./CellDetail";
+import { api, describeError } from "./api";
+import type { Configs, Health } from "./api";
+import { ChartScreen, DEFAULT_RULES } from "./ChartScreen";
+import { CompareScreen } from "./CompareScreen";
 
-const DEFAULT_RULES = "vegas6-h17";
+type Screen = "chart" | "compare";
+
+interface Route {
+  screen: Screen;
+  a: string;
+  b: string;
+}
+
+/** The pair worth opening on: the CLI's own example, two rules that interact. */
+const DEFAULT_PAIR = { a: DEFAULT_RULES, b: "vegas6-s17-ls" };
+
+function parseHash(hash: string): Route {
+  const parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  if (parts[0] === "compare") {
+    return {
+      screen: "compare",
+      a: parts[1] || DEFAULT_PAIR.a,
+      b: parts[2] || DEFAULT_PAIR.b,
+    };
+  }
+  return { screen: "chart", ...DEFAULT_PAIR };
+}
+
+function compareHash(a: string, b: string): string {
+  return `#/compare/${encodeURIComponent(a)}/${encodeURIComponent(b)}`;
+}
 
 export default function App() {
   const [configs, setConfigs] = useState<Configs | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
-  const [rules, setRules] = useState(DEFAULT_RULES);
-  const [result, setResult] = useState<SolveResult | null>(null);
-  const [colouring, setColouring] = useState<Colouring>("action");
-  const [unit, setUnit] = useState(25);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [unit, setUnit] = useState(25);
 
-  const [selected, setSelected] = useSelectedCell(result?.chart ?? []);
+  const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
+  // The last pair compared, kept when the chart screen is showing so the nav
+  // link returns to it rather than to the default.
+  const [pair, setPair] = useState(() => ({ a: route.a, b: route.b }));
+  const [visited, setVisited] = useState<Set<Screen>>(() => new Set([route.screen]));
+
+  useEffect(() => {
+    const onHash = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  useEffect(() => {
+    if (route.screen === "compare") setPair({ a: route.a, b: route.b });
+    setVisited((v) => (v.has(route.screen) ? v : new Set(v).add(route.screen)));
+  }, [route]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -39,33 +76,17 @@ export default function App() {
       })
       .catch((e: unknown) => {
         if (controller.signal.aborted) return;
-        setError(describe(e));
+        setError(describeError(e));
       });
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    api
-      .solve(rules, controller.signal)
-      .then(setResult)
-      .catch((e: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(describe(e));
-        setResult(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [rules]);
-
-  const handleSelect = useCallback(
-    (cell: ChartCell) => setSelected(cell),
-    [setSelected],
-  );
+  // Picking rules replaces the history entry rather than adding one: the back
+  // button should leave the screen, not step through every select change.
+  const choosePair = useCallback((a: string, b: string) => {
+    window.history.replaceState(null, "", compareHash(a, b));
+    setRoute({ screen: "compare", a, b });
+  }, []);
 
   return (
     <div className="app">
@@ -78,48 +99,17 @@ export default function App() {
             </p>
           )}
         </div>
-
-        <div className="controls">
-          <label>
-            Rules
-            <select value={rules} onChange={(e) => setRules(e.target.value)}>
-              {(configs?.rules ?? [rules]).map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Unit
-            <input
-              type="number"
-              min={1}
-              step={5}
-              value={unit}
-              onChange={(e) => setUnit(Math.max(1, Number(e.target.value) || 1))}
-            />
-          </label>
-
-          <fieldset className="toggle">
-            <legend className="sr-only">Chart colouring</legend>
-            <button
-              type="button"
-              className={colouring === "action" ? "on" : ""}
-              onClick={() => setColouring("action")}
-            >
-              By action
-            </button>
-            <button
-              type="button"
-              className={colouring === "leak" ? "on" : ""}
-              onClick={() => setColouring("leak")}
-            >
-              By what it costs
-            </button>
-          </fieldset>
-        </div>
+        <nav aria-label="Screens" className="tabs">
+          <a href="#/chart" aria-current={route.screen === "chart" ? "page" : undefined}>
+            Strategy chart
+          </a>
+          <a
+            href={compareHash(pair.a, pair.b)}
+            aria-current={route.screen === "compare" ? "page" : undefined}
+          >
+            Compare tables
+          </a>
+        </nav>
       </header>
 
       {error && (
@@ -128,56 +118,23 @@ export default function App() {
         </p>
       )}
 
-      {result && (
-        <p className="summary">
-          <strong>{result.rules.name}</strong>
-          <span>
-            house edge <b>{result.house_edge.toFixed(4)}%</b>
-          </span>
-          <span>
-            basic strategy {signedPct(result.basic_strategy_ev)}
-          </span>
-          <span>
-            insurance {signedPct(result.insurance_ev, 2)}
-          </span>
-          <span className="muted">
-            solved in {(result.elapsed_seconds * 1000).toFixed(0)} ms
-          </span>
-        </p>
+      {visited.has("chart") && (
+        <div hidden={route.screen !== "chart"}>
+          <ChartScreen configs={configs} unit={unit} onUnit={setUnit} />
+        </div>
       )}
-
-      <main className={loading ? "loading" : ""}>
-        {result ? (
-          <>
-            <div className="chart-area">
-              <Legend colouring={colouring} />
-              <Chart
-                cells={result.chart}
-                colouring={colouring}
-                selected={selected}
-                onSelect={handleSelect}
-              />
-            </div>
-            <CellDetail cell={selected} unit={unit} />
-          </>
-        ) : (
-          !error && <p className="muted">Solving…</p>
-        )}
-      </main>
+      {visited.has("compare") && (
+        <div hidden={route.screen !== "compare"}>
+          <CompareScreen
+            configs={configs}
+            a={pair.a}
+            b={pair.b}
+            onPair={choosePair}
+            unit={unit}
+            onUnit={setUnit}
+          />
+        </div>
+      )}
     </div>
   );
-}
-
-function describe(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.status === 404
-      ? `Not found: ${error.message}`
-      : `Service error ${error.status}: ${error.message}`;
-  }
-  if (error instanceof Error) {
-    // The overwhelmingly likely cause during development, and worth saying
-    // rather than showing a bare "Failed to fetch".
-    return `${error.message}. Is the API running on :8000? (uv run uvicorn apps.api.app.main:app --port 8000)`;
-  }
-  return String(error);
 }

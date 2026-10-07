@@ -217,3 +217,34 @@ export function pct(value: number, digits = 2): string {
 export function signedPct(value: number, digits = 4): string {
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
 }
+
+/** A difference in fraction-of-a-bet units as percentage points: `+0.2855 pts`. */
+export function points(value: number, digits = 4): string {
+  const abs = Math.abs(value * 100).toFixed(digits);
+  // A delta that rounds to nothing is shown as nothing, not as "-0.0000",
+  // which reads like a finding.
+  if (Number(abs) === 0) return `${abs} pts`;
+  return `${value > 0 ? "+" : "−"}${abs} pts`;
+}
+
+/** Units at the player's chosen unit size, in the chart page's style. */
+export function money(units: number, unit: number): string {
+  const value = units * unit;
+  const abs = Math.abs(value);
+  return `${value < 0 ? "−" : ""}${abs.toFixed(abs < 10 ? 2 : 0)}`;
+}
+
+/** A fetch or service failure, said in a way a person can act on. */
+export function describeError(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.status === 404
+      ? `Not found: ${error.message}`
+      : `Service error ${error.status}: ${error.message}`;
+  }
+  if (error instanceof Error) {
+    // The overwhelmingly likely cause during development, and worth saying
+    // rather than showing a bare "Failed to fetch".
+    return `${error.message}. Is the API running on :8000? (uv run uvicorn apps.api.app.main:app --port 8000)`;
+  }
+  return String(error);
+}

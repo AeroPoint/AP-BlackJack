@@ -19,12 +19,14 @@ import { useMemo, useState } from "react";
 import type { Action, Category, ChartCell } from "./api";
 import { UPCARDS, rankName } from "./api";
 
-const ACTION_COLOURS: Record<Action, string> = {
-  S: "#e8a0a0",
-  H: "#a8d5b5",
-  D: "#e8c88a",
-  P: "#9dc3e6",
-  R: "#c9c9c9",
+// Theme tokens from styles.css, shared with the standalone chart page so the
+// two read as one product and both follow the light/dark setting.
+export const ACTION_COLOURS: Record<Action, string> = {
+  S: "var(--act-s)",
+  H: "var(--act-h)",
+  D: "var(--act-d)",
+  P: "var(--act-p)",
+  R: "var(--act-r)",
 };
 
 export type Colouring = "action" | "leak";
@@ -36,7 +38,7 @@ interface Props {
   onSelect: (cell: ChartCell) => void;
 }
 
-const CATEGORY_TITLES: Record<Category, string> = {
+export const CATEGORY_TITLES: Record<Category, string> = {
   hard: "Hard totals",
   soft: "Soft totals",
   pair: "Pairs",
@@ -56,25 +58,30 @@ function leakColour(value: number, worst: number): string {
   return `hsl(8, 72%, ${light}%)`;
 }
 
+/** Cells by category, then row, then upcard: the shape every grid draws from. */
+export function groupCells(
+  cells: ChartCell[],
+): Record<Category, Map<number, Map<number, ChartCell>>> {
+  const groups: Record<Category, Map<number, Map<number, ChartCell>>> = {
+    hard: new Map(),
+    soft: new Map(),
+    pair: new Map(),
+  };
+  for (const cell of cells) {
+    const rows = groups[cell.category];
+    if (!rows.has(cell.row)) rows.set(cell.row, new Map());
+    rows.get(cell.row)!.set(cell.upcard, cell);
+  }
+  return groups;
+}
+
 export function Chart({ cells, colouring, selected, onSelect }: Props) {
   const worstLeak = useMemo(
     () => cells.reduce((m, c) => Math.max(m, c.expected_leak_per_100), 0),
     [cells],
   );
 
-  const byCategory = useMemo(() => {
-    const groups: Record<Category, Map<number, Map<number, ChartCell>>> = {
-      hard: new Map(),
-      soft: new Map(),
-      pair: new Map(),
-    };
-    for (const cell of cells) {
-      const rows = groups[cell.category];
-      if (!rows.has(cell.row)) rows.set(cell.row, new Map());
-      rows.get(cell.row)!.set(cell.upcard, cell);
-    }
-    return groups;
-  }, [cells]);
+  const byCategory = useMemo(() => groupCells(cells), [cells]);
 
   return (
     <div className="charts">
@@ -84,60 +91,69 @@ export function Chart({ cells, colouring, selected, onSelect }: Props) {
         return (
           <section key={category} className="chart">
             <h3>{CATEGORY_TITLES[category]}</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <span className="sr-only">Player hand</span>
-                  </th>
-                  {UPCARDS.map((up) => (
-                    <th key={up} scope="col">
-                      {rankName(up)}
+            <div className="scroller">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">
+                      <span className="sr-only">Player hand</span>
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const cellsInRow = byCategory[category].get(row)!;
-                  const label = cellsInRow.values().next().value?.label ?? row;
-                  return (
-                    <tr key={row}>
-                      <th scope="row">{label}</th>
-                      {UPCARDS.map((up) => {
-                        const cell = cellsInRow.get(up);
-                        if (!cell) return <td key={up} className="empty" />;
-                        const isSelected =
-                          selected?.category === cell.category &&
-                          selected?.row === cell.row &&
-                          selected?.upcard === cell.upcard;
-                        const background =
-                          colouring === "action"
-                            ? ACTION_COLOURS[cell.action]
-                            : leakColour(cell.expected_leak_per_100, worstLeak);
-                        return (
-                          <td key={up} className={isSelected ? "selected" : ""}>
-                            <button
-                              type="button"
-                              style={{ background }}
-                              onClick={() => onSelect(cell)}
-                              title={`${cell.label} vs ${rankName(up)} — ${
-                                cell.action
-                              }, margin ${cell.margin.toFixed(4)}`}
-                              aria-label={`${cell.label} against ${rankName(up)}: ${
-                                cell.action
-                              }`}
-                            >
-                              {cell.action}
-                            </button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    {UPCARDS.map((up) => (
+                      <th key={up} scope="col">
+                        {rankName(up)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const cellsInRow = byCategory[category].get(row)!;
+                    const label = cellsInRow.values().next().value?.label ?? row;
+                    return (
+                      <tr key={row}>
+                        <th scope="row">{label}</th>
+                        {UPCARDS.map((up) => {
+                          const cell = cellsInRow.get(up);
+                          if (!cell) return <td key={up} className="empty" />;
+                          const isSelected =
+                            selected?.category === cell.category &&
+                            selected?.row === cell.row &&
+                            selected?.upcard === cell.upcard;
+                          const background =
+                            colouring === "action"
+                              ? ACTION_COLOURS[cell.action]
+                              : leakColour(cell.expected_leak_per_100, worstLeak);
+                          return (
+                            <td key={up} className={isSelected ? "selected" : ""}>
+                              <button
+                                type="button"
+                                aria-pressed={isSelected}
+                                // The leak ramp is light in both themes, so its
+                                // ink stays dark rather than following --act-text.
+                                style={
+                                  colouring === "action"
+                                    ? { background }
+                                    : { background, color: "#17181a" }
+                                }
+                                onClick={() => onSelect(cell)}
+                                title={`${cell.label} vs ${rankName(up)} — ${
+                                  cell.action
+                                }, margin ${cell.margin.toFixed(4)}`}
+                                aria-label={`${cell.label} against ${rankName(up)}: ${
+                                  cell.action
+                                }`}
+                              >
+                                {cell.action}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </section>
         );
       })}
