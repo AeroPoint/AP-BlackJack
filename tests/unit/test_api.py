@@ -410,3 +410,64 @@ def test_schema_rejects_an_unknown_kind(client) -> None:
     response = client.get("/api/schema/paytables")
     assert response.status_code == 404
     assert "unknown config kind" in response.json()["detail"]
+
+
+# --- Solving an arbitrary rule set --------------------------------------------
+
+
+def test_posting_rules_solves_them(client) -> None:
+    """A form offers every rule separately, so the API must take them that way."""
+    named = client.get("/api/solve/vegas6-h17").json()
+    body = {
+        "decks": 6,
+        "hit_soft_17": True,
+        "double_after_split": True,
+        "resplit_aces": True,
+        "double_rule": "any2",
+        "surrender": "none",
+        "hole_card": "peek",
+        "blackjack_payout": "3/2",
+    }
+    custom = client.post("/api/solve", json=body).json()
+    assert custom["house_edge"] == pytest.approx(named["house_edge"], abs=1e-12)
+
+    # And one rule changed, which a preset list could never express.
+    off = client.post("/api/solve", json={**body, "double_after_split": False}).json()
+    assert off["house_edge"] > custom["house_edge"], "no DAS must cost the player"
+
+
+def test_posting_rules_accepts_an_empty_body(client) -> None:
+    """Every field has a default, so {} is the default game, not an error."""
+    assert client.post("/api/solve", json={}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"nope": 1},
+        {"decks": "six"},
+        {"decks": True},
+        {"decks": 6.5},
+        {"hit_soft_17": "yes"},
+        {"penetration": "deep"},
+        {"surrender": "sometimes"},
+    ],
+    ids=["unknown", "word", "bool-as-int", "fractional", "quoted-bool", "word-float", "bad-enum"],
+)
+def test_posting_bad_rules_is_a_client_error(client, body) -> None:
+    """Not a 500.
+
+    Before the loader coerced scalars, ``decks: "six"`` reached the solver and
+    died inside ``full_shoe`` as ``'sixsixsixsix'`` -- a traceback and a 500 for
+    what is plainly a bad request. A form posting JSON hits this far more easily
+    than a YAML file does.
+    """
+    response = client.post("/api/solve", json=body)
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]
+
+
+@pytest.mark.parametrize("value", ["6", 6.0])
+def test_a_form_may_send_a_number_as_text(client, value) -> None:
+    """HTML form fields are strings; "6" plainly means six."""
+    assert client.post("/api/solve", json={"decks": value}).status_code == 200

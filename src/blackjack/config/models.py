@@ -22,7 +22,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field, fields, is_dataclass
 from fractions import Fraction
-from typing import Any
+from typing import Any, get_type_hints
 
 from blackjack.counting import SYSTEMS, CountSystem, TrueCountRounding
 from blackjack.rules import DoubleRule, HoleCardRule, RuleSet, SurrenderRule
@@ -182,6 +182,65 @@ def _coerce_rule_field(key: str, value: Any) -> Any:
         return SurrenderRule(value)
     if key == "hole_card":
         return HoleCardRule(value)
+    return _coerce_scalar(value, _RULE_HINTS[key])
+
+
+#: Resolved annotations for :class:`~blackjack.rules.RuleSet`, so scalar
+#: coercion is driven by the declared types rather than a hand-kept list.
+_RULE_HINTS: dict[str, Any] = get_type_hints(RuleSet)
+
+
+def _coerce_scalar(value: Any, annotation: Any) -> Any:
+    """Coerce a plain scalar to its declared type, strictly.
+
+    Everything that is not a fraction or an enum used to be passed through
+    untouched, so ``decks: six`` reached the solver and failed inside
+    :func:`~blackjack.shoe.full_shoe` as ``'sixsixsixsix'`` -- a ``ValueError``
+    from the arithmetic rather than a config error naming the field. A form
+    posting JSON hits that even more easily than a YAML file does.
+
+    Strings that parse are accepted, because an HTML form sends every field as
+    text and ``"6"`` plainly means six. A string that does not parse is an
+    error, and a bool is never an integer: ``decks: true`` is a typo, not one
+    deck.
+
+    Raises:
+        ValueError: if the value cannot be coerced. The caller turns that into
+            a :class:`ConfigError` naming the field.
+    """
+    text = str(annotation)
+    optional = "None" in text
+    if value is None:
+        if optional:
+            return None
+        raise ValueError("must not be null")
+
+    if "bool" in text:
+        if isinstance(value, bool):
+            return value
+        raise ValueError(f"expected true or false, got {value!r}")
+    if "int" in text:
+        if isinstance(value, bool):
+            raise ValueError(f"expected a whole number, got {value!r}")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        if isinstance(value, str):
+            return int(value.strip())
+        raise ValueError(f"expected a whole number, got {value!r}")
+    if "float" in text:
+        if isinstance(value, bool):
+            raise ValueError(f"expected a number, got {value!r}")
+        if isinstance(value, int | float):
+            return float(value)
+        if isinstance(value, str):
+            return float(value.strip())
+        raise ValueError(f"expected a number, got {value!r}")
+    if "str" in text:
+        if isinstance(value, str):
+            return value
+        raise ValueError(f"expected text, got {value!r}")
     return value
 
 

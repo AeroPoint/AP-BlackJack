@@ -28,11 +28,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, ParamSpec, TypeVar
 
 try:
     from fastapi import FastAPI, HTTPException, Query
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.staticfiles import StaticFiles
 except ImportError as exc:  # pragma: no cover - the api extra is optional
     raise SystemExit("The API needs the 'api' extra: uv sync --extra api") from exc
 
@@ -144,6 +146,18 @@ def solve(rules_name: str) -> dict[str, Any]:
     return _handle(service.solve, rules_name)
 
 
+@app.post("/api/solve")
+def solve_custom(rules: dict[str, Any]) -> dict[str, Any]:
+    """Solve an arbitrary rule set, so a form can offer every rule separately.
+
+    The body is the fields a ``configs/rules/*.yaml`` file would hold; omit any
+    and it takes its default. ``GET /api/schema/rules`` describes exactly what
+    may be sent, and the engine's own loader validates it, so the two cannot
+    disagree about what is valid.
+    """
+    return _handle(service.solve_custom, rules)
+
+
 @app.get("/api/compare/{rules_a}/{rules_b}")
 def compare(rules_a: str, rules_b: str, attribute: bool = Query(True)) -> dict[str, Any]:
     """Compare two rule sets: edge deltas and every chart cell that changes."""
@@ -228,3 +242,20 @@ def cancel_job(job_id: str) -> dict[str, Any]:
     job = runner.get(job_id)
     assert job is not None
     return {"cancelled": cancelled, **job.to_dict(include_result=False)}
+
+
+# --- The built front end ------------------------------------------------------
+#
+# Mounted last, and only if a build exists. A mount at "/" catches every path
+# the API routes above did not, so registering it earlier would shadow them.
+# Serving the front end from the same origin as the API is what lets
+# `apps/web/src/api.ts` use a relative "/api" base and need no CORS allowance at
+# all -- the dev-server origins above are for `npm run dev`, nothing else.
+#
+# The build is not in the repository (`apps/web/dist/` is gitignored), so this is
+# absent in a fresh checkout until someone runs `npm run build`. That is a
+# packaging question, not a routing one: see markdown/ToDo.md.
+_WEB_DIST = Path(__file__).resolve().parents[3] / "apps" / "web" / "dist"
+
+if _WEB_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=_WEB_DIST, html=True), name="web")

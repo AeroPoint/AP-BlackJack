@@ -91,10 +91,42 @@ def _envelope(**extra: Any) -> dict[str, Any]:
 
 
 def solve(rules_name: str) -> dict[str, Any]:
-    """Solve a rule set: headline numbers plus the full annotated chart."""
+    """Solve a named rule set: headline numbers plus the full annotated chart."""
+    return _solved(resolve_rules(rules_name))
+
+
+def solve_custom(fields: dict[str, Any]) -> dict[str, Any]:
+    """Solve an arbitrary rule set, given as the fields a config file would hold.
+
+    The point of the settings schema is that a form can offer every rule
+    individually -- decks, soft 17, DAS, resplit aces -- rather than a list of
+    presets somebody chose in advance. That needs an endpoint that takes the
+    rules themselves, which is what this is. A full solve is about 31 ms on the
+    native core, so there is nothing to pre-compute and nothing to cache yet.
+
+    Args:
+        fields: Rule fields, named and shaped as ``configs/rules/*.yaml`` writes
+            them. Anything omitted takes its default.
+
+    Raises:
+        BadRequestError: if a field is unknown or a value cannot be coerced.
+            The engine's own loader decides that, so a form built on
+            ``/api/schema/rules`` and this endpoint cannot disagree about what
+            is valid.
+    """
+    from blackjack.config.models import ConfigError, rules_from_dict
+
+    try:
+        rules = rules_from_dict(dict(fields))
+    except ConfigError as exc:
+        raise BadRequestError(str(exc)) from exc
+    return _solved(rules)
+
+
+def _solved(rules: RuleSet) -> dict[str, Any]:
+    """The solve envelope, shared by the named and the custom entry points."""
     from blackjack.ev.solver import solve as solve_rules
 
-    rules = resolve_rules(rules_name)
     result = solve_rules(rules)
     return _envelope(
         rules={"name": rules.name, "slug": rules.slug(), "decks": rules.decks},
