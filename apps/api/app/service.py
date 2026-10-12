@@ -345,25 +345,21 @@ def indices_job(
     decks_remaining: float | None,
 ) -> tuple[Any, str | None]:
     """Build the callable and fingerprint for an index-generation job."""
-    from blackjack.strategy.deviations import generate_indices, insurance_index
+    from blackjack import operations
 
     rules = resolve_rules(rules_name)
     system = resolve_system(system_name)
     config = SessionConfig(rules=rules, system=system)
 
     def run(progress: Any) -> dict[str, Any]:
-        # The sweep has no natural progress signal of its own, so the two phases
-        # are reported as coarse steps. Better a truthful two-step bar than a
-        # smooth one that is invented.
-        progress(0, 2)
-        insurance = insurance_index(rules, system)
-        progress(1, 2)
-        indices = generate_indices(rules, system, decks_remaining=decks_remaining)
-        progress(2, 2)
+        outcome = operations.indices(
+            rules, system, decks_remaining=decks_remaining, progress=progress
+        )
+        insurance = outcome.insurance_index
         return _envelope(
             rules={"name": rules.name, "slug": rules.slug()},
             system=system.name,
-            decks_remaining=decks_remaining if decks_remaining else rules.decks / 2.0,
+            decks_remaining=outcome.decks_remaining,
             insurance_index=None if insurance == float("inf") else insurance,
             indices=[
                 {
@@ -378,7 +374,7 @@ def indices_job(
                     "value_per_100": i.gain_per_100,
                     "description": i.describe(),
                 }
-                for i in indices
+                for i in outcome.indices
             ],
         )
 
@@ -387,17 +383,14 @@ def indices_job(
 
 def spread_job(profile_name: str) -> tuple[Any, str | None]:
     """Build the callable and fingerprint for a bet-spread analysis."""
-    from blackjack.bankroll.counts import true_count_distribution
-    from blackjack.bankroll.spread import bin_edge_curve, evaluate_ramp
+    from blackjack import operations
 
     profile = resolve_profile(profile_name)
     rules, system = profile.rules, profile.system
-    ramp = _ramp_from(profile)
 
     def run(progress: Any) -> dict[str, Any]:
-        distribution = true_count_distribution(system, rules.decks, rules.penetration)
-        curve = bin_edge_curve(rules, system, distribution, progress=progress)
-        result = evaluate_ramp(ramp, rules, system, edges=curve, distribution=distribution)
+        outcome = operations.spread(profile, progress=progress)
+        result, ramp = outcome.result, outcome.ramp
         metrics = result.metrics(
             unit=profile.unit,
             bankroll=profile.bankroll,
@@ -445,52 +438,24 @@ def simulate_job(profile_name: str, rounds: int | None, seed: int | None) -> tup
     Raises:
         BadRequestError: if the round count is outside a sane range.
     """
-    from blackjack.ev.solver import solve as solve_rules
-    from blackjack.sim.engine import SimConfig, simulate
-    from blackjack.sim.strategy import compile_strategy
-    from blackjack.strategy.deviations import generate_indices, insurance_index
+    from blackjack import operations
 
     profile = resolve_profile(profile_name)
     total = rounds if rounds is not None else profile.rounds
     if not 1_000 <= total <= 100_000_000:
         raise BadRequestError("rounds must be between 1,000 and 100,000,000")
 
-    rules, system = profile.rules, profile.system
+    rules = profile.rules
 
     def run(progress: Any) -> dict[str, Any]:
-        progress(0, 3)
-        solved = solve_rules(rules)
-        progress(1, 3)
-
-        indices = None
-        insurance = float("inf")
-        if profile.use_indices:
-            indices = generate_indices(rules, system)[: profile.index_count]
-            if profile.take_insurance:
-                insurance = insurance_index(rules, system)
-        progress(2, 3)
-
-        strategy = compile_strategy(
-            solved.chart,
-            name="counted" if indices else "basic",
-            indices=indices,
-            insurance_index=insurance,
-        )
-        result = simulate(
-            SimConfig(
-                rules=rules,
-                strategy=strategy,
-                system=system,
-                ramp=_ramp_from(profile),
-                rounds=total,
-                seed=seed if seed is not None else profile.seed,
-                unit=profile.unit,
-                rounds_per_hour=profile.rounds_per_hour,
-                deck_estimation=profile.deck_estimation,
-                rounding=profile.rounding,
-            )
-        )
-        progress(3, 3)
+        # Two coarse steps, not three: working out what to play is one unit of
+        # work in `operations`, and splitting it again here would mean two
+        # copies of the stage boundaries.
+        progress(0, 2)
+        play = operations.strategy_for_profile(profile)
+        progress(1, 2)
+        result = operations.simulate(profile, rounds=total, seed=seed, strategy=play).result
+        progress(2, 2)
         return _envelope(
             profile=profile.name,
             fingerprint=profile.fingerprint(),
@@ -511,21 +476,3 @@ def simulate_job(profile_name: str, rounds: int | None, seed: int | None) -> tup
         )
 
     return run, profile.fingerprint()
-
-
-def _ramp_from(profile: SessionConfig) -> Any:
-    """Build a live :class:`BetRamp` from a profile's ramp config."""
-    from blackjack.sim.engine import BetRamp
-
-    return BetRamp(
-        thresholds=profile.ramp.thresholds,
-        units=profile.ramp.units,
-        wong_out_below=(
-            profile.ramp.wong_out_below
-            if profile.ramp.wong_out_below is not None
-            else float("-inf")
-        ),
-        max_bet_units=(
-            profile.ramp.max_bet_units if profile.ramp.max_bet_units is not None else float("inf")
-        ),
-    )

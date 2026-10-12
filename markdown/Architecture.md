@@ -81,6 +81,7 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | `apps/api/app/service.py` | Every operation, as JSON-safe data. Imports no web framework. |
 | `apps/api/app/jobs.py` | In-process thread pool with progress and cooperative cancel. |
 | `apps/api/app/main.py` | Routes. Request parsing and error mapping, nothing else. |
+| `operations.py` | One orchestration per capability. Every front end calls these. |
 | `scripts/chart_page/` | Bakes the solver's output into one standalone HTML file. |
 
 The chart page is presentation with no service behind it at all: every rule

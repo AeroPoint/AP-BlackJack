@@ -202,6 +202,7 @@ src/blackjack/       the engine (stdlib only)
   train/     grading, drill selection, free-play loop, table state machine,
              counting drills
   config/    config models and loading
+  operations.py  one orchestration per capability; every front end calls it
   cli.py     argparse CLI
 crates/blackjack-core/   Rust accelerator (PyO3); ev/native.py is the bridge
 apps/api/                FastAPI service

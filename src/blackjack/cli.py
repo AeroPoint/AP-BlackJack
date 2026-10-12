@@ -191,46 +191,34 @@ def _print_importance(result: SolveResult, top: int) -> None:
 
 def cmd_indices(args: argparse.Namespace) -> int:
     """Generate deviation indices from the solver."""
-    from blackjack.strategy.deviations import (
-        format_index_table,
-        generate_indices,
-        insurance_index,
-    )
+    from blackjack import operations
+    from blackjack.strategy.deviations import format_index_table
 
     rules = _load_rules(args.rules)
     system = _load_system(args.system)
     print(f"{rules.name}  --  {system.name} indices")
     print("Derived from the exact solver for these rules, not copied from a book.\n")
-    ins = insurance_index(rules, system)
-    print(f"  Insurance: take at true count {ins:+.2f} or above\n")
-    indices = generate_indices(rules, system, decks_remaining=args.decks_remaining)
-    print(format_index_table(indices, args.top))
+    outcome = operations.indices(rules, system, decks_remaining=args.decks_remaining)
+    print(f"  Insurance: take at true count {outcome.insurance_index:+.2f} or above\n")
+    print(format_index_table(outcome.indices, args.top))
     return 0
 
 
 def cmd_spread(args: argparse.Namespace) -> int:
     """Evaluate a bet spread analytically."""
-    from blackjack.bankroll.counts import true_count_distribution
-    from blackjack.bankroll.spread import bin_edge_curve, default_bin_range, evaluate_ramp
+    from blackjack import operations
     from blackjack.config.loader import load_profile
-    from blackjack.sim.engine import BetRamp
 
     profile = load_profile(args.profile)
     rules, system = profile.rules, profile.system
-    ramp = BetRamp(
-        thresholds=profile.ramp.thresholds,
-        units=profile.ramp.units,
-        wong_out_below=(
-            profile.ramp.wong_out_below
-            if profile.ramp.wong_out_below is not None
-            else float("-inf")
-        ),
-    )
-    distribution = true_count_distribution(system, rules.decks, rules.penetration)
-    lo, hi = default_bin_range(system, distribution)
-    print(f"Solving the exact edge and variance in each count bin from {lo:+g} to {hi:+g}...")
-    curve = bin_edge_curve(rules, system, distribution)
-    result = evaluate_ramp(ramp, rules, system, edges=curve, distribution=distribution)
+    # Said before the work, not after: on the pure-Python backend this is
+    # minutes, and the bin range is not worth rebuilding the distribution for
+    # just to name it up front.
+    print("Solving the exact edge and variance in every true-count bin...")
+    outcome = operations.spread(profile)
+    lo, hi = outcome.bin_range
+    result = outcome.result
+    print(f"  bins {lo:+g} to {hi:+g}")
 
     print(f"\n{rules.name} | {system.name} | spread {profile.ramp.name}")
     print(f"config fingerprint: {profile.fingerprint()}\n")
@@ -248,56 +236,19 @@ def cmd_spread(args: argparse.Namespace) -> int:
 
 def cmd_sim(args: argparse.Namespace) -> int:
     """Run a Monte Carlo simulation."""
+    from blackjack import operations
     from blackjack.config.loader import load_profile
-    from blackjack.ev.solver import solve
-    from blackjack.sim.engine import BetRamp, SimConfig, simulate
-    from blackjack.sim.strategy import compile_strategy
-    from blackjack.strategy.deviations import generate_indices, insurance_index
 
     profile = load_profile(args.profile)
-    rules, system = profile.rules, profile.system
+    rules = profile.rules
     print(f"Solving basic strategy for {rules.name}...")
-    solved = solve(rules)
-
-    indices = None
-    ins = float("inf")
     if profile.use_indices:
         print("Generating deviation indices...")
-        indices = generate_indices(rules, system)[: profile.index_count]
-        if profile.take_insurance:
-            ins = insurance_index(rules, system)
+    play = operations.strategy_for_profile(profile)
 
-    strategy = compile_strategy(
-        solved.chart,
-        name="counted" if indices else "basic",
-        indices=indices,
-        insurance_index=ins,
-    )
-    ramp = BetRamp(
-        thresholds=profile.ramp.thresholds,
-        units=profile.ramp.units,
-        wong_out_below=(
-            profile.ramp.wong_out_below
-            if profile.ramp.wong_out_below is not None
-            else float("-inf")
-        ),
-    )
-    rounds = args.rounds or profile.rounds
+    rounds = args.rounds if args.rounds is not None else profile.rounds
     print(f"Simulating {rounds:,} rounds...\n")
-    result = simulate(
-        SimConfig(
-            rules=rules,
-            strategy=strategy,
-            system=system,
-            ramp=ramp,
-            rounds=rounds,
-            seed=args.seed or profile.seed,
-            unit=profile.unit,
-            rounds_per_hour=profile.rounds_per_hour,
-            deck_estimation=profile.deck_estimation,
-            rounding=profile.rounding,
-        )
-    )
+    result = operations.simulate(profile, rounds=args.rounds, seed=args.seed, strategy=play).result
     print(result.summary())
     print(f"\n  config fingerprint: {profile.fingerprint()}\n")
     from blackjack.bankroll.metrics import BankrollMetrics

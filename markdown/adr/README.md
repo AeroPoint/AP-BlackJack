@@ -16,3 +16,4 @@ Format: context, decision, consequences, alternatives rejected.
 | [0006](ADR-0006-python-reference-implementation.md) | Python stays the correctness oracle | accepted |
 | [0007](ADR-0007-pyo3-version-and-wheels.md) | PyO3 0.29 with abi3 wheels; records ADR-0001's outcome | accepted |
 | [0008](ADR-0008-project-licence.md) | AGPL-3.0-only plus a commercial licence | accepted |
+| [0009](ADR-0009-operations-layer.md) | One orchestration layer, inside the engine | accepted |
