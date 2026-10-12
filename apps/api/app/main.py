@@ -112,6 +112,32 @@ def configs() -> dict[str, list[str]]:
     }
 
 
+@app.get("/api/schema")
+def schemas() -> dict[str, Any]:
+    """Every setting, described well enough for a form to render it.
+
+    Field names, types and defaults are derived from the engine's own config
+    classes, so this cannot fall behind them. The bounds are advice for a form,
+    not validation the engine performs -- see
+    :mod:`blackjack.config.schema`.
+    """
+    from blackjack.config.schema import to_plain
+
+    return {"schemas": to_plain()}
+
+
+@app.get("/api/schema/{kind}")
+def schema_for(kind: str) -> dict[str, Any]:
+    """One config kind's settings."""
+    from blackjack.config.schema import schema, to_plain
+
+    try:
+        described: dict[str, Any] = to_plain(schema(kind))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    return described
+
+
 @app.get("/api/solve/{rules_name}")
 def solve(rules_name: str) -> dict[str, Any]:
     """Solve a rule set: headline numbers plus the full annotated chart."""

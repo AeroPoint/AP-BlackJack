@@ -82,6 +82,7 @@ test. See [ADR-0004](adr/ADR-0004-dependency-free-core.md).
 | `apps/api/app/jobs.py` | In-process thread pool with progress and cooperative cancel. |
 | `apps/api/app/main.py` | Routes. Request parsing and error mapping, nothing else. |
 | `operations.py` | One orchestration per capability. Every front end calls these. |
+| `config/schema.py` | Every setting described for a form: type, default, choices, meaning. |
 | `scripts/chart_page/` | Bakes the solver's output into one standalone HTML file. |
 
 The chart page is presentation with no service behind it at all: every rule

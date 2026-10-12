@@ -403,6 +403,7 @@ See [environment/README.md](../environment/README.md).
 | `bj play` | Free play with live grading against the real shoe |
 | `bj count` | Counting drills: running count, true-count conversion, deck estimation |
 | `bj list` | Available configuration files |
+| `bj schema` | Every setting described: type, default, allowed values, meaning |
 
 ---
 

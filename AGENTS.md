@@ -201,7 +201,7 @@ src/blackjack/       the engine (stdlib only)
   sidebets/  paytable-driven side-bet analysis
   train/     grading, drill selection, free-play loop, table state machine,
              counting drills
-  config/    config models and loading
+  config/    config models, loading, and the settings schema a form renders
   operations.py  one orchestration per capability; every front end calls it
   cli.py     argparse CLI
 crates/blackjack-core/   Rust accelerator (PyO3); ev/native.py is the bridge

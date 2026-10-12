@@ -92,6 +92,7 @@ Windows, macOS and Linux.
 | `bj drill` | Strategy drill weighted by what you personally get wrong |
 | `bj play` | Free play with live grading against the real shoe |
 | `bj list` | Available rule, counting, spread and profile configs |
+| `bj schema` | Every setting described, for a person or for a form (`--json`) |
 
 Rules, counting systems, spreads and paytables are YAML files in
 [configs/](configs/), so adding a new game is usually a config file, not code.

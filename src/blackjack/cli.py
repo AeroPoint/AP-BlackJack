@@ -477,6 +477,44 @@ def cmd_systems(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_schema(args: argparse.Namespace) -> int:
+    """Describe the settings, for a person or for a form."""
+    import json
+
+    from blackjack.config.schema import SCHEMAS, schema, to_plain
+
+    if args.json:
+        print(json.dumps(to_plain(schema(args.kind) if args.kind else None), indent=2))
+        return 0
+
+    kinds = [args.kind] if args.kind else sorted(SCHEMAS)
+    for kind in kinds:
+        config = schema(kind)
+        print()
+        print(f"{config.title}  ({kind})")
+        print(f"  {config.description}")
+        print()
+        for field in config.fields:
+            bits = [field.kind]
+            if field.choices:
+                bits.append("|".join(field.choices))
+            if field.minimum is not None or field.maximum is not None:
+                lo = "" if field.minimum is None else f"{field.minimum:g}"
+                hi = "" if field.maximum is None else f"{field.maximum:g}"
+                bits.append(f"{lo}..{hi}{' ' + field.unit if field.unit else ''}")
+            elif field.unit:
+                bits.append(field.unit)
+            if field.references:
+                bits.append(f"-> {field.references}")
+            shown = "required" if field.required else repr(field.default)
+            flag = "" if field.affects_ev else "  (no effect on EV)"
+            print(f"  {field.name:20s} {shown:28s} [{', '.join(bits)}]{flag}")
+            print(f"  {'':20s} {field.help}")
+    print()
+    print("Bounds are what a sensible form should offer, not limits the engine enforces.")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     """List the available configuration files."""
     from blackjack.config.loader import list_available
@@ -663,6 +701,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("list", help="list available configuration files")
     p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("schema", help="describe every setting, for a person or a form")
+    p.add_argument(
+        "kind",
+        nargs="?",
+        choices=["rules", "counting", "spread", "profile"],
+        help="one config kind; omit for all of them",
+    )
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(func=cmd_schema)
 
     return parser
 

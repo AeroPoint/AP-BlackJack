@@ -381,3 +381,32 @@ def test_response_shape_matches_the_typescript_types(client, compare_solve_cache
     ):
         extra = set(payload) - declared(interface)
         assert not extra, f"{interface}: the server sends undeclared {sorted(extra)}"
+
+
+# --- Settings schema ----------------------------------------------------------
+
+
+def test_schema_lists_every_config_kind(client) -> None:
+    body = client.get("/api/schema").json()
+    assert sorted(body["schemas"]) == ["counting", "profile", "rules", "spread"]
+
+
+def test_schema_for_one_kind_describes_its_fields(client) -> None:
+    """A form needs the type, the default and a sentence, for every field."""
+    body = client.get("/api/schema/rules").json()
+    assert body["kind"] == "rules"
+    assert body["title"]
+    by_name = {f["name"]: f for f in body["fields"]}
+    assert by_name["decks"]["kind"] == "integer"
+    assert by_name["decks"]["default"] == 6
+    assert by_name["surrender"]["choices"] == ["none", "late", "early"]
+    # Fractions cross the wire as the string a config file would write.
+    assert by_name["blackjack_payout"]["default"] == "3/2"
+    for field in body["fields"]:
+        assert field["help"], field["name"]
+
+
+def test_schema_rejects_an_unknown_kind(client) -> None:
+    response = client.get("/api/schema/paytables")
+    assert response.status_code == 404
+    assert "unknown config kind" in response.json()["detail"]
