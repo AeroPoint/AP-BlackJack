@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Blackjack Solver</title>
+
+<!-- The faces the chart page uses. They load from a CDN when there is one and
+     fall back to the system stack when there is not, which is the normal case
+     for a local app with no internet. Self-hosting them is the follow-up; see
+     markdown/ToDo.md. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <p class="eyebrow">Blackjack solver</p>
+        <h1>Where the money leaks</h1>
+      </div>
+    </div>
+    <div class="masthead-tools">
+      <nav class="tabs" id="tabs" aria-label="Screens">
+        <button type="button" data-screen="chart" aria-current="page">Chart</button>
+        <button type="button" data-screen="compare">Compare</button>
+        <button type="button" data-screen="spread">Spread</button>
+        <button type="button" data-screen="settings">Settings</button>
+      </nav>
+      <button type="button" class="theme" id="theme" aria-label="Switch theme">
+        <span data-theme-label>Auto</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+
+  <!-- ================= Chart ================= -->
+  <section class="screen" data-screen="chart">
+    <p class="standfirst">
+      A basic-strategy chart tells you what to do and nothing about what it
+      costs to be wrong. Set the table in front of you below &mdash; every rule
+      is its own control &mdash; and the chart is solved for exactly that game.
+    </p>
+
+    <form class="controls" id="rule-controls" aria-label="Table rules"></form>
+
+    <details class="advanced" id="advanced">
+      <summary>Advanced rules</summary>
+      <div class="controls" id="advanced-controls"></div>
+    </details>
+
+    <dl class="summary" id="summary"></dl>
+    <p class="ruleline mono" id="ruleline"></p>
+
+    <div class="cols">
+      <div>
+        <section class="block">
+          <div class="block-head">
+            <h2>The chart</h2>
+            <div class="seg" role="group" aria-label="Chart colouring" id="modes">
+              <button type="button" data-mode="action" aria-pressed="true">The play</button>
+              <button type="button" data-mode="cost" aria-pressed="false">Cost if wrong</button>
+              <button type="button" data-mode="leak" aria-pressed="false">Where it leaks</button>
+            </div>
+          </div>
+          <p class="lede" id="chart-lede"></p>
+          <div class="legend" id="legend"></div>
+          <div class="tables" id="tables"></div>
+        </section>
+
+        <section class="block">
+          <h2>Study order</h2>
+          <p class="lede">
+            Ranked by what a typical learner actually loses here per hundred
+            rounds &mdash; the cost of the mistake, times how often the hand
+            arrives, times how likely anyone is to misplay it. Not the order any
+            printed chart teaches.
+          </p>
+          <ol class="leaks" id="leaks"></ol>
+        </section>
+      </div>
+
+      <aside class="detail closed" id="detail" aria-live="polite">
+        <!-- The handle is the dismiss on a phone, where this is a fixed sheet
+             over the chart. On a wide screen it is a sticky column that should
+             always be there, so both the handle and the close button are
+             hidden and the "closed" class does nothing. -->
+        <button type="button" class="grab" id="sheet-grab" aria-label="Close details"></button>
+        <button type="button" class="sheet-close" id="sheet-close" aria-label="Close details">
+          Close
+        </button>
+        <div id="detail-body"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ================= Compare ================= -->
+  <section class="screen" data-screen="compare" hidden>
+    <p class="standfirst">
+      Two tables, side by side: what the difference is worth, which rule it came
+      from, and every square that changes.
+    </p>
+    <div class="controls" id="compare-controls"></div>
+    <div id="compare-body"></div>
+  </section>
+
+  <!-- ================= Spread ================= -->
+  <section class="screen" data-screen="spread" hidden>
+    <p class="standfirst">
+      What a bet ramp is worth, and what it risks. Edit the ramp below &mdash; a
+      bet for each true count &mdash; and every count bin is solved exactly,
+      variance included, because a ramp bets most where variance is highest.
+    </p>
+    <div class="controls" id="spread-controls"></div>
+    <div id="spread-body"></div>
+  </section>
+
+  <!-- ================= Settings ================= -->
+  <section class="screen" data-screen="settings" hidden>
+    <p class="standfirst">
+      Every setting the engine reads, described by the engine itself.
+    </p>
+    <div id="settings-body"></div>
+  </section>
+
+  <footer>
+    <p id="provenance" class="mono"></p>
+    <p>
+      Every number here is computed by the solver in this project, not copied
+      from a table. Expected values are exact and composition-dependent: the
+      cards you hold are cards the dealer cannot draw.
+    </p>
+  </footer>
+</main>
+
+<script src="./app.js"></script>
+</body>
+</html>

@@ -328,10 +328,23 @@ def session_from_dict(data: dict[str, Any]) -> SessionConfig:
     if unknown:
         raise ConfigError(f"unknown session fields: {sorted(unknown)}")
 
+    # A named section is resolved by `loader.load_profile` before it gets here,
+    # because only the loader knows where the config folders are. Anything that
+    # is still a name at this point cannot be resolved, and quietly using the
+    # defaults instead would hand back a different game than the caller asked
+    # for -- the wrong numbers, with nothing to show they were wrong.
+    for key, value in (("rules", rules_data), ("ramp", ramp_data)):
+        if not isinstance(value, dict):
+            raise ConfigError(
+                f"session field {key!r} must be inlined here, not named ({value!r}); "
+                f"load the profile through blackjack.config.loader.load_profile, "
+                f"which resolves a name against configs/, or inline the section"
+            )
+
     return SessionConfig(
-        rules=rules_from_dict(rules_data) if isinstance(rules_data, dict) else RuleSet(),
+        rules=rules_from_dict(rules_data),
         system=system_from_dict(system_data),
-        ramp=ramp_from_dict(ramp_data) if isinstance(ramp_data, dict) else RampConfig(),
+        ramp=ramp_from_dict(ramp_data),
         schema_version=version,
         **payload,
     )

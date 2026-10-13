@@ -471,3 +471,65 @@ def test_posting_bad_rules_is_a_client_error(client, body) -> None:
 def test_a_form_may_send_a_number_as_text(client, value) -> None:
     """HTML form fields are strings; "6" plainly means six."""
     assert client.post("/api/solve", json={"decks": value}).status_code == 200
+
+
+# --- Spread overrides ---------------------------------------------------------
+
+
+def _finished(client, job_id, limit=600):
+    """Poll a job to completion."""
+    for _ in range(limit):
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in ("succeeded", "failed", "cancelled"):
+            return job
+        time.sleep(0.05)
+    raise AssertionError(f"job {job_id} never finished")
+
+
+def test_a_spread_can_be_tuned_without_resending_a_profile(client) -> None:
+    """Editing the ramp is the whole point of a spread screen."""
+    base = _finished(client, client.post("/api/jobs/spread?profile=default").json()["id"])
+    assert base["status"] == "succeeded", base
+
+    steeper = _finished(
+        client,
+        client.post(
+            "/api/jobs/spread?profile=default",
+            json={"ramp": {"thresholds": [-99, 1, 2, 3, 4, 5], "units": [1, 2, 4, 8, 12, 16]}},
+        ).json()["id"],
+    )
+    assert steeper["status"] == "succeeded", steeper
+    assert steeper["result"]["ev_per_round_units"] > base["result"]["ev_per_round_units"], (
+        "a steeper ramp must earn more per round"
+    )
+    assert steeper["fingerprint"] != base["fingerprint"], "a tuned ramp is not the stored profile"
+
+
+def test_overriding_the_unit_leaves_the_edge_alone(client) -> None:
+    """Money scales; the edge in units does not."""
+    base = _finished(client, client.post("/api/jobs/spread?profile=default").json()["id"])
+    richer = _finished(
+        client,
+        client.post("/api/jobs/spread?profile=default", json={"unit": 100}).json()["id"],
+    )
+    assert richer["result"]["ev_per_round_units"] == pytest.approx(
+        base["result"]["ev_per_round_units"]
+    )
+    assert richer["result"]["metrics"]["ev_per_hour"] > base["result"]["metrics"]["ev_per_hour"]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"rules": {"decks": 2}},
+        {"system": "ko"},
+        {"nonsense": 1},
+        {"ramp": {"thresholds": [1, 2], "units": [1, 2, 3]}},
+        {"ramp": "1-12"},
+    ],
+    ids=["rules", "system", "unknown", "mismatched-ramp", "named-ramp"],
+)
+def test_an_override_the_screen_may_not_set_is_refused(client, overrides) -> None:
+    """Changing the game is a different request, not an override."""
+    response = client.post("/api/jobs/spread?profile=default", json=overrides)
+    assert response.status_code == 400, response.text

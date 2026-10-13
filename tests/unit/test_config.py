@@ -293,3 +293,32 @@ def test_hole_card_rules_parse() -> None:
     assert not rules_from_dict({"hole_card": "enhc"}).peeks
     assert rules_from_dict({"hole_card": "obo"}).peeks
     assert rules_from_dict({"double_rule": "10-11"}).double_rule is DoubleRule.TEN_ELEVEN
+
+
+def test_a_named_section_is_refused_rather_than_defaulted() -> None:
+    """Silently using the defaults would hand back a different game.
+
+    A profile file may *name* its sections -- ``rules: vegas6-h17`` -- and
+    ``loader.load_profile`` resolves those against ``configs/`` before building
+    the config, because only the loader knows where those folders are. Anything
+    still a name by the time it reaches ``session_from_dict`` cannot be
+    resolved, and this used to fall through to ``RuleSet()``: the default game,
+    the wrong numbers, and nothing to show they were wrong.
+    """
+    from blackjack.config.models import ConfigError, session_from_dict
+
+    for field in ("rules", "ramp"):
+        with pytest.raises(ConfigError, match="must be inlined here"):
+            session_from_dict({field: "vegas6-h17"})
+
+    # The counting system is different: a name is its documented form.
+    assert session_from_dict({"system": "ko"}).system.name.startswith("Knock-Out")
+
+
+def test_named_sections_still_load_through_the_loader() -> None:
+    """The shipped profiles name their sections, so this is the real path."""
+    from blackjack.config.loader import load_profile
+
+    serious = load_profile("serious-6d")
+    assert serious.rules.slug().startswith("6d_s17"), "named rules must resolve"
+    assert serious.ramp.units[-1] == 12.0, "named ramp must resolve"

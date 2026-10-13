@@ -197,9 +197,18 @@ def start_indices(
 
 
 @app.post("/api/jobs/spread", status_code=202)
-def start_spread(profile: str = Query("default")) -> dict[str, Any]:
-    """Start a bet-spread analysis with exact per-count variance."""
-    fn, fingerprint = _handle(service.spread_job, profile)
+def start_spread(
+    profile: str = Query("default"),
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Start a bet-spread analysis with exact per-count variance.
+
+    The optional body overrides fields of the named profile -- the ramp, the
+    unit, the bankroll, the pace -- so a screen can tune a spread without
+    reassembling a whole profile. The job's fingerprint reflects the override,
+    not the stored profile.
+    """
+    fn, fingerprint = _handle(service.spread_job, profile, overrides)
     return runner.submit("spread", fn, fingerprint=fingerprint).to_dict()
 
 
@@ -255,7 +264,15 @@ def cancel_job(job_id: str) -> dict[str, Any]:
 # The build is not in the repository (`apps/web/dist/` is gitignored), so this is
 # absent in a fresh checkout until someone runs `npm run build`. That is a
 # packaging question, not a routing one: see markdown/ToDo.md.
-_WEB_DIST = Path(__file__).resolve().parents[3] / "apps" / "web" / "dist"
+_APPS = Path(__file__).resolve().parents[2]
 
-if _WEB_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=_WEB_DIST, html=True), name="web")
+#: Where to look for a front end, best first. `apps/ui/` is the local app: plain
+#: files, no build step, no Node, and it ships inside the wheel. `apps/web/dist/`
+#: is the older React screen, kept reachable while it still exists but needing a
+#: build that a fresh checkout will not have.
+_UI_CANDIDATES = (_APPS / "ui", _APPS / "web" / "dist")
+
+for _candidate in _UI_CANDIDATES:
+    if (_candidate / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=_candidate, html=True), name="ui")
+        break

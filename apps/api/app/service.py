@@ -413,11 +413,62 @@ def indices_job(
     return run, config.fingerprint()
 
 
-def spread_job(profile_name: str) -> tuple[Any, str | None]:
-    """Build the callable and fingerprint for a bet-spread analysis."""
+#: Profile fields a spread screen may override on top of a named profile. The
+#: ramp is the point of the exercise; the rest are what turn units into money.
+SPREAD_OVERRIDES = frozenset({"ramp", "unit", "bankroll", "rounds_per_hour"})
+
+
+def apply_overrides(profile: SessionConfig, overrides: dict[str, Any] | None) -> SessionConfig:
+    """Return ``profile`` with ``overrides`` applied, validated by the engine.
+
+    A caller tuning a bet ramp does not want to resend an entire profile, and
+    should not have to assemble one correctly to ask a question about one field.
+    Only the fields in :data:`SPREAD_OVERRIDES` may be set this way: the rules
+    and the counting system change what game is being analysed, which is a
+    different request, not an override.
+
+    Raises:
+        BadRequestError: on an unknown field or a value the engine rejects.
+    """
+    import dataclasses
+
+    from blackjack.config.models import ConfigError, ramp_from_dict
+
+    if not overrides:
+        return profile
+    unknown = set(overrides) - SPREAD_OVERRIDES
+    if unknown:
+        raise BadRequestError(
+            f"cannot override {sorted(unknown)} here; allowed: {sorted(SPREAD_OVERRIDES)}"
+        )
+    changes: dict[str, Any] = {}
+    try:
+        for key, value in overrides.items():
+            if key == "ramp":
+                if not isinstance(value, dict):
+                    raise BadRequestError("ramp must be an object of thresholds and units")
+                changes["ramp"] = ramp_from_dict(value)
+            else:
+                changes[key] = float(value) if key != "rounds_per_hour" else int(value)
+    except (ConfigError, TypeError, ValueError) as exc:
+        raise BadRequestError(str(exc)) from exc
+    return dataclasses.replace(profile, **changes)
+
+
+def spread_job(
+    profile_name: str, overrides: dict[str, Any] | None = None
+) -> tuple[Any, str | None]:
+    """Build the callable and fingerprint for a bet-spread analysis.
+
+    Args:
+        profile_name: The named profile to start from.
+        overrides: Fields to change on it; see :func:`apply_overrides`. The
+            fingerprint is taken after they are applied, so a tuned ramp does
+            not report the stored profile's provenance.
+    """
     from blackjack import operations
 
-    profile = resolve_profile(profile_name)
+    profile = apply_overrides(resolve_profile(profile_name), overrides)
     rules, system = profile.rules, profile.system
 
     def run(progress: Any) -> dict[str, Any]:
