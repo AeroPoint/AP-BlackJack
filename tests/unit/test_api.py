@@ -533,3 +533,48 @@ def test_an_override_the_screen_may_not_set_is_refused(client, overrides) -> Non
     """Changing the game is a different request, not an override."""
     response = client.post("/api/jobs/spread?profile=default", json=overrides)
     assert response.status_code == 400, response.text
+
+
+# --- Reading a stored config --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("kind", "name"),
+    [
+        ("rules", "sd-s17"),
+        ("counting", "ko"),
+        ("spread", "1-12"),
+        ("spreads", "1-12"),
+        ("profile", "default"),
+        ("profiles", "serious-6d"),
+    ],
+)
+def test_a_stored_config_reports_what_it_holds(client, kind, name) -> None:
+    """The companion to the schema: that says what the fields are, this what
+    they contain. Both the folder spelling and the schema spelling work, because
+    ``configs/`` is plural and the schema is singular and a caller should not
+    have to know which."""
+    body = client.get(f"/api/configs/{kind}/{name}").json()
+    assert body["name"] == name
+    assert body["kind"] in {"rules", "counting", "spread", "profile"}
+    assert body["values"], "a config with no fields is not a config"
+
+
+def test_the_reported_fields_are_the_ones_the_schema_describes(client) -> None:
+    """A settings screen joins these two by field name, so they must agree."""
+    for kind, name in (("rules", "sd-s17"), ("counting", "ko"), ("spread", "1-12")):
+        described = {f["name"] for f in client.get(f"/api/schema/{kind}").json()["fields"]}
+        held = set(client.get(f"/api/configs/{kind}/{name}").json()["values"])
+        assert held <= described, (
+            f"{kind} holds fields the schema does not describe: {sorted(held - described)}"
+        )
+
+
+def test_an_unknown_config_is_a_404_naming_the_alternatives(client) -> None:
+    response = client.get("/api/configs/rules/nope")
+    assert response.status_code == 404
+    assert "available" in response.json()["detail"], "the loader's list is more use than ours"
+
+
+def test_an_unknown_kind_is_a_400(client) -> None:
+    assert client.get("/api/configs/bogus/x").status_code == 400

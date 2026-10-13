@@ -114,6 +114,17 @@ def configs() -> dict[str, list[str]]:
     }
 
 
+@app.get("/api/configs/{kind}/{name}")
+def config_values(kind: str, name: str) -> dict[str, Any]:
+    """What one stored config currently holds.
+
+    The companion to ``/api/schema/{kind}``: that says what the fields are,
+    this says what they contain. Read-only -- writing a config is a separate
+    decision, and this API has no authentication.
+    """
+    return _handle(service.config_values, kind, name)
+
+
 @app.get("/api/schema")
 def schemas() -> dict[str, Any]:
     """Every setting, described well enough for a form to render it.

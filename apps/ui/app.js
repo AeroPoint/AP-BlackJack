@@ -1016,19 +1016,144 @@ async function initSpread() {
   await runSpread();
 }
 
-const TODO = {
-  settings: [
-    "Settings",
-    "<code>GET /api/schema</code> already describes every field of every config kind, and " +
-      "<code>save_profile</code> can write one back. This screen is the form over them.",
-  ],
-};
+// --- Settings screen ---------------------------------------------------------
+//
+// Read-only, deliberately. The schema says what each field is; /api/configs/
+// says what it currently holds. Writing a config back is a separate decision:
+// this API has no authentication, and on a tailnet that is not only your own
+// device, an endpoint that creates files is a bigger thing than one that reads
+// them. The settings you actually change while working -- the rules, the ramp --
+// are live on the Chart and Spread screens.
 
-function renderTodo(name) {
-  const [title, body] = TODO[name];
-  $(`${name}-body`).replaceChildren(
-    el("div", { className: "placeholder" }, [el("h3", { textContent: title }), el("p", { innerHTML: body })])
+const KIND_TO_CONFIGS = { rules: "rules", counting: "counting", spread: "spreads", profile: "profiles" };
+const settings = { schemas: null, configs: null, kind: "rules", name: null };
+
+function renderSettingsControls() {
+  const names = settings.configs[KIND_TO_CONFIGS[settings.kind]] || [];
+  if (!names.includes(settings.name)) settings.name = names[0] ?? null;
+
+  const kinds = el("div", { className: "seg", role: "group" });
+  kinds.setAttribute("aria-label", "Config kind");
+  for (const kind of Object.keys(KIND_TO_CONFIGS)) {
+    const button = el("button", { type: "button", textContent: settings.schemas[kind].title });
+    button.setAttribute("aria-pressed", String(kind === settings.kind));
+    button.addEventListener("click", () => {
+      settings.kind = kind;
+      settings.name = null;
+      renderSettingsControls();
+      loadSettings();
+    });
+    kinds.append(button);
+  }
+
+  $("settings-controls").replaceChildren(
+    el("label", { className: "field wide" }, [el("span", { textContent: "Kind" }), kinds]),
+    names.length
+      ? picker("Stored as", settings.name, names, (v) => {
+          settings.name = v;
+          renderSettingsControls();
+          loadSettings();
+        })
+      : el("label", { className: "field" }, [
+          el("span", { textContent: "Stored as" }),
+          el("small", { textContent: "none on disk" }),
+        ])
   );
+}
+
+async function loadSettings() {
+  if (!settings.name) {
+    $("settings-body").replaceChildren();
+    return;
+  }
+  status($("settings-body"), `Reading ${settings.kind}/${settings.name}…`);
+  try {
+    const data = await api(`/configs/${settings.kind}/${encodeURIComponent(settings.name)}`);
+    renderSettings(settings.schemas[settings.kind], data.values);
+  } catch (error) {
+    status($("settings-body"), `Could not read it: ${error.message}`, true);
+  }
+}
+
+function renderSettings(schema, values) {
+  const out = document.createDocumentFragment();
+  out.append(el("p", { className: "lede", textContent: schema.description }));
+
+  const table = el("table", { className: "settings" });
+  const body = el("tbody");
+  for (const field of schema.fields) {
+    const value = values[field.name];
+    const shown =
+      value === null || value === undefined
+        ? "—"
+        : Array.isArray(value)
+          ? value.join(", ")
+          : typeof value === "object"
+            ? value.name || "(inlined)"
+            : String(value);
+    const changed = value !== undefined && String(value) !== String(field.default);
+
+    const meta = [field.kind];
+    if (field.choices.length) meta.push(field.choices.join(" | "));
+    if (field.minimum !== null || field.maximum !== null) {
+      const lo = field.minimum === null ? "" : field.minimum;
+      const hi = field.maximum === null ? "" : field.maximum;
+      meta.push(`${lo}–${hi}${field.unit ? " " + field.unit : ""}`);
+    } else if (field.unit) {
+      meta.push(field.unit);
+    }
+    if (!field.affects_ev) meta.push("no effect on EV");
+
+    body.append(
+      el("tr", {}, [
+        el("td", {}, [
+          el("div", { className: "mono setting-name", textContent: field.name }),
+          el("div", { className: "leakwhy", textContent: field.help }),
+          el("div", { className: "setting-meta", textContent: meta.join(" · ") }),
+        ]),
+        el("td", { className: "n" }, [
+          el("div", { className: `setting-value${changed ? " changed" : ""}`, textContent: shown }),
+          el("div", {
+            className: "setting-meta",
+            textContent: changed ? `default ${field.default}` : "default",
+          }),
+        ]),
+      ])
+    );
+  }
+  table.append(body);
+  out.append(el("div", { className: "scroller" }, [table]));
+  out.append(
+    el("p", {
+      className: "lede",
+      textContent:
+        "Bounds are what a sensible form should offer, not limits the engine enforces: it " +
+        "validates structure and otherwise computes whatever it is given. Values that differ " +
+        "from the default are marked.",
+    })
+  );
+  out.append(
+    el("div", { className: "placeholder" }, [
+      el("h3", { textContent: "Editing these" }),
+      el("p", {
+        innerHTML:
+          "Read-only for now. The rules and the ramp are editable live on the " +
+          "<b>Chart</b> and <b>Spread</b> screens, which is where you want them while " +
+          "working. Saving a named config back to disk needs a write endpoint, and this API " +
+          "has no authentication &mdash; worth deciding deliberately rather than by default.",
+      }),
+    ])
+  );
+  $("settings-body").replaceChildren(out);
+}
+
+async function initSettings() {
+  if (settings.schemas) return;
+  const [schemas, configs] = await Promise.all([api("/schema"), api("/configs")]);
+  settings.schemas = schemas.schemas;
+  settings.configs = configs;
+  renderSettingsControls();
+  await loadSettings();
 }
 
 // --- Boot --------------------------------------------------------------------
@@ -1049,8 +1174,10 @@ function showScreen(name) {
     initSpread().catch((error) => {
       status($("spread-body"), `Could not load the config list: ${error.message}`, true);
     });
-  } else if (name in TODO) {
-    renderTodo(name);
+  } else if (name === "settings") {
+    initSettings().catch((error) => {
+      status($("settings-body"), `Could not read the settings: ${error.message}`, true);
+    });
   }
 }
 

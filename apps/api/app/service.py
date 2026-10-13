@@ -90,6 +90,59 @@ def _envelope(**extra: Any) -> dict[str, Any]:
 # --- Fast operations, safe inside a request -----------------------------------
 
 
+#: The ``configs/`` folder names, against the schema's names for the same
+#: things. The folders are plural, the schema is singular, and rather than make
+#: a caller guess, both spellings are accepted and reported together.
+CONFIG_KINDS: dict[str, str] = {
+    "rules": "rules",
+    "counting": "counting",
+    "spreads": "spread",
+    "spread": "spread",
+    "profiles": "profile",
+    "profile": "profile",
+}
+
+
+def config_values(kind: str, name: str) -> dict[str, Any]:
+    """One stored config, resolved and serialised as plain data.
+
+    What a settings screen needs beside the schema: the schema says what the
+    fields *are*, this says what they currently hold. Read-only on purpose --
+    writing a config is a separate decision, and this API has no
+    authentication.
+
+    Raises:
+        BadRequestError: on an unknown kind.
+        NotFoundError: if no config of that kind has that name.
+    """
+    from blackjack.config.loader import load_profile, resolve_rules, resolve_system
+    from blackjack.config.models import ConfigError, session_to_dict, to_plain
+
+    if kind not in CONFIG_KINDS:
+        raise BadRequestError(
+            f"unknown config kind {kind!r}; expected one of {sorted(set(CONFIG_KINDS))}"
+        )
+    schema_kind = CONFIG_KINDS[kind]
+    try:
+        if schema_kind == "rules":
+            values = to_plain(resolve_rules(name))
+        elif schema_kind == "counting":
+            values = to_plain(resolve_system(name))
+        elif schema_kind == "profile":
+            values = session_to_dict(load_profile(name))
+        else:
+            # A ramp has no resolve_* fallback: it is only ever read from the
+            # spreads folder, so a missing PyYAML is a missing ramp.
+            from blackjack.config.loader import load_ramp
+
+            values = to_plain(load_ramp(name))
+    except (FileNotFoundError, KeyError, ConfigError) as exc:
+        # The loader's message names what is available, which is more use to a
+        # caller than anything this layer could invent, so it is passed through.
+        raise NotFoundError(str(exc) or f"no {kind} config named {name!r}") from exc
+    return {"kind": schema_kind, "name": name, "values": values}
+
+
 def solve(rules_name: str) -> dict[str, Any]:
     """Solve a named rule set: headline numbers plus the full annotated chart."""
     return _solved(resolve_rules(rules_name))
