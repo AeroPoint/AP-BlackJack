@@ -473,6 +473,120 @@ def test_a_form_may_send_a_number_as_text(client, value) -> None:
     assert client.post("/api/solve", json={"decks": value}).status_code == 200
 
 
+# --- Comparing two arbitrary rule sets ----------------------------------------
+
+
+def test_posting_two_rule_sets_compares_them(client) -> None:
+    """The Compare screen offers every rule, so it cannot name a stored file.
+
+    Pinned against the named-pair endpoint: the two routes must be two ways of
+    asking the same question, not two implementations of it.
+    """
+    named = client.get("/api/compare/vegas6-h17/vegas6-s17-ls").json()
+    a = client.get("/api/configs/rules/vegas6-h17").json()["values"]
+    b = client.get("/api/configs/rules/vegas6-s17-ls").json()["values"]
+    posted = client.post("/api/compare", json={"a": a, "b": b}).json()
+
+    assert posted["basic_strategy_ev_delta"] == pytest.approx(
+        named["basic_strategy_ev_delta"], abs=1e-12
+    )
+    assert len(posted["changes"]) == len(named["changes"])
+    assert {d["label"] for d in posted["differences"]} == {d["label"] for d in named["differences"]}
+
+
+def test_comparing_one_rule_isolates_it(client) -> None:
+    """The point of the screen: change one thing and read what it is worth.
+
+    Standing a soft 17 is worth about 0.2 points to the player, which is the
+    figure every published table gives, so the sign and the rough size are both
+    checked rather than only that something changed.
+    """
+    body = {"a": {"decks": 6, "hit_soft_17": True}, "b": {"decks": 6, "hit_soft_17": False}}
+    data = client.post("/api/compare", json=body).json()
+
+    assert [d["label"] for d in data["differences"]] == ["hit_soft_17: True -> False"]
+    assert data["basic_strategy_ev_delta"] > 0, "standing on soft 17 must favour the player"
+    assert data["basic_strategy_ev_delta"] == pytest.approx(0.0021, abs=3e-4)
+    assert data["a"]["house_edge"] > data["b"]["house_edge"]
+
+
+def test_comparing_a_table_with_itself_finds_nothing(client) -> None:
+    """Two identical sides is the screen's opening state, not an error."""
+    data = client.post("/api/compare", json={"a": {"decks": 6}, "b": {"decks": 6}}).json()
+    assert data["differences"] == []
+    assert data["changes"] == []
+    assert data["basic_strategy_ev_delta"] == pytest.approx(0.0, abs=1e-15)
+
+
+def test_attribution_can_be_switched_off(client) -> None:
+    """Attribution costs a solve per differing rule, so it is optional.
+
+    With it off the per-rule numbers are null rather than absent: the response
+    keeps its shape, and the screen decides what to draw from the value. That
+    null is the only signal there is -- the response does not echo the flag.
+    """
+    body = {"a": {"decks": 2, "hit_soft_17": True}, "b": {"decks": 6, "hit_soft_17": False}}
+
+    on = client.post("/api/compare", json={**body, "attribute": True}).json()
+    assert on["attribution_residual"] is not None
+    assert all(d["ev_delta"] is not None for d in on["differences"])
+
+    off = client.post("/api/compare", json={**body, "attribute": False}).json()
+    assert off["attribution_residual"] is None
+    assert all(d["ev_delta"] is None for d in off["differences"])
+    assert {d["label"] for d in off["differences"]} == {d["label"] for d in on["differences"]}
+    # Switching attribution off must not change the answer it was explaining.
+    assert off["basic_strategy_ev_delta"] == pytest.approx(on["basic_strategy_ev_delta"], abs=1e-12)
+
+
+def test_attribution_of_several_rules_leaves_a_residual(client) -> None:
+    """One-at-a-time deltas do not sum, because rules interact.
+
+    The residual is what is left over, and it is reported rather than spread
+    around. This is the invariant that keeps the screen honest.
+    """
+    data = client.post(
+        "/api/compare",
+        json={
+            "a": {"decks": 6, "hit_soft_17": True, "double_after_split": True},
+            "b": {"decks": 2, "hit_soft_17": False, "double_after_split": False},
+        },
+    ).json()
+
+    assert len(data["differences"]) == 3
+    parts = sum(d["ev_delta"] for d in data["differences"])
+    assert parts + data["attribution_residual"] == pytest.approx(
+        data["basic_strategy_ev_delta"], abs=1e-12
+    ), "the parts plus the residual must be the whole"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"a": {"decks": 6}},
+        {"b": {"decks": 6}},
+        {"a": {"decks": 6}, "b": None},
+        {"a": [], "b": {}},
+        {"a": "vegas6-h17", "b": "sd-s17"},
+    ],
+    ids=["empty", "only-a", "only-b", "null-b", "list", "names-not-objects"],
+)
+def test_comparing_without_two_sides_is_a_client_error(client, body) -> None:
+    """Each side is an object of rule fields. A name is a different endpoint."""
+    response = client.post("/api/compare", json=body)
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]
+
+
+@pytest.mark.parametrize("side", ["a", "b"])
+def test_posting_bad_rules_to_compare_is_a_client_error(client, side) -> None:
+    """A bad rule is a 400 on either side, not a 500 from inside the solver."""
+    body = {"a": {"decks": 6}, "b": {"decks": 6}}
+    body[side] = {"decks": "six"}
+    assert client.post("/api/compare", json=body).status_code == 400
+
+
 # --- Spread overrides ---------------------------------------------------------
 
 

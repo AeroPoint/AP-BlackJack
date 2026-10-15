@@ -217,6 +217,29 @@ def _cell(cell: Any) -> dict[str, Any]:
     }
 
 
+def compare_custom(
+    rules_a: dict[str, Any], rules_b: dict[str, Any], attribute: bool = True
+) -> dict[str, Any]:
+    """Compare two arbitrary rule sets, each given as config-file fields.
+
+    The comparison screen offers every rule individually, the same way the chart
+    screen does, so it needs to pass two whole rule sets rather than two names.
+    Each side defaults anything it omits.
+
+    Raises:
+        BadRequestError: if either side has an unknown field or a value the
+            engine cannot coerce.
+    """
+    from blackjack.config.models import ConfigError, rules_from_dict
+
+    try:
+        a = rules_from_dict(dict(rules_a))
+        b = rules_from_dict(dict(rules_b))
+    except ConfigError as exc:
+        raise BadRequestError(str(exc)) from exc
+    return _compared(a, b, attribute)
+
+
 def compare(rules_a_name: str, rules_b_name: str, attribute: bool = True) -> dict[str, Any]:
     """Compare two tables: edge deltas, rule attribution, and every changed cell.
 
@@ -232,12 +255,15 @@ def compare(rules_a_name: str, rules_b_name: str, attribute: bool = True) -> dic
     Rule values in ``differences`` are in config-file form (``"3/2"``, ``"late"``,
     ``true``); ``label`` is the same difference as the CLI prints it.
     """
+    return _compared(resolve_rules(rules_a_name), resolve_rules(rules_b_name), attribute)
+
+
+def _compared(rules_a: RuleSet, rules_b: RuleSet, attribute: bool) -> dict[str, Any]:
+    """The comparison envelope, shared by the named and the custom entry points."""
     import time
 
     from blackjack.ev.compare import compare_rules
 
-    rules_a = resolve_rules(rules_a_name)
-    rules_b = resolve_rules(rules_b_name)
     started = time.perf_counter()
     result = compare_rules(rules_a, rules_b, attribute=attribute)
     elapsed = time.perf_counter() - started

@@ -175,6 +175,21 @@ def compare(rules_a: str, rules_b: str, attribute: bool = Query(True)) -> dict[s
     return _handle(service.compare, rules_a, rules_b, attribute)
 
 
+@app.post("/api/compare")
+def compare_custom(payload: dict[str, Any]) -> dict[str, Any]:
+    """Compare two arbitrary rule sets, so a screen can offer every rule.
+
+    Body: ``{"a": {...rule fields...}, "b": {...}, "attribute": true}``. Each
+    side takes the fields a ``configs/rules/*.yaml`` file would hold and defaults
+    the rest, exactly as ``POST /api/solve`` does.
+    """
+    attribute = bool(payload.get("attribute", True))
+    a, b = payload.get("a"), payload.get("b")
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        raise HTTPException(400, "body needs 'a' and 'b' objects of rule fields")
+    return _handle(service.compare_custom, a, b, attribute)
+
+
 @app.get("/api/explain/{rules_name}/{hand}/{upcard}")
 def explain(rules_name: str, hand: str, upcard: str) -> dict[str, Any]:
     """Price every action for one hand."""
