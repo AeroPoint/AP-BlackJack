@@ -206,7 +206,10 @@ src/blackjack/       the engine (stdlib only)
   cli.py     argparse CLI
 crates/blackjack-core/   Rust accelerator (PyO3); ev/native.py is the bridge
 apps/api/                FastAPI service
-apps/web/                React front end
+apps/ui/                 the local app: plain HTML/CSS/JS, no build step.
+                         `bj ui` serves it. Design tokens are copied from
+                         scripts/chart_page/page-head.html deliberately
+apps/web/                superseded React front end; see markdown/ToDo.md
 scripts/                 licence check; chart_page/ builds the shareable page
 configs/                 rules, counting systems, spreads, paytables, profiles
 markdown/                documentation, backlog (ToDo.md) and ADRs
@@ -237,7 +240,10 @@ Also run:
 - the native-core commands above if you touched `crates/` or the two ported
   Python modules;
 - `npm ci && npm run typecheck && npm run build` in `apps/web/` if you touched
-  the front end;
+  that (superseded) front end. `apps/ui/` needs no build step; what a build step
+  would have caught is in `tests/unit/test_ui_assets.py`, which the ordinary
+  pytest run covers. Anything that changes how a screen *looks* still needs a
+  human with a phone, because no test can tell you that;
 - `uv run python scripts/chart_page/build.py out/chart.html` if you touched
   `scripts/chart_page/` or `ev/importance.py`. Its self-check must pass.
 

@@ -87,20 +87,29 @@ worth building twice.
   applies to every surface that shows importance, not just this page.
   Reproducible: `build.py` regenerates the published file byte for byte.
 
-- [~] **Web UI: strategy chart.** *Built, not visually reviewed.* Interactive
-  grid with the action/expected-leak colouring toggle, a detail panel pricing
-  every action, and a rule selector that re-solves in ~31 ms. Typechecks under
-  strict TypeScript and builds clean; the API contract is enforced by a test
-  that parses `apps/web/src/api.ts`.
-  *Remaining:* nobody has looked at it in a browser. Layout and palette are a
-  first draft. It also still has the **single leak colouring** that the chart
-  page proved unreadable — porting the two-scale split and the per-rule controls
-  across is the first thing to do here, and is worth more than any new screen.
+- [x] **Web UI: strategy chart.** *Done,* in `apps/ui/` — plain HTML, CSS and
+  JavaScript, no build step, no Node, served at `/` by the API process and
+  started with `bj ui`. Every table rule is its own control, with the rest of
+  the schema rendered generically under "Advanced", so a field added to
+  `RuleSet` still appears. All three colourings the chart page settled on: the
+  play, cost if wrong, and where it leaks. A detail panel prices every action,
+  and the study-order list ranks cells by expected leak.
+  Reviewed on a phone and on a desktop, and corrected from that review: the
+  detail panel is a dismissible sheet on a phone and a sticky column beside the
+  chart otherwise, and the breakpoints treat **height** as a constraint rather
+  than only width, because a phone on its side is wide and short.
+  The React version in `apps/web/` is superseded; see below.
 
-- [ ] **Web UI: spread and risk explorer.** Ramp editor with live EV/hour, N0,
-  SCORE and risk-of-ruin readouts, and the per-count contribution chart.
+- [x] **Web UI: spread and risk explorer.** *Done,* in `apps/ui/`. The ramp is
+  edited as a banded grid — a bet, and the true count it starts at, one row
+  per band — rather than two parallel rows of numbers, which is what the first
+  version did and was reported as unusable. Reports EV, SD, N0, SCORE and risk
+  of ruin, each with a sentence saying what the figure means, and names the
+  bankroll that would put risk of ruin at 5% when the ramp is too steep for the
+  one entered. The per-count table shows every bin actually bet, with the exact
+  variance in each.
 
-- [~] **Rule-delta explorer.** Pick two rule sets, see the EV difference and
+- [x] **Rule-delta explorer.** Pick two rule sets, see the EV difference and
   *which cells changed*. This is the tool that answers "is this table worth
   playing" in one screen.
   *Engine, CLI and API done:* `ev/compare.py`, `bj compare A B`,
@@ -110,7 +119,34 @@ worth building twice.
   at table B (a play B does not offer falls back to chart A's second choice).
   `bj solve --compare` (bare EV difference only) is superseded and now points
   here.
-  *Remaining:* the web screen. Nothing on the engine side blocks it.
+  *Done:* the web screen, in `apps/ui/`. Both sides carry a whole rule set
+  rather than a preset name, because the question people ask is "same table but
+  X different" and a list of six presets cannot express it; presets remain as a
+  starting point to edit from, with "Copy A to B" so isolating one rule is a
+  single tap. Served by `POST /api/compare`, which takes two bodies of rule
+  fields and is pinned against the named-pair route so the two cannot drift.
+
+- [ ] **Web UI: trainer.** The drill, free play and the counting drills exist in
+  the terminal and have no screen. This is the last module the local app does
+  not cover, and the one that most wants a screen: a drill is a loop of one
+  question and one answer, which a terminal makes you read and a screen could
+  show.
+
+- [ ] **Saving a setting.** The settings screen is read-only, and deliberately:
+  a write endpoint means an endpoint that creates files, and this service has no
+  authentication at all. On a tailnet that includes a device belonging to
+  somebody else, that is a decision to take on purpose rather than by adding a
+  route. Decide the authentication question first; the endpoint is the easy half.
+
+- [ ] **Self-host the three fonts.** `apps/ui/` links them from Google Fonts and
+  falls back to the system stack, so a machine with no internet — the normal
+  case for a local app — gets a different page from the one that was designed.
+  Packaging, not design.
+
+- [ ] **Delete `apps/web/`.** Superseded by `apps/ui/` on every axis: no build
+  step, no Node, both colour scales, four screens rather than one, and it has
+  actually been reviewed. Keeping a second front end means every API change has
+  two clients to update, and the one nobody runs is the one that rots.
 
 ---
 
@@ -303,12 +339,19 @@ The terminal versions are built. What remains is depth and a UI.
   deliberate (nothing is written to disk unasked). The leak view in
   `bj chart --importance` and the chart page still use the generic model either
   way: they do not read a player's history.
-- The React web UI has never been opened in a browser. It typechecks and builds,
-  and its data contract is tested, but the layout and palette are unreviewed —
-  and it still colours the chart by leak alone, which the standalone chart page
-  established is ambiguous.
-  The standalone page under `scripts/chart_page/` *has* been reviewed; it is the
-  only user interface in this project that has.
+- The React web UI in `apps/web/` has never been opened in a browser, and now
+  never needs to be: `apps/ui/` replaces it. It is dead weight that still needs
+  Node and a build step a fresh checkout will not have, has no CI job, and
+  colours the chart by leak alone, which the standalone chart page established
+  is ambiguous. It stays only as a fallback mount. Deleting it is a backlog
+  item, not a known issue, but while it is there it is one.
+- Nothing checks `apps/ui/` the way a build step would, because it has none by
+  design. `tests/unit/test_ui_assets.py` stands in for that: valid UTF-8 with no
+  control bytes, balanced braces, no custom property used without a fallback and
+  without a definition, local references that resolve, both themes declared in
+  the base `:root`. It found an undefined-token false alarm and two real
+  encoding faults the first time it ran. What it cannot check is whether the
+  page *looks* right — that still takes a human with a phone.
 - The chart page reimplements the importance model in JavaScript. It is a
   transliteration of `ev/importance.py`, noted as such in both files, but it is a
   second copy with no test holding the two together. Changing thresholds or the
