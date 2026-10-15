@@ -159,6 +159,10 @@
 
 * { box-sizing: border-box; }
 
+/* Wide content scrolls inside its own container; the page itself never does. */
+html, body { overflow-x: hidden; }
+.cols, .sides, .controls, .summary, .band, .compare-cols { min-width: 0; }
+
 html { color-scheme: light dark; }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -175,8 +179,8 @@ body {
      while it is open: closed, that padding is 232px of dead scroll. */
   padding-bottom: 32px;
 }
-body.sheet-open { padding-bottom: 232px; }
-@media (min-width: 900px) {
+body.sheet-open { padding-bottom: min(60dvh, 340px); }
+@media (min-width: 760px), (max-height: 560px) {
   body, body.sheet-open { padding-bottom: 40px; }
 }
 
@@ -271,10 +275,15 @@ p.lede { margin: 0 0 14px; max-width: 62ch; font-size: 14px; color: var(--muted)
 
 /* --- controls --------------------------------------------------------------- */
 
+/* Two tracks on a 360px phone, not one: at 178px only a single column fitted,
+   so every control -- a two-state toggle included -- was as wide as the screen.
+   Dense placement, so a full-width control does not leave a hole in the row
+   above it. Keyboard order follows the DOM either way. */
 .controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
-  gap: 13px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-auto-flow: row dense;
+  gap: 13px 12px;
   align-items: end;
   margin: 0 0 16px;
 }
@@ -283,20 +292,36 @@ p.lede { margin: 0 0 14px; max-width: 62ch; font-size: 14px; color: var(--muted)
   font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--faint); font-weight: 600;
 }
+
+/* A control with three or more choices needs the room. On a phone the grid is
+   two tracks, so it takes the whole row; wider, two tracks is already plenty
+   and a full row would only stretch it. */
+.field.wide { grid-column: 1 / -1; }
 @media (min-width: 560px) { .field.wide { grid-column: span 2; } }
 
+/* Wraps rather than clips. The old flex row had `flex: 1 1 0` under
+   `overflow: hidden`, so a set of choices too wide for its track lost the end
+   of a label with nothing to show that it had. Here the basis is the label's
+   own width and shrinking is off, so a button is never narrower than its text
+   and the set moves onto a second line instead.
+   The 1px gap over the line colour draws every divider, including the one a
+   wrapped row needs; `flex-grow` makes each row fill, so no gap colour is ever
+   left showing as a block. */
 .seg {
   display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  background: var(--line);
   border: 1px solid var(--line); border-radius: var(--radius);
-  overflow: hidden; background: var(--panel);
+  overflow: hidden; min-width: 0;
 }
 .seg button {
-  flex: 1 1 0; white-space: nowrap;
+  flex: 1 0 auto; min-width: 52px;
+  white-space: nowrap;
   font-family: var(--font-body); font-size: 13.5px; font-weight: 500;
-  color: var(--muted); background: transparent;
-  border: 0; padding: 9px 10px; min-height: 40px; cursor: pointer;
+  color: var(--muted); background: var(--panel);
+  border: 0; padding: 9px 8px; min-height: 40px; cursor: pointer;
 }
-.seg button + button { border-left: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--felt); color: var(--felt-ink); }
 
 select, input[type="number"], input[type="text"] {
@@ -347,7 +372,7 @@ details.advanced .controls { margin-bottom: 13px; }
 /* --- layout ----------------------------------------------------------------- */
 
 .cols { display: block; }
-@media (min-width: 900px) {
+@media (min-width: 760px), (max-height: 560px) {
   .cols {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 336px;
@@ -421,7 +446,7 @@ table.grid thead th { text-align: center; padding: 0 0 3px; }
 table.grid td { padding: 0; }
 
 .cellbtn {
-  width: 29px; height: 26px;
+  width: 26px; height: 25px;
   border: 1px solid transparent; border-radius: 3px;
   font-family: var(--font-mono); font-size: 12px; font-weight: 600;
   color: var(--act-text); cursor: pointer; display: block;
@@ -429,7 +454,8 @@ table.grid td { padding: 0; }
 }
 .cellbtn:hover { transform: scale(1.14); }
 .cellbtn[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 1.5px var(--ink); }
-@media (min-width: 420px) { .cellbtn { width: 32px; height: 28px; } }
+@media (min-width: 400px) { .cellbtn { width: 30px; height: 27px; } }
+@media (min-width: 560px) { .cellbtn { width: 32px; height: 28px; } }
 
 .cellbtn.lk0 { background: var(--leak-0); color: var(--leak-0-ink); }
 .cellbtn.lk1 { background: var(--leak-1); color: var(--leak-1-ink); }
@@ -447,10 +473,12 @@ table.grid td { padding: 0; }
 
 /* --- ranked list ------------------------------------------------------------ */
 
-ol.leaks { list-style: none; margin: 0; padding: 0; counter-reset: leak; }
+/* Same reasoning as the pair tables: the cost belongs near the hand it is the
+   cost of, not against the far edge of a wide screen. */
+ol.leaks { list-style: none; margin: 0; padding: 0; counter-reset: leak; max-width: 42rem; }
 ol.leaks li {
   counter-increment: leak;
-  display: grid; grid-template-columns: 26px 1fr auto;
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto;
   gap: 10px; align-items: center; padding: 9px 2px;
   border-bottom: 1px solid var(--line-soft); cursor: pointer;
 }
@@ -475,12 +503,16 @@ ol.leaks li::before {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
   background: var(--panel); border-top: 1px solid var(--line);
   box-shadow: var(--sheet-shadow);
-  padding: 12px 16px 16px; max-height: 62vh; overflow-y: auto;
+  padding: 12px 16px 16px; overflow-y: auto;
+  /* dvh, because mobile browser chrome makes vh lie; and an absolute cap, so a
+     short screen is never handed a panel over half of it. */
+  max-height: min(60dvh, 340px);
 }
 
-/* The dismiss, and the affordances for it, exist only where the sheet covers
-   the chart. On a wide screen this is a sticky column beside it. */
-@media (max-width: 899px) {
+/* The dismiss exists only where the panel covers the chart. Once it is a column
+   beside the chart there is nothing to dismiss, so the handle and the close
+   button go with it. */
+@media (max-width: 759px) and (min-height: 561px) {
   .detail.closed { display: none; }
   .detail .grab {
     display: block; width: 44px; height: 5px; border: 0; padding: 0;
@@ -496,13 +528,17 @@ ol.leaks li::before {
     padding: 6px 11px; min-height: 32px; cursor: pointer;
   }
 }
-@media (min-width: 900px) {
+@media (min-width: 760px), (max-height: 560px) {
   .detail {
     position: sticky; top: 76px; left: auto; right: auto; bottom: auto;
     border: 1px solid var(--line); border-radius: 10px;
-    box-shadow: var(--shadow); max-height: none; overflow: visible;
+    box-shadow: var(--shadow); overflow-y: auto;
     padding: 16px 18px 18px;
+    /* Scrolls within itself rather than running past the fold: what a short
+       viewport needs, and a tall one never notices. */
+    max-height: calc(100dvh - 96px);
   }
+  .detail.closed { display: block; }
   .detail .grab, .sheet-close { display: none; }
 }
 .detail h2 {
@@ -514,6 +550,12 @@ ol.leaks li::before {
 .detail .sub { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
 
 table.evs { width: 100%; border-collapse: collapse; }
+
+/* A two-column table is a label and its one number. Left to fill a full-width
+   row the two sit at opposite edges of the screen and stop reading as a pair,
+   so the pair tables keep a measure; the five-column spread table does not and
+   scrolls in its own container instead. */
+table.evs.pairs { max-width: 30rem; }
 table.evs td { padding: 4px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px; }
 table.evs tr:last-child td { border-bottom: 0; }
 table.evs .n {
@@ -628,3 +670,126 @@ table.settings td.n { text-align: right; white-space: nowrap; padding-left: 14px
   font-size: 13px; color: var(--muted);
 }
 .setting-value.changed { color: var(--ink); font-weight: 600; }
+
+/* --- compare ---------------------------------------------------------------- */
+
+.compare-top {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-auto-flow: row dense;
+  gap: 13px 12px; align-items: end; margin: 0 0 16px;
+}
+.sides { display: grid; gap: 18px; margin: 0 0 18px; }
+
+/* A phone held upright shows one side at a time, chosen by the switch. From
+   760px up, and on any screen too short for a stacked pair, both sides sit
+   together and the switch is pointless -- the same condition the chart's two
+   columns and the detail panel use, so a phone turned sideways changes all
+   three at once rather than landing in a state none of them was designed for. */
+.side-switch { margin: 0 0 13px; }
+@media (max-width: 759px) and (min-height: 561px) {
+  .side.inactive { display: none; }
+}
+@media (min-width: 760px), (max-height: 560px) {
+  .sides { grid-template-columns: 1fr 1fr; gap: 24px; }
+  .side-switch { display: none; }
+  .side.inactive { display: block; }
+}
+
+/* A rule that differs between the two sides, marked on the control itself so
+   you can see which one you moved. */
+.field.differs > span { color: var(--felt); }
+.field.differs > span::after { content: " \0000b7 differs"; letter-spacing: 0.04em; }
+.field.differs .seg { border-color: var(--felt); }
+.side {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); padding: 13px;
+}
+.side-title {
+  font-family: var(--font-display); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--felt); margin: 0 0 11px;
+}
+/* Inside a side card there is 26px less to go round, so the track is narrower
+   again -- otherwise this is the one grid that falls back to a single column. */
+.side-controls {
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  gap: 11px 10px; margin: 11px 0 0;
+}
+.btnrow { display: flex; gap: 6px; }
+button.run.ghost {
+  color: var(--muted); background: var(--panel-2);
+  border-color: var(--line); flex: 0 0 auto; width: auto;
+}
+
+/* --- ramp editor ------------------------------------------------------------ */
+
+/* Fixed columns, not a wrapping sentence. The row is read against the header
+   above it, so nothing repeats and nothing breaks mid-phrase on a narrow
+   screen -- which is exactly what the prose version did. */
+.bands { display: flex; flex-direction: column; gap: 6px; }
+.band {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) minmax(0, 1fr) 2rem;
+  gap: 8px; align-items: center;
+  font-size: 13px; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); padding: 7px 9px;
+}
+.band input { width: 100%; min-width: 0; text-align: center; padding: 7px 4px; }
+.band-lead {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 12px; font-weight: 600; color: var(--ink);
+}
+.band-any { font-size: 12px; color: var(--faint); }
+.band-head {
+  background: transparent; border-color: transparent;
+  padding-top: 0; padding-bottom: 0;
+  font-size: 10.5px; letter-spacing: 0.08em; color: var(--faint);
+}
+.band-x {
+  font-family: var(--font-body); font-size: 15px; line-height: 1;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  width: 2rem; height: 2rem; padding: 0; cursor: pointer;
+}
+.band-x:hover { color: var(--band-critical); border-color: currentColor; }
+.band-add {
+  grid-template-columns: 1fr; justify-items: center;
+  border-style: dashed; padding: 5px;
+}
+.band-add button.run { width: auto; }
+p.lede.warn { color: var(--band-critical); }
+p.lede.warn b { color: inherit; }
+
+/* --- wide bodies, and a phone on its side ----------------------------------- */
+/*
+ * Last in the file on purpose: these rules tune the two cases the earlier
+ * blocks get wrong, and they do it by winning the cascade on equal
+ * specificity rather than by being more specific.
+ */
+
+/* The compare result is a short table of what each rule is worth and a long
+   list of the squares that change. Stacked, both run the full width and
+   neither needs it. Beside each other they read as the answer and its
+   workings, and a landscape phone finally has something to do with 844px. */
+@media (min-width: 760px), (max-height: 560px) {
+  .compare-cols { grid-template-columns: 340px minmax(0, 1fr); }
+}
+
+/* A phone on its side has 390px of height and the masthead, the standfirst and
+   the block margins were all sized for a portrait screen that has twice that.
+   Height is the constraint here, so spend less of it on furniture. */
+@media (max-height: 560px) {
+  .masthead-inner { padding-top: 7px; padding-bottom: 7px; }
+  .masthead h1 { font-size: 17px; }
+  .brand-mark { width: 26px; height: 26px; }
+  .standfirst { margin: 13px 0 13px; font-size: 14.5px; }
+  section.block { margin-top: 18px; }
+  .detail { top: 62px; max-height: calc(100dvh - 76px); }
+}
+
+/* The advanced block is rendered from the schema, so its labels are raw field
+   names ("deck_estimation") and its selects hold raw enum values. Those need
+   more room than the hand-written rule controls above them, which is why this
+   one grid keeps the wider track. */
+#advanced-controls { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }

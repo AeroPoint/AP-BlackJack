@@ -157,7 +157,14 @@ function segmented(spec, value, onPick) {
     button.addEventListener("click", () => onPick(raw));
     group.append(button);
   }
-  return el("label", { className: `field${spec.wide ? " wide" : ""}` }, [
+  // What a control needs is set by its choices, not by a flag someone has to
+  // remember: three or more of them, or two long ones ("Dealer peeks" against
+  // "No hole card"), will not sit in one track of the control grid. The
+  // character count is a rough stand-in for the rendered width, which is why
+  // the control wraps rather than clips if this guess is wrong.
+  const labelled = spec.options.map(([, text]) => text).join("");
+  const wide = spec.wide ?? (spec.options.length >= 3 || labelled.length > 14);
+  return el("label", { className: `field${wide ? " wide" : ""}` }, [
     el("span", { textContent: spec.label }),
     group,
   ]);
@@ -613,7 +620,19 @@ async function initChart() {
 
 // --- Compare screen ----------------------------------------------------------
 
-const compare = { configs: null, a: "vegas6-h17", b: "sd-s17", attribute: true, pending: null };
+/* Both sides carry a whole rule set, not a preset name: the question people
+   actually ask is "same table but X different", and a list of six presets
+   cannot express it. Presets are still offered, as a starting point to edit
+   from, and "Copy A to B" makes isolating one rule a single tap. */
+const compare = {
+  configs: null,
+  schema: null,
+  a: null,
+  b: null,
+  attribute: true,
+  editing: "a",
+  pending: null,
+};
 
 function picker(label, value, names, onPick) {
   const select = el("select");
@@ -624,8 +643,78 @@ function picker(label, value, names, onPick) {
   return el("label", { className: "field" }, [el("span", { textContent: label }), select]);
 }
 
+/* Which rules actually differ, so a collapsed side can say how many without
+   being opened. */
+function differingRules() {
+  return PRIMARY.filter(
+    (spec) => String(compare.a[spec.name]) !== String(compare.b[spec.name])
+  ).map((spec) => spec.name);
+}
+
+/* On a phone the two sides are one editor with a switch, not two stacked
+   columns: sixteen segmented controls in a single column is unreadable, and you
+   cannot see both at once on that screen anyway. Side by side from 760px up,
+   and on any short screen, so a phone on its side gets the visual comparison
+   its width can carry -- the same condition the rest of the layout uses. */
+function sideSwitch() {
+  const differing = differingRules().length;
+  const group = el("div", { className: "seg side-switch", role: "group" });
+  group.setAttribute("aria-label", "Which table to edit");
+  for (const [side, title] of [["a", "Table A"], ["b", "Table B"]]) {
+    const other = side === "a" ? "b" : "a";
+    const note = differing && compare.editing === other ? ` (${differing} differ)` : "";
+    const button = el("button", { type: "button", textContent: title + note });
+    button.setAttribute("aria-pressed", String(side === compare.editing));
+    button.addEventListener("click", () => {
+      compare.editing = side;
+      renderCompareControls(); // nothing changed, so no re-solve
+    });
+    group.append(button);
+  }
+  return group;
+}
+
+/* One side's controls: a preset to start from, then every rule, the same set
+   the chart screen offers. */
+function sideControls(side, title) {
+  const rules = compare[side];
+  const inactive = side !== compare.editing ? " inactive" : "";
+  const wrap = el("section", { className: `side${inactive}` });
+  wrap.append(el("h3", { className: "side-title", textContent: title }));
+
+  const presets = el("select");
+  presets.append(el("option", { value: "", textContent: "load a preset…", selected: true }));
+  for (const name of compare.configs.rules) {
+    presets.append(el("option", { value: name, textContent: name }));
+  }
+  presets.addEventListener("change", async () => {
+    if (!presets.value) return;
+    const stored = await api(`/configs/rules/${encodeURIComponent(presets.value)}`);
+    compare[side] = { ...stored.values };
+    delete compare[side].name;
+    renderCompareControls();
+    runCompare();
+  });
+  wrap.append(
+    el("label", { className: "field" }, [el("span", { textContent: "Start from" }), presets])
+  );
+
+  const differing = new Set(differingRules());
+  const grid = el("div", { className: "controls side-controls" });
+  for (const spec of PRIMARY) {
+    const control = segmented(spec, rules[spec.name], (raw) => {
+      compare[side][spec.name] = raw;
+      renderCompareControls();
+      runCompare();
+    });
+    if (differing.has(spec.name)) control.classList.add("differs");
+    grid.append(control);
+  }
+  wrap.append(grid);
+  return wrap;
+}
+
 function renderCompareControls() {
-  const names = compare.configs.rules;
   const toggle = el("div", { className: "seg", role: "group" });
   toggle.setAttribute("aria-label", "Attribute the difference to each rule");
   for (const [raw, text] of [[true, "Attribute"], [false, "Skip"]]) {
@@ -638,22 +727,37 @@ function renderCompareControls() {
     });
     toggle.append(button);
   }
+
+  const copy = el("button", { type: "button", className: "run", textContent: "Copy A → B" });
+  copy.addEventListener("click", () => {
+    compare.b = { ...compare.a };
+    renderCompareControls();
+    runCompare();
+  });
+  const swap = el("button", { type: "button", className: "run ghost", textContent: "Swap" });
+  swap.addEventListener("click", () => {
+    const held = compare.a;
+    compare.a = compare.b;
+    compare.b = held;
+    renderCompareControls();
+    runCompare();
+  });
+
   $("compare-controls").replaceChildren(
-    picker("Table A", compare.a, names, (v) => {
-      compare.a = v;
-      renderCompareControls();
-      runCompare();
-    }),
-    picker("Table B", compare.b, names, (v) => {
-      compare.b = v;
-      renderCompareControls();
-      runCompare();
-    }),
-    el("label", { className: "field" }, [
-      el("span", { textContent: "Per-rule attribution" }),
-      toggle,
-      el("small", { textContent: "One extra solve per differing rule. Skip it for speed." }),
-    ])
+    el("div", { className: "compare-top" }, [
+      el("label", { className: "field" }, [
+        el("span", { textContent: "Per-rule attribution" }),
+        toggle,
+        el("small", { textContent: "One extra solve per differing rule. Skip it for speed." }),
+      ]),
+      el("label", { className: "field" }, [
+        el("span", { textContent: "Make them match" }),
+        el("div", { className: "btnrow" }, [copy, swap]),
+        el("small", { textContent: "Copy, then change one rule to price it on its own." }),
+      ]),
+    ]),
+    sideSwitch(),
+    el("div", { className: "sides" }, [sideControls("a", "Table A"), sideControls("b", "Table B")])
   );
 }
 
@@ -661,13 +765,13 @@ async function runCompare() {
   compare.pending?.abort();
   const controller = new AbortController();
   compare.pending = controller;
-  status($("compare-body"), `Comparing ${compare.a} against ${compare.b}…`);
+  status($("compare-body"), "Comparing the two tables…");
   try {
-    const data = await api(
-      `/compare/${encodeURIComponent(compare.a)}/${encodeURIComponent(compare.b)}` +
-        `?attribute=${compare.attribute}`,
-      { signal: controller.signal }
-    );
+    const data = await api("/compare", {
+      method: "POST",
+      body: JSON.stringify({ a: compare.a, b: compare.b, attribute: compare.attribute }),
+      signal: controller.signal,
+    });
     renderCompare(data);
   } catch (error) {
     if (error.name === "AbortError") return;
@@ -677,6 +781,19 @@ async function runCompare() {
 
 function renderCompare(data) {
   const out = document.createDocumentFragment();
+  if (!data.differences.length && !data.other_differences.length) {
+    $("compare-body").replaceChildren(
+      el("div", { className: "placeholder" }, [
+        el("h3", { textContent: "The same table twice" }),
+        el("p", {
+          textContent:
+            "Nothing differs, so there is nothing to price. Change a rule on one side — " +
+            "that is the point of this screen: isolate one rule and read what it costs.",
+        }),
+      ])
+    );
+    return;
+  }
   const better = data.basic_strategy_ev_delta > 0 ? "B" : "A";
 
   const tiles = el("dl", { className: "summary" });
@@ -707,7 +824,7 @@ function renderCompare(data) {
   );
 
   // Rule differences, with what each is worth.
-  const diffs = el("table", { className: "evs" });
+  const diffs = el("table", { className: "evs pairs" });
   const tbody = el("tbody");
   for (const d of data.differences) {
     tbody.append(
@@ -720,7 +837,9 @@ function renderCompare(data) {
       ])
     );
   }
-  if (data.attribute !== false && Number.isFinite(data.attribution_residual)) {
+  // The residual is null when attribution was not asked for, which is the only
+  // signal there is -- the response does not echo the request's flag back.
+  if (Number.isFinite(data.attribution_residual)) {
     tbody.append(
       el("tr", {}, [
         el("td", {}, [el("span", { className: "muted", textContent: "unattributed residual" })]),
@@ -729,7 +848,16 @@ function renderCompare(data) {
     );
   }
   diffs.append(tbody);
-  out.append(
+
+  // Two columns from 760px, and on any short screen -- so a phone on its side
+  // uses its width. The attribution is the answer and the list of squares is
+  // the working, so they belong beside each other rather than stacked, where
+  // both ran the full width and neither needed it.
+  const findings = el("div");
+  const squares = el("div");
+  out.append(el("div", { className: "cols compare-cols" }, [findings, squares]));
+
+  findings.append(
     el("section", { className: "block" }, [
       el("h2", { textContent: "Where the difference comes from" }),
       el("p", {
@@ -743,7 +871,7 @@ function renderCompare(data) {
   );
 
   if (data.other_differences.length) {
-    out.append(
+    findings.append(
       el("p", {
         className: "lede",
         textContent: `Also differing, but unable to move a round's EV: ${data.other_differences.join(", ")}.`,
@@ -777,7 +905,7 @@ function renderCompare(data) {
       ])
     );
   }
-  out.append(
+  squares.append(
     el("section", { className: "block" }, [
       el("h2", { textContent: `${data.changes.length} squares change` }),
       el("p", {
@@ -791,7 +919,7 @@ function renderCompare(data) {
   );
 
   if (data.unplayed_changes.length) {
-    out.append(
+    squares.append(
       el("p", {
         className: "lede",
         textContent:
@@ -806,11 +934,17 @@ function renderCompare(data) {
 
 async function initCompare() {
   if (compare.configs) return;
-  compare.configs = await api("/configs");
-  if (!compare.configs.rules.includes(compare.a)) compare.a = compare.configs.rules[0];
-  if (!compare.configs.rules.includes(compare.b)) {
-    compare.b = compare.configs.rules[1] ?? compare.configs.rules[0];
+  const [configs, schema] = await Promise.all([api("/configs"), api("/schema/rules")]);
+  compare.configs = configs;
+  compare.schema = schema;
+  // Both sides start as the same default game, so the first thing you do is
+  // change one rule and read what it is worth.
+  const defaults = {};
+  for (const field of schema.fields) {
+    if (field.name !== "name") defaults[field.name] = field.default;
   }
+  compare.a = { ...defaults };
+  compare.b = { ...defaults };
   renderCompareControls();
   await runCompare();
 }
@@ -835,18 +969,96 @@ const spread = {
   poll: null,
 };
 
-function numberRow(label, values, onChange) {
-  const row = el("div", { className: "numrow" });
-  values.forEach((value, i) => {
-    const input = el("input", { type: "number", value: String(value), step: "0.5" });
-    input.addEventListener("change", () => {
-      const next = [...values];
-      next[i] = Number(input.value);
-      onChange(next);
+/* A ramp is a list of bands, and the only readable way to show one is a row per
+   band: this many units, from this count upward. Two parallel rows of bare
+   numbers -- which is what this was -- never says that threshold[i] and
+   units[i] are the same band, and leaves the sentinel -99 sitting there with no
+   explanation of what it means. */
+function rampEditor() {
+  const list = el("div", { className: "bands" });
+  list.append(
+    el("div", { className: "band band-head" }, [
+      el("span", { textContent: "band" }),
+      el("span", { textContent: "bet, in units" }),
+      el("span", { textContent: "from true count" }),
+      el("span"),
+    ])
+  );
+
+  const rerender = () => {
+    renderSpreadControls();
+  };
+
+  spread.units.forEach((units, i) => {
+    const row = el("div", { className: "band" });
+    const unitInput = el("input", { type: "number", value: String(units), min: "0", step: "1" });
+    unitInput.addEventListener("change", () => {
+      spread.units = spread.units.map((u, j) => (j === i ? Number(unitInput.value) : u));
+      rerender();
     });
-    row.append(input);
+
+    // Fixed cells in fixed columns, never a sentence that wraps: the row is
+    // read down the column headers above it, so nothing has to repeat "units
+    // from true count" twelve times or break across a line mid-phrase.
+    unitInput.setAttribute("aria-label", `Units bet in band ${i + 1}`);
+    if (i === 0) {
+      // The first band is the catch-all. Its threshold is a sentinel, not a
+      // number anybody should be typing.
+      row.append(
+        el("span", { className: "band-lead", textContent: "Base" }),
+        unitInput,
+        el("span", { className: "band-any", textContent: "any lower count" }),
+        el("span")
+      );
+    } else {
+      const atInput = el("input", {
+        type: "number",
+        value: String(spread.thresholds[i]),
+        step: "0.5",
+      });
+      atInput.setAttribute("aria-label", `True count where band ${i + 1} starts`);
+      atInput.addEventListener("change", () => {
+        spread.thresholds = spread.thresholds.map((t, j) =>
+          j === i ? Number(atInput.value) : t
+        );
+        rerender();
+      });
+      const remove = el("button", {
+        type: "button",
+        className: "band-x",
+        textContent: "×",
+        title: "Remove this band",
+      });
+      remove.setAttribute("aria-label", `Remove the band starting at true count ${spread.thresholds[i]}`);
+      remove.addEventListener("click", () => {
+        spread.thresholds = spread.thresholds.filter((_, j) => j !== i);
+        spread.units = spread.units.filter((_, j) => j !== i);
+        rerender();
+      });
+      row.append(
+        el("span", { className: "band-lead", textContent: `${i + 1}` }),
+        unitInput,
+        atInput,
+        remove
+      );
+    }
+    list.append(row);
   });
-  return el("label", { className: "field wide" }, [el("span", { textContent: label }), row]);
+
+  const add = el("button", { type: "button", className: "run ghost", textContent: "+ Add a band" });
+  add.addEventListener("click", () => {
+    const lastAt = spread.thresholds[spread.thresholds.length - 1];
+    const lastUnits = spread.units[spread.units.length - 1];
+    spread.thresholds = [...spread.thresholds, lastAt + 1];
+    spread.units = [...spread.units, lastUnits * 2];
+    rerender();
+  });
+  list.append(el("div", { className: "band band-add" }, [add]));
+
+  return el("div", { className: "field wide" }, [
+    el("span", { textContent: "Bet ramp" }),
+    list,
+  ]);
 }
 
 function scalarField(label, value, onChange, opts = {}) {
@@ -861,29 +1073,51 @@ function renderSpreadControls() {
       spread.profile = v;
       renderSpreadControls();
     }),
-    numberRow("True count at or above", spread.thresholds, (next) => {
-      spread.thresholds = next;
-      renderSpreadControls();
-    }),
-    numberRow("Bet in units", spread.units, (next) => {
-      spread.units = next;
-      renderSpreadControls();
-    }),
-    scalarField("Sit out below (blank = play all)", spread.wongOut, (v) => {
-      spread.wongOut = v;
-    }),
-    scalarField("Table cap in units (blank = none)", spread.maxBet, (v) => {
-      spread.maxBet = v;
-    }),
-    scalarField("Unit", spread.unit, (v) => {
-      spread.unit = Number(v);
-    }, { min: "1", step: "5" }),
-    scalarField("Bankroll", spread.bankroll, (v) => {
-      spread.bankroll = Number(v);
-    }, { min: "1", step: "1000" }),
-    el("label", { className: "field" }, [
-      el("span", { textContent: " " }),
-      el("button", { type: "button", className: "run", id: "run-spread", textContent: "Evaluate" }),
+    rampEditor(),
+    scalarField(
+      "Sit out below true count",
+      spread.wongOut,
+      (v) => {
+        spread.wongOut = v;
+      },
+      { placeholder: "play them all" }
+    ),
+    scalarField(
+      "Never bet more than",
+      spread.maxBet,
+      (v) => {
+        spread.maxBet = v;
+      },
+      { placeholder: "no table cap" }
+    ),
+    scalarField(
+      "One unit is",
+      spread.unit,
+      (v) => {
+        spread.unit = Number(v);
+      },
+      { min: "1", step: "5" }
+    ),
+    scalarField(
+      "Bankroll",
+      spread.bankroll,
+      (v) => {
+        spread.bankroll = Number(v);
+      },
+      { min: "1", step: "1000" }
+    ),
+    el("label", { className: "field wide" }, [
+      el("span", { textContent: "When you are ready" }),
+      el("button", {
+        type: "button",
+        className: "run",
+        id: "run-spread",
+        textContent: "Evaluate this spread",
+      }),
+      el("small", {
+        textContent:
+          "One exact solve per count bin, so it is a few seconds rather than instant.",
+      }),
     ])
   );
   $("run-spread").addEventListener("click", runSpread);
@@ -965,6 +1199,28 @@ function renderSpread(r, fingerprint) {
         `${r.exact_variance ? "exact per-count variance" : "flat variance"}  ·  fp ${fingerprint}`,
     })
   );
+  out.append(
+    el("p", {
+      className: "lede",
+      innerHTML:
+        "<b>N0</b> is how many rounds it takes before your expected win equals one standard " +
+        "deviation — roughly, how long before results start looking like skill rather than " +
+        "luck. <b>SCORE</b> is what a 10,000-unit bankroll earns per 100 hands, which is the " +
+        "number to compare two spreads by. <b>Risk of ruin</b> is the chance of losing the whole " +
+        "bankroll before doubling it, playing this way forever.",
+    })
+  );
+  if (m.risk_of_ruin > 0.05) {
+    out.append(
+      el("p", {
+        className: "lede warn",
+        innerHTML:
+          `At ${(m.risk_of_ruin * 100).toFixed(1)}% this ramp is too steep for the bankroll. ` +
+          `Hold the spread and it wants about <b>${fmt.money(m.bankroll_for_5_percent)}</b> ` +
+          `to sit at 5%, or flatten the top bands.`,
+      })
+    );
+  }
 
   // Where the money comes from, bin by bin. Only the bins that are bet.
   const rows = r.detail.filter((d) => d.frequency > 0.0005);

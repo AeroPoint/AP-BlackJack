@@ -353,13 +353,20 @@ prints only the bare EV difference, is superseded by it.
 
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
-- **Web front end.** The React strategy-chart screen is built — interactive grid,
-  colouring toggle, per-action pricing panel — and typechecks and builds clean,
-  but **nobody has looked at it in a browser**, so treat the layout and palette
-  as a first draft. It also still carries the single leak colouring that the
-  standalone chart page showed to be ambiguous. The spread explorer, rule-delta
-  view and trainer screens are not started, though `GET /api/compare` already
-  serves everything the rule-delta view needs. See
+- **Local app.** `apps/ui/` has four screens — chart, compare, spread and
+  settings — in plain HTML, CSS and JavaScript with no build step, served at
+  `/` by the API process itself. They use the standalone chart page's palette
+  and both of its colouring scales. What is **not** there: a trainer screen,
+  and any way to save a setting. Settings are read-only on purpose — a write
+  endpoint needs an authentication decision first, and this API has none.
+  There is no launcher yet either: you start `uvicorn` yourself.
+- **Fonts offline.** The app links the three faces from Google Fonts and falls
+  back to the system stack when there is no internet, which is the normal case
+  for a local app. Self-hosting them is a packaging job, not a design one.
+- **The React app is superseded.** `apps/web/` predates `apps/ui/`, needs Node
+  and a build step a fresh checkout will not have, has no CI job, and still
+  carries the single leak colouring that the chart page showed to be ambiguous.
+  It stays reachable only as a fallback mount while it exists. See
   [apps/web/README.md](../apps/web/README.md).
 - **Personal leak view.** Your measured miss rates persist across sessions
   with `--player`, and the drill uses them, but `bj chart --importance` and the
