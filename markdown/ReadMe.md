@@ -359,7 +359,7 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
   and both of its colouring scales. What is **not** there: a trainer screen,
   and any way to save a setting. Settings are read-only on purpose — a write
   endpoint needs an authentication decision first, and this API has none.
-  There is no launcher yet either: you start `uvicorn` yourself.
+  `bj ui` starts it and opens a browser on it.
 - **Fonts offline.** The app links the three faces from Google Fonts and falls
   back to the system stack when there is no internet, which is the normal case
   for a local app. Self-hosting them is a packaging job, not a design one.
@@ -409,6 +409,7 @@ See [environment/README.md](../environment/README.md).
 | `bj drill` | Strategy drill, weighted by what you personally get wrong |
 | `bj play` | Free play with live grading against the real shoe |
 | `bj count` | Counting drills: running count, true-count conversion, deck estimation |
+| `bj ui` | Serve the local web app and open a browser on it (needs the `api` extra) |
 | `bj list` | Available configuration files |
 | `bj schema` | Every setting described: type, default, allowed values, meaning |
 

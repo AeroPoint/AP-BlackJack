@@ -21,8 +21,9 @@ available and quietly skipped when it is not.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from blackjack.backend import describe
 from blackjack.version import __version__
@@ -515,6 +516,116 @@ def cmd_schema(args: argparse.Namespace) -> int:
     return 0
 
 
+def _wait_then_open(url: str, port: int, host: str, timeout: float = 15.0) -> None:
+    """Open a browser once the port answers, so it never lands on a dead page.
+
+    Runs on its own thread, because the server call below it never returns.
+    Gives up quietly: failing to open a browser is not a reason to fail to
+    serve, and the URL has already been printed.
+    """
+    import socket
+    import time
+    import webbrowser
+
+    deadline = time.monotonic() + timeout
+    probe = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((probe, port), timeout=0.25):
+                webbrowser.open(url)
+                return
+        except OSError:
+            time.sleep(0.1)
+
+
+def _load_web_service() -> Any:
+    """Import the web service, locating it first if it is not yet importable.
+
+    A console script does not put the working directory on ``sys.path`` the way
+    ``python -m`` does, and the service is not part of the wheel, so importing
+    it from ``bj`` needs the repository root found explicitly: the working
+    directory for someone standing in a checkout, and the engine's own
+    grandparent for an editable install run from elsewhere.
+
+    Raises:
+        ImportError: if the service is not next to either of those.
+    """
+    from pathlib import Path
+
+    try:
+        from apps.api.app.main import app
+    except ImportError:
+        pass
+    else:
+        return app
+
+    for root in (Path.cwd(), Path(__file__).resolve().parents[2]):
+        if (root / "apps" / "api" / "app" / "main.py").is_file():
+            sys.path.insert(0, str(root))
+            from apps.api.app.main import app
+
+            return app
+    raise ImportError("apps/api/app/main.py is not next to the working directory or the engine")
+
+
+def cmd_ui(args: argparse.Namespace) -> int:
+    """Serve the local app and open it.
+
+    The one command someone who does not want a terminal has to run. Everything
+    it needs sits outside the engine -- uvicorn, FastAPI, and the service package
+    itself -- so it is all imported here rather than at module scope. The engine
+    still runs on a bare Python install; this subcommand is the only thing in it
+    that cannot. See ADR-0004, which allows exactly this with a graceful
+    fallback, and the fallbacks below are that.
+    """
+    import threading
+
+    try:
+        import uvicorn
+    except ImportError:
+        print("error: the web app needs the 'api' extra.", file=sys.stderr)
+        print("  uv sync --extra api", file=sys.stderr)
+        return 1
+
+    try:
+        app = _load_web_service()
+    except ImportError as exc:
+        print(f"error: could not load the web service ({exc}).", file=sys.stderr)
+        print(
+            "  The service lives in apps/api/, which ships in the repository and not\n"
+            "  in the wheel, so this command needs a git checkout as its working\n"
+            "  directory. See apps/api/README.md.",
+            file=sys.stderr,
+        )
+        return 1
+
+    shown = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
+    url = f"http://{shown}:{args.port}/"
+
+    # Loopback is the default because this service has no authentication of any
+    # kind. Binding anywhere else hands every machine that can reach the address
+    # the same unrestricted access, so say so rather than let it pass quietly.
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"warning: serving on {args.host}, which is not loopback.", flush=True)
+        print("  This service has no authentication: anyone who can reach that", flush=True)
+        print("  address can use it, and read every config it can read.", flush=True)
+
+    # Flushed, because the server call below never returns to do it: piped
+    # into anything but a terminal, these would otherwise never be seen.
+    print(f"The app is at {url}", flush=True)
+    print("Press Ctrl-C to stop it.", flush=True)
+
+    if not args.no_browser:
+        threading.Thread(
+            target=_wait_then_open, args=(url, args.port, args.host), daemon=True
+        ).start()
+
+    # Ctrl-C is how this command is meant to end, so it is not a failure.
+    with contextlib.suppress(KeyboardInterrupt):
+        uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     """List the available configuration files."""
     from blackjack.config.loader import list_available
@@ -698,6 +809,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="also compute playing efficiency (a couple of seconds more)",
     )
     p.set_defaults(func=cmd_systems)
+
+    p = sub.add_parser("ui", help="serve the local web app and open it in a browser")
+    p.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="address to serve on. The default is loopback, reachable only from "
+        "this machine; this service has no authentication, so anything else "
+        "shares it with every machine that can reach the address",
+    )
+    p.add_argument("--port", type=int, default=8765, help="port to serve on (default 8765)")
+    p.add_argument("--no-browser", action="store_true", help="serve, but do not open a browser")
+    p.add_argument(
+        "--log-level",
+        default="warning",
+        choices=["critical", "error", "warning", "info", "debug", "trace"],
+        help="how much the server says (default warning)",
+    )
+    p.set_defaults(func=cmd_ui)
 
     p = sub.add_parser("list", help="list available configuration files")
     p.set_defaults(func=cmd_list)

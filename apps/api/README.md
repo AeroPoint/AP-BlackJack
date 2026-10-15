@@ -7,6 +7,16 @@ take longer than a request should.
 
 ```bash
 uv sync --extra api
+uv run bj ui
+```
+
+That serves the local app at `http://127.0.0.1:8765/` and opens a browser on
+it. Loopback is the default because **this service has no authentication of
+any kind**; `--host` widens that, and says so when you use it.
+
+To develop against it, run the server directly instead, for the reload:
+
+```bash
 uv run uvicorn apps.api.app.main:app --reload --port 8000
 ```
 
