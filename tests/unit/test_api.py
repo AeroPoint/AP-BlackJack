@@ -588,48 +588,66 @@ def test_posting_bad_rules_to_compare_is_a_client_error(client, side) -> None:
 
 
 # --- Spread overrides ---------------------------------------------------------
+#
+# A spread job solves the edge and the variance in every count bin: about half a
+# second on the native core, but 54 seconds on the pure-Python one, and CI's test
+# matrix builds no accelerator. So the budget here has to clear the slow path on
+# a slow runner, and the stored profile is solved once for the module rather than
+# once per test.
+#
+# This section used to carry its own polling helper that counted 600 iterations
+# instead of seconds. The real budget was then 600 times the round-trip plus the
+# sleep, which varies per machine and is not even monotonic in machine speed --
+# a slower machine runs the job slower but also polls slower. It passed locally
+# and failed every job in CI for three commits. `_await_job` above already did
+# this correctly, with a wall-clock deadline; there was never a reason for a
+# second one.
+
+#: Generous on purpose: three times the measured pure-Python cost.
+SPREAD_TIMEOUT = 300.0
 
 
-def _finished(client, job_id, limit=600):
-    """Poll a job to completion."""
-    for _ in range(limit):
-        job = client.get(f"/api/jobs/{job_id}").json()
-        if job["status"] in ("succeeded", "failed", "cancelled"):
-            return job
-        time.sleep(0.05)
-    raise AssertionError(f"job {job_id} never finished")
+@pytest.fixture(scope="module")
+def base_spread(client) -> dict:
+    """The stored profile, solved once. Every test here measures against it."""
+    started = client.post("/api/jobs/spread?profile=default").json()
+    job = _await_job(client, started["id"], timeout=SPREAD_TIMEOUT)
+    assert job["status"] == "succeeded", job
+    return job
 
 
-def test_a_spread_can_be_tuned_without_resending_a_profile(client) -> None:
+def test_a_spread_can_be_tuned_without_resending_a_profile(client, base_spread) -> None:
     """Editing the ramp is the whole point of a spread screen."""
-    base = _finished(client, client.post("/api/jobs/spread?profile=default").json()["id"])
-    assert base["status"] == "succeeded", base
-
-    steeper = _finished(
+    steeper = _await_job(
         client,
         client.post(
             "/api/jobs/spread?profile=default",
             json={"ramp": {"thresholds": [-99, 1, 2, 3, 4, 5], "units": [1, 2, 4, 8, 12, 16]}},
         ).json()["id"],
+        timeout=SPREAD_TIMEOUT,
     )
     assert steeper["status"] == "succeeded", steeper
-    assert steeper["result"]["ev_per_round_units"] > base["result"]["ev_per_round_units"], (
+    assert steeper["result"]["ev_per_round_units"] > base_spread["result"]["ev_per_round_units"], (
         "a steeper ramp must earn more per round"
     )
-    assert steeper["fingerprint"] != base["fingerprint"], "a tuned ramp is not the stored profile"
+    assert steeper["fingerprint"] != base_spread["fingerprint"], (
+        "a tuned ramp is not the stored profile"
+    )
 
 
-def test_overriding_the_unit_leaves_the_edge_alone(client) -> None:
+def test_overriding_the_unit_leaves_the_edge_alone(client, base_spread) -> None:
     """Money scales; the edge in units does not."""
-    base = _finished(client, client.post("/api/jobs/spread?profile=default").json()["id"])
-    richer = _finished(
+    richer = _await_job(
         client,
         client.post("/api/jobs/spread?profile=default", json={"unit": 100}).json()["id"],
+        timeout=SPREAD_TIMEOUT,
     )
     assert richer["result"]["ev_per_round_units"] == pytest.approx(
-        base["result"]["ev_per_round_units"]
+        base_spread["result"]["ev_per_round_units"]
     )
-    assert richer["result"]["metrics"]["ev_per_hour"] > base["result"]["metrics"]["ev_per_hour"]
+    assert (
+        richer["result"]["metrics"]["ev_per_hour"] > base_spread["result"]["metrics"]["ev_per_hour"]
+    )
 
 
 @pytest.mark.parametrize(
