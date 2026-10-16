@@ -63,7 +63,8 @@ jobs:
         run: uv run python scripts/check_licenses.py
 
   # Cross-validation between the solver and the simulator needs millions of
-  # rounds, so it runs once rather than across the matrix.
+  # rounds, so it runs once rather than across the matrix. Everything else
+  # marked slow rides along here for the same reason.
   cross-validation:
     name: solver vs simulator
     runs-on: ubuntu-latest
@@ -73,7 +74,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.13
-      - run: uv sync
+      # The extras matter: tests/unit/test_api.py importorskips fastapi, so
+      # without them the slow-marked spread tests would skip and this job would
+      # report green having not run them. Same trap the native job guards
+      # against below -- a suite that skips itself is not a suite that passed.
+      - run: uv sync --extra cli --extra api
       - run: uv run pytest -m slow -q
 
   # Builds the accelerator and proves it agrees with the Python reference. The

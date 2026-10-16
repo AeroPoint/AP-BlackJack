@@ -606,6 +606,16 @@ def test_posting_bad_rules_to_compare_is_a_client_error(client, side) -> None:
 #: Generous on purpose: three times the measured pure-Python cost.
 SPREAD_TIMEOUT = 300.0
 
+# Marked slow, by the definition in pyproject.toml ("more than ~5 seconds"): at
+# 57 seconds a job on the matrix's backend these are eleven times that, and the
+# fast suite runs on four matrix jobs. They run once, in the job that syncs the
+# api extra for exactly this reason -- see .github/workflows/ci.yml, which has
+# to, because this module importorskips fastapi and would otherwise skip these
+# silently and report green.
+#
+# What stays in the fast suite is the cheap half: that an override the screen
+# may not set is refused. The expensive half is the two numeric assertions.
+
 
 @pytest.fixture(scope="module")
 def base_spread(client) -> dict:
@@ -616,6 +626,7 @@ def base_spread(client) -> dict:
     return job
 
 
+@pytest.mark.slow
 def test_a_spread_can_be_tuned_without_resending_a_profile(client, base_spread) -> None:
     """Editing the ramp is the whole point of a spread screen."""
     steeper = _await_job(
@@ -635,6 +646,7 @@ def test_a_spread_can_be_tuned_without_resending_a_profile(client, base_spread) 
     )
 
 
+@pytest.mark.slow
 def test_overriding_the_unit_leaves_the_edge_alone(client, base_spread) -> None:
     """Money scales; the edge in units does not."""
     richer = _await_job(
