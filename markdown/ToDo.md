@@ -98,7 +98,7 @@ worth building twice.
   detail panel is a dismissible sheet on a phone and a sticky column beside the
   chart otherwise, and the breakpoints treat **height** as a constraint rather
   than only width, because a phone on its side is wide and short.
-  The React version in `apps/web/` is superseded; see below.
+  The React version in `apps/web/` that preceded it has been deleted.
 
 - [x] **Web UI: spread and risk explorer.** *Done,* in `apps/ui/`. The ramp is
   edited as a banded grid — a bet, and the true count it starts at, one row
@@ -113,7 +113,8 @@ worth building twice.
   *which cells changed*. This is the tool that answers "is this table worth
   playing" in one screen.
   *Engine, CLI and API done:* `ev/compare.py`, `bj compare A B`,
-  `GET /api/compare/{a}/{b}`, with the response types in `apps/web/src/api.ts`.
+  `GET /api/compare/{a}/{b}` and `POST /api/compare`, with the response shape
+  pinned in `tests/unit/api_contract.py`.
   Reports both edges and their delta, one-rule-at-a-time attribution with the
   interaction residual stated, and every changed cell priced as chart A's play
   at table B (a play B does not offer falls back to chart A's second choice).
@@ -143,10 +144,22 @@ worth building twice.
   case for a local app — gets a different page from the one that was designed.
   Packaging, not design.
 
-- [ ] **Delete `apps/web/`.** Superseded by `apps/ui/` on every axis: no build
-  step, no Node, both colour scales, four screens rather than one, and it has
-  actually been reviewed. Keeping a second front end means every API change has
-  two clients to update, and the one nobody runs is the one that rots.
+- [x] **Delete `apps/web/`.** *Done.* 13 tracked files and 69 MB of
+  `node_modules`. It was superseded on every axis: no build step, no Node, both
+  colour scales, four screens rather than one, and actually reviewed. A second
+  front end means every API change has two clients to update, and the one nobody
+  runs is the one that rots.
+  Two things it owned were moved rather than dropped, which was most of the
+  work. Its TypeScript interfaces were the only declaration of the API's
+  response shape, parsed by a test that would have skipped itself silently once
+  the file was gone; they are now `tests/unit/api_contract.py`, extracted
+  verbatim and checked in both directions. Its README held four conventions that
+  belong to any client of this API rather than to that one — no blackjack
+  mathematics in the client, never round for storage, colour never the only
+  carrier of meaning, and the contract is tested — which are now in
+  `apps/ui/README.md`.
+  The CORS allowance went with it: it named that front end's Vite dev server,
+  and an allowance for an origin nothing serves is surface with no function.
 
 ---
 
@@ -339,12 +352,6 @@ The terminal versions are built. What remains is depth and a UI.
   deliberate (nothing is written to disk unasked). The leak view in
   `bj chart --importance` and the chart page still use the generic model either
   way: they do not read a player's history.
-- The React web UI in `apps/web/` has never been opened in a browser, and now
-  never needs to be: `apps/ui/` replaces it. It is dead weight that still needs
-  Node and a build step a fresh checkout will not have, has no CI job, and
-  colours the chart by leak alone, which the standalone chart page established
-  is ambiguous. It stays only as a fallback mount. Deleting it is a backlog
-  item, not a known issue, but while it is there it is one.
 - Nothing checks `apps/ui/` the way a build step would, because it has none by
   design. `tests/unit/test_ui_assets.py` stands in for that: valid UTF-8 with no
   control bytes, balanced braces, no custom property used without a fallback and

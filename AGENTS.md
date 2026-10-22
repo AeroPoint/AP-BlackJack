@@ -209,7 +209,6 @@ apps/api/                FastAPI service
 apps/ui/                 the local app: plain HTML/CSS/JS, no build step.
                          `bj ui` serves it. Design tokens are copied from
                          scripts/chart_page/page-head.html deliberately
-apps/web/                superseded React front end; see markdown/ToDo.md
 scripts/                 licence check; chart_page/ builds the shareable page
 configs/                 rules, counting systems, spreads, paytables, profiles
 markdown/                documentation, backlog (ToDo.md) and ADRs
@@ -239,8 +238,7 @@ Also run:
   the solver-vs-simulator cross-validation.
 - the native-core commands above if you touched `crates/` or the two ported
   Python modules;
-- `npm ci && npm run typecheck && npm run build` in `apps/web/` if you touched
-  that (superseded) front end. `apps/ui/` needs no build step; what a build step
+- nothing extra for `apps/ui/`: it has no build step, and what a build step
   would have caught is in `tests/unit/test_ui_assets.py`, which the ordinary
   pytest run covers. Anything that changes how a screen *looks* still needs a
   human with a phone, because no test can tell you that;

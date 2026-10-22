@@ -18,10 +18,17 @@ the work, and a slow request is indistinguishable from a hung one. See
 
 Local-first
 -----------
-CORS is restricted to the Vite dev server and there is no authentication,
-because there are no accounts. If this is ever hosted, auth arrives before
-anything is exposed beyond localhost -- and the job runner's in-process state
-becomes the next thing to reconsider.
+There is no authentication, because there are no accounts. If this is ever
+hosted, auth arrives before anything is exposed beyond localhost -- and the job
+runner's in-process state becomes the next thing to reconsider. ``bj ui`` binds
+loopback by default for the same reason.
+
+There is no CORS middleware either. The app in ``apps/ui/`` is served from this
+same process and uses a relative ``/api`` base, so no cross-origin request is
+ever made. The allowance that used to be here named a Vite dev server for the
+React front end; that front end is gone, and an allowance for an origin nothing
+serves is surface with no function. A separate dev server would need it added
+back deliberately.
 """
 
 from __future__ import annotations
@@ -33,7 +40,6 @@ from typing import Any, ParamSpec, TypeVar
 
 try:
     from fastapi import FastAPI, HTTPException, Query
-    from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
 except ImportError as exc:  # pragma: no cover - the api extra is optional
     raise SystemExit("The API needs the 'api' extra: uv sync --extra api") from exc
@@ -61,13 +67,6 @@ app = FastAPI(
     version=__version__,
     description="Exact solver, simulator and trainer.",
     lifespan=lifespan,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["*"],
 )
 
 
@@ -279,26 +278,17 @@ def cancel_job(job_id: str) -> dict[str, Any]:
     return {"cancelled": cancelled, **job.to_dict(include_result=False)}
 
 
-# --- The built front end ------------------------------------------------------
+# --- The local app ------------------------------------------------------------
 #
-# Mounted last, and only if a build exists. A mount at "/" catches every path
-# the API routes above did not, so registering it earlier would shadow them.
-# Serving the front end from the same origin as the API is what lets
-# `apps/web/src/api.ts` use a relative "/api" base and need no CORS allowance at
-# all -- the dev-server origins above are for `npm run dev`, nothing else.
+# Mounted last. A mount at "/" catches every path the API routes above did not,
+# so registering it earlier would shadow them.
 #
-# The build is not in the repository (`apps/web/dist/` is gitignored), so this is
-# absent in a fresh checkout until someone runs `npm run build`. That is a
-# packaging question, not a routing one: see markdown/ToDo.md.
-_APPS = Path(__file__).resolve().parents[2]
+# Serving the app from this same origin is what lets it use a relative "/api"
+# base and make no cross-origin request at all, which is why there is no CORS
+# middleware. There is no build step and nothing is gitignored, so a fresh
+# checkout has it -- unlike the React front end this replaced, whose build was
+# absent until someone ran npm.
+_UI = Path(__file__).resolve().parents[2] / "ui"
 
-#: Where to look for a front end, best first. `apps/ui/` is the local app: plain
-#: files, no build step, no Node, and it ships inside the wheel. `apps/web/dist/`
-#: is the older React screen, kept reachable while it still exists but needing a
-#: build that a fresh checkout will not have.
-_UI_CANDIDATES = (_APPS / "ui", _APPS / "web" / "dist")
-
-for _candidate in _UI_CANDIDATES:
-    if (_candidate / "index.html").is_file():
-        app.mount("/", StaticFiles(directory=_candidate, html=True), name="ui")
-        break
+if (_UI / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=_UI, html=True), name="ui")

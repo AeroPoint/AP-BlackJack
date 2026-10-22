@@ -330,57 +330,52 @@ def test_runner_evicts_old_jobs() -> None:
 # --- The contract with the front end ------------------------------------------
 
 
-def test_response_shape_matches_the_typescript_types(client, compare_solve_cache) -> None:
-    """Every field the web client declares must actually be sent.
+def test_response_shape_matches_the_declared_contract(client, compare_solve_cache) -> None:
+    """Every field a client is told to expect must actually be sent.
 
-    This is the failure a type checker cannot catch and a screenshot would not
-    obviously reveal: rename a field on the server and the UI keeps compiling,
-    keeps rendering, and shows blanks. The TypeScript interfaces in
-    ``apps/web/src/api.ts`` are the contract, so they are parsed and checked
-    against a live response rather than trusted.
+    Checked in both directions, because each catches a different mistake:
+    a field the contract declares and the server has stopped sending shows a
+    client blanks, and a field the server sends that the contract does not
+    declare is one nobody has agreed to keep.
+
+    The asymmetry is deliberate. Only the compare payloads are checked for
+    undeclared fields: those types were written for that endpoint and track it
+    exactly. A solve is also consumed by the chart page and the CLI, so it may
+    carry fields this contract has no opinion about.
+
+    See :mod:`tests.unit.api_contract` for why the contract lives there.
     """
-    import re
-    from pathlib import Path
-
-    source = Path(__file__).resolve().parents[2] / "apps" / "web" / "src" / "api.ts"
-    if not source.exists():  # pragma: no cover - web client is optional
-        pytest.skip("web client not present")
-    text = source.read_text(encoding="utf-8")
-
-    def declared(interface: str) -> set[str]:
-        match = re.search(rf"export interface {interface} \{{(.*?)\n\}}", text, re.S)
-        assert match, f"no interface {interface} in api.ts"
-        return set(re.findall(r"^\s+(\w+)[?]?:", match.group(1), re.M))
+    from tests.unit import api_contract as contract
 
     solved = client.get("/api/solve/vegas6-h17").json()
     compared = client.get("/api/compare/vegas6-h17/vegas6-s17-ls").json()
-    for interface, payload in (
-        ("CompareResult", compared),
-        ("CompareSide", compared["a"]),
-        ("RuleDifference", compared["differences"][0]),
-        ("CellChange", compared["changes"][0]),
-        ("SolveResult", solved),
-        ("ChartCell", solved["chart"][0]),
-        ("Health", client.get("/api/health").json()),
-        ("Configs", client.get("/api/configs").json()),
-    ):
-        missing = declared(interface) - set(payload)
-        assert not missing, f"{interface}: the client expects {sorted(missing)}"
 
-    # The compare types were written for this endpoint, so they must match it
-    # exactly in both directions -- including an unplayed change, which only
-    # appears when the two charts differ on a row no hand is played from.
+    for name, declared, payload in (
+        ("CompareResult", contract.COMPARE_RESULT, compared),
+        ("CompareSide", contract.COMPARE_SIDE, compared["a"]),
+        ("RuleDifference", contract.RULE_DIFFERENCE, compared["differences"][0]),
+        ("CellChange", contract.CELL_CHANGE, compared["changes"][0]),
+        ("SolveResult", contract.SOLVE_RESULT, solved),
+        ("ChartCell", contract.CHART_CELL, solved["chart"][0]),
+        ("Health", contract.HEALTH, client.get("/api/health").json()),
+        ("Configs", contract.CONFIGS, client.get("/api/configs").json()),
+    ):
+        missing = declared - set(payload)
+        assert not missing, f"{name}: the contract expects {sorted(missing)}, not sent"
+
+    # An unplayed change only appears when the two charts differ on a row no
+    # hand is ever played from, so it needs its own pair of tables.
     unplayed = client.get("/api/compare/vegas6-h17/sd-s17").json()["unplayed_changes"]
     assert unplayed, "expected soft 12 v 6 to differ between these tables"
-    for interface, payload in (
-        ("CompareResult", compared),
-        ("CompareSide", compared["a"]),
-        ("RuleDifference", compared["differences"][0]),
-        ("CellChange", compared["changes"][0]),
-        ("CellChange", unplayed[0]),
+    for name, declared, payload in (
+        ("CompareResult", contract.COMPARE_RESULT, compared),
+        ("CompareSide", contract.COMPARE_SIDE, compared["a"]),
+        ("RuleDifference", contract.RULE_DIFFERENCE, compared["differences"][0]),
+        ("CellChange", contract.CELL_CHANGE, compared["changes"][0]),
+        ("CellChange", contract.CELL_CHANGE, unplayed[0]),
     ):
-        extra = set(payload) - declared(interface)
-        assert not extra, f"{interface}: the server sends undeclared {sorted(extra)}"
+        extra = set(payload) - declared
+        assert not extra, f"{name}: the server sends undeclared {sorted(extra)}"
 
 
 # --- Settings schema ----------------------------------------------------------

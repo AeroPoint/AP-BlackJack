@@ -19,10 +19,13 @@ charge for.
 
 **Dual licensing, on the PyMuPDF / Artifex model.**
 
-1. The whole repository (engine, native core, API, web front end, scripts) is
+1. The whole repository (engine, native core, API, local app, scripts) is
    licensed under **AGPL-3.0-only**. SPDX `AGPL-3.0-only` is declared in
-   `pyproject.toml`, `crates/blackjack-core/Cargo.toml` and
-   `apps/web/package.json`. The text is in [LICENSE](../../LICENSE).
+   `pyproject.toml` and `crates/blackjack-core/Cargo.toml`. The text is in
+   [LICENSE](../../LICENSE). (This originally named `apps/web/package.json` as a
+   third declaration; that front end has since been deleted, and the local app
+   that replaced it has no manifest of its own to declare one in. The decision
+   is unchanged -- only the list of files it is written down in.)
 2. The copyright holder also offers a **commercial licence** for use that cannot
    meet the AGPL's terms: typically closed-source products and hosted services
    that do not want to publish their source. See

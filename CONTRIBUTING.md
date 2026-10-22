@@ -54,7 +54,7 @@ Depending on what you touched, also run:
 |---|---|
 | `src/blackjack/ev/` or `sim/` | `uv run pytest -m slow -q` (solver vs. simulator, takes minutes) |
 | `crates/blackjack-core/` or `ev/dealer.py`, `ev/player.py` | `cargo fmt --check`, `cargo clippy ... -D warnings`, `maturin develop --release`, then `uv run pytest -m parity -q`. See [AGENTS.md](AGENTS.md#the-native-core) |
-| `apps/web/` | `npm ci && npm run typecheck && npm run build` in `apps/web/` |
+| `apps/ui/` | `uv run pytest tests/unit/test_ui_assets.py -q`, plus a look in a browser. There is no build step to catch anything |
 | `scripts/chart_page/` or `ev/importance.py` | `uv run python scripts/chart_page/build.py out/chart.html` |
 | a dependency | its licence in a trailing comment in `pyproject.toml`, then `python scripts/check_licenses.py --declared` |
 

@@ -8,7 +8,7 @@ tested, embedded and ported without dragging anything along.
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│  apps/web        React + TypeScript                           │  presentation
+│  apps/ui         the local app: HTML, CSS, JS, no build step   │  presentation
 │  apps/api        FastAPI service                              │
 ├───────────────────────────────────────────────────────────────┤
 │  blackjack.cli   argparse CLI      blackjack.config           │  interface
@@ -261,9 +261,11 @@ attached. Writing it last makes it the commit point.
 
 ## What is scaffolded but not implemented
 
-- `apps/web` — the strategy-chart screen is built and typechecks, but has never
-  been opened in a browser. The spread explorer, rule-delta view and trainer
-  screens are not started.
+- A **trainer screen**. `bj drill`, `bj play` and `bj count` exist in the
+  terminal; the engine and the API support a screen and nothing has built one.
+- **Writing a config.** The settings screen reads; nothing writes. That needs the
+  authentication question answered first, not a route added.
 
-It carries a README stating exactly what is missing. Nothing in the engine
-depends on it.
+`apps/ui/` carries a README stating exactly what is missing. Nothing in the
+engine depends on it, or on the API: the dependency direction above is the whole
+design.

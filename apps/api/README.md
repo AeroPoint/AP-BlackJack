@@ -94,7 +94,13 @@ auth, because there are no accounts. If this is ever hosted, auth arrives
 before anything is exposed beyond localhost, and the in-process job state is
 the next thing to reconsider.
 
+## The local app
+
+Served at `/` by this same process, from `apps/ui/`. Start both with `bj ui`.
+See [apps/ui/README.md](../ui/README.md).
+
 ## Not built
 
-The web front end. See [apps/web](../web/README.md) and
+A trainer screen, and any endpoint that writes a config -- which needs the
+authentication question answered first. See
 [markdown/ToDo.md](../../markdown/ToDo.md).

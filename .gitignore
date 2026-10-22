@@ -27,8 +27,6 @@ Cargo.lock.bak
 
 # --- Node / web ---
 node_modules/
-apps/web/dist/
-apps/web/.vite/
 *.tsbuildinfo
 
 # --- Tooling / OS ---

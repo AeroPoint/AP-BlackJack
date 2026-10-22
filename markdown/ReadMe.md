@@ -363,11 +363,9 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
 - **Fonts offline.** The app links the three faces from Google Fonts and falls
   back to the system stack when there is no internet, which is the normal case
   for a local app. Self-hosting them is a packaging job, not a design one.
-- **The React app is superseded.** `apps/web/` predates `apps/ui/`, needs Node
-  and a build step a fresh checkout will not have, has no CI job, and still
-  carries the single leak colouring that the chart page showed to be ambiguous.
-  It stays reachable only as a fallback mount while it exists. See
-  [apps/web/README.md](../apps/web/README.md).
+- **The trainer has no screen.** `bj drill`, `bj play` and `bj count` exist in
+  the terminal only. It is the last module the local app does not cover, and the
+  one that most wants a screen.
 - **Personal leak view.** Your measured miss rates persist across sessions
   with `--player`, and the drill uses them, but `bj chart --importance` and the
   chart page still rank leaks with the generic error model rather than yours.

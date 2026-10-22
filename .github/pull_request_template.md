@@ -22,7 +22,7 @@ Agents: fill in every section; delete none.
 - [ ] `uv run python scripts/check_licenses.py`
 - [ ] If `ev/` or `sim/` changed: `uv run pytest -m slow -q`
 - [ ] If the Rust core or `ev/dealer.py` / `ev/player.py` changed: cargo fmt + clippy, `maturin develop --release`, `uv run pytest -m parity -q` (with the core confirmed loaded via `bj --version`)
-- [ ] If `apps/web/` changed: `npm run typecheck && npm run build`
+- [ ] If `apps/ui/` changed: `uv run pytest tests/unit/test_ui_assets.py -q`, and look at it in a browser -- no test can tell you whether a screen reads right
 
 ## Docs
 
