@@ -349,6 +349,11 @@ def test_response_shape_matches_the_declared_contract(client, compare_solve_cach
 
     solved = client.get("/api/solve/vegas6-h17").json()
     compared = client.get("/api/compare/vegas6-h17/vegas6-s17-ls").json()
+    drilled = client.post("/api/drill/question", json={"rules_name": "vegas6-h17"}).json()
+    verdict = client.post(
+        "/api/drill/grade",
+        json={"rules_name": "vegas6-h17", "cards": [10, 6], "upcard": 10, "chosen": "H"},
+    ).json()
 
     for name, declared, payload in (
         ("CompareResult", contract.COMPARE_RESULT, compared),
@@ -359,6 +364,8 @@ def test_response_shape_matches_the_declared_contract(client, compare_solve_cach
         ("ChartCell", contract.CHART_CELL, solved["chart"][0]),
         ("Health", contract.HEALTH, client.get("/api/health").json()),
         ("Configs", contract.CONFIGS, client.get("/api/configs").json()),
+        ("DrillQuestion", contract.DRILL_QUESTION, drilled),
+        ("DrillVerdict", contract.DRILL_VERDICT, verdict),
     ):
         missing = declared - set(payload)
         assert not missing, f"{name}: the contract expects {sorted(missing)}, not sent"
@@ -373,6 +380,8 @@ def test_response_shape_matches_the_declared_contract(client, compare_solve_cach
         ("RuleDifference", contract.RULE_DIFFERENCE, compared["differences"][0]),
         ("CellChange", contract.CELL_CHANGE, compared["changes"][0]),
         ("CellChange", contract.CELL_CHANGE, unplayed[0]),
+        ("DrillQuestion", contract.DRILL_QUESTION, drilled),
+        ("DrillVerdict", contract.DRILL_VERDICT, verdict),
     ):
         extra = set(payload) - declared
         assert not extra, f"{name}: the server sends undeclared {sorted(extra)}"
@@ -717,3 +726,200 @@ def test_an_unknown_config_is_a_404_naming_the_alternatives(client) -> None:
 
 def test_an_unknown_kind_is_a_400(client) -> None:
     assert client.get("/api/configs/bogus/x").status_code == 400
+
+
+# --- Drilling -----------------------------------------------------------------
+
+
+def test_a_question_does_not_carry_its_own_answer(client) -> None:
+    """The guard that justifies grading being a second request.
+
+    If the correct play rode along with the question it would sit in the page
+    before the player had committed to anything, and the obvious next step would
+    be for the client to grade by comparing strings -- which is how a front end
+    ends up with its own opinion about blackjack.
+
+    The whole key set is pinned, so *adding* a field to this response has to
+    come past this test, and the forbidden names are checked against the
+    contract itself rather than against one response -- at the point someone
+    would edit them.
+    """
+    from tests.unit import api_contract as contract
+
+    assert not contract.DRILL_QUESTION & contract.DRILL_GIVEAWAYS, (
+        "the question's declared shape includes a field that gives the answer away"
+    )
+    question = client.post("/api/drill/question", json={"rules_name": "vegas6-h17", "seed": 7})
+    assert question.status_code == 200
+    assert set(question.json()) == contract.DRILL_QUESTION
+
+
+def test_a_question_offers_the_actions_grading_will_accept(client) -> None:
+    """Every button the screen draws must be gradeable, and nothing else."""
+    body = client.post("/api/drill/question", json={"rules_name": "vegas6-h17", "seed": 3}).json()
+    payload = {
+        "rules_name": "vegas6-h17",
+        "cards": body["cards"],
+        "upcard": body["upcard"],
+    }
+    for action in body["legal"]:
+        response = client.post("/api/drill/grade", json={**payload, "chosen": action})
+        assert response.status_code == 200, response.text
+
+    for action in {"S", "H", "D", "P", "R"} - set(body["legal"]):
+        response = client.post("/api/drill/grade", json={**payload, "chosen": action})
+        assert response.status_code == 400, f"{action} is not legal here but was graded"
+
+
+def test_the_same_seed_asks_the_same_question(client) -> None:
+    """So a drill sequence can be reproduced, and a bug report can be rerun."""
+    body = {"rules_name": "vegas6-h17", "seed": 99}
+    first = client.post("/api/drill/question", json=body).json()
+    again = client.post("/api/drill/question", json=body).json()
+    assert (first["key"], first["cards"]) == (again["key"], again["cards"])
+
+
+def test_a_drill_defaults_its_rules_rather_than_refusing(client) -> None:
+    """An empty body starts a drill on the commonest game, not a 400.
+
+    A trainer that will not begin until it has been told the rules is worse than
+    one that begins and lets you change them.
+    """
+    response = client.post("/api/drill/question", json={})
+    assert response.status_code == 200, response.text
+    assert response.json()["legal"]
+
+
+def test_a_drill_takes_rules_inline_so_any_table_can_be_drilled(client) -> None:
+    """The same freedom the chart and compare screens have."""
+    single = client.post(
+        "/api/drill/question",
+        json={"rules": {"decks": 1, "hit_soft_17": False}, "seed": 4},
+    )
+    assert single.status_code == 200, single.text
+    assert (
+        single.json()["rules"]["slug"]
+        != client.post("/api/drill/question", json={"seed": 4}).json()["rules"]["slug"]
+    )
+
+
+def test_grading_reports_what_the_mistake_cost(client) -> None:
+    """The number the whole project exists to show, on the trainer's feedback.
+
+    10-6 against a ten, which is the most argued-about hand in the game and the
+    worked example in
+    [DecisionImportance.md](../../markdown/DecisionImportance.md): **hitting is
+    correct**, and standing costs about 0.0065 of a bet, which the model bands
+    as *minor*. Pinned against that documented figure rather than against the
+    printed-chart convention, which says stand -- printed charts are
+    total-dependent and this solver is composition-dependent, with the 6 and the
+    ten already out of the shoe.
+    """
+    graded = client.post(
+        "/api/drill/grade",
+        json={"rules_name": "vegas6-h17", "cards": [10, 6], "upcard": 10, "chosen": "S"},
+    ).json()
+
+    assert graded["expected"] == "H"
+    assert graded["chosen"] == "S"
+    assert graded["correct"] is False
+    assert graded["cost"] == pytest.approx(0.0065, abs=5e-4)
+    assert graded["importance"] == "minor"
+    assert graded["evs"]["S"] < graded["evs"]["H"]
+    assert graded["message"]
+
+
+def test_grading_a_correct_answer_costs_nothing(client) -> None:
+    """Zero, not a small number -- and never a bonus for being right."""
+    graded = client.post(
+        "/api/drill/grade",
+        json={"rules_name": "vegas6-h17", "cards": [10, 6], "upcard": 10, "chosen": "H"},
+    ).json()
+    assert graded["correct"] is True
+    assert graded["cost"] == 0.0
+
+
+def test_tallies_are_accepted_in_the_clients_own_key_format(client) -> None:
+    """The screen keys cells as "hard/16/10"; the API must speak that."""
+    response = client.post(
+        "/api/drill/question",
+        json={"rules_name": "vegas6-h17", "seen": {"hard/16/10": [4, 3], "pair/8/10": [2, 0]}},
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_excluding_a_cell_is_honoured(client) -> None:
+    """How the screen avoids asking the same thing twice running."""
+    for seed in range(12):
+        body = client.post(
+            "/api/drill/question",
+            json={"rules_name": "vegas6-h17", "exclude": "hard/16/10", "seed": seed},
+        ).json()
+        assert body["key"] != "hard/16/10"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"seen": {"hard/16/10": [2, 5]}},
+        {"seen": {"hard/16/10": [-1, 0]}},
+        {"seen": {"nonsense/16/10": [1, 0]}},
+        {"seen": {"hard/16": [1, 0]}},
+        {"seen": {"hard/x/10": [1, 0]}},
+        {"seen": {"hard/16/10": 3}},
+        {"seen": [["hard/16/10", 1, 0]]},
+        {"exclude": "not-a-key"},
+        {"seed": "lucky"},
+        {"rules": "vegas6-h17"},
+        {"rules": {"decks": "six"}},
+    ],
+    ids=[
+        "more-misses-than-attempts",
+        "negative",
+        "unknown-category",
+        "short-key",
+        "non-numeric-row",
+        "tally-not-a-pair",
+        "seen-not-an-object",
+        "bad-exclude",
+        "seed-not-a-number",
+        "rules-as-a-name-in-the-wrong-field",
+        "bad-rule-value",
+    ],
+)
+def test_a_malformed_drill_request_is_a_client_error(client, payload) -> None:
+    """Not a 500, and not a silently different drill."""
+    response = client.post("/api/drill/question", json=payload)
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"cards": [10], "upcard": 10, "chosen": "S"},
+        {"cards": [10, 6, 2], "upcard": 10, "chosen": "S"},
+        {"cards": [10, 6], "upcard": 10, "chosen": "X"},
+        {"cards": [10, 6], "upcard": 10, "chosen": "stand"},
+        {"cards": [10, 6], "upcard": 11, "chosen": "S"},
+        {"cards": [0, 6], "upcard": 10, "chosen": "S"},
+        {"cards": [1, 10], "upcard": 10, "chosen": "S"},
+        {"cards": ["ten", 6], "upcard": 10, "chosen": "S"},
+        {"cards": [10, 6], "chosen": "S"},
+    ],
+    ids=[
+        "one-card",
+        "three-cards",
+        "unknown-action",
+        "action-spelled-out",
+        "upcard-out-of-range",
+        "rank-zero",
+        "a-natural-has-no-decision",
+        "rank-not-a-number",
+        "no-upcard",
+    ],
+)
+def test_a_malformed_grade_request_is_a_client_error(client, payload) -> None:
+    response = client.post("/api/drill/grade", json={"rules_name": "vegas6-h17", **payload})
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]

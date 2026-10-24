@@ -144,3 +144,55 @@ CELL_CHANGE: frozenset[str] = frozenset(
         "upcard",
     }
 )
+
+#: POST /api/drill/question. Pinned as an exact set, and the one payload where
+#: that matters most: a field added here could reveal the answer before the
+#: player has given one, so adding one has to come past the test.
+DRILL_QUESTION: frozenset[str] = frozenset(
+    {
+        "backend",
+        "cards",
+        "category",
+        "engine_version",
+        "frequency",
+        "key",
+        "label",
+        "legal",
+        "row",
+        "rules",
+        "upcard",
+    }
+)
+
+#: Names that must never appear in a drill question, because each of them gives
+#: the answer away. Checked against the contract above rather than a response,
+#: so the rule is enforced at the point someone would edit it.
+DRILL_GIVEAWAYS: frozenset[str] = frozenset(
+    {"action", "best", "correct", "cost", "evs", "expected", "importance", "margin"}
+)
+
+#: POST /api/drill/grade.
+DRILL_VERDICT: frozenset[str] = frozenset(
+    {
+        "backend",
+        "beats_standard",
+        "best",
+        "cards",
+        "chosen",
+        "closeness",
+        "correct",
+        "cost",
+        "engine_version",
+        "evs",
+        "expected",
+        "frequency",
+        "importance",
+        "key",
+        "margin",
+        "message",
+        "rules",
+        "runner_up",
+        "split_label",
+        "upcard",
+    }
+)

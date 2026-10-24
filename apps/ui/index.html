@@ -31,6 +31,7 @@
         <button type="button" data-screen="chart" aria-current="page">Chart</button>
         <button type="button" data-screen="compare">Compare</button>
         <button type="button" data-screen="spread">Spread</button>
+        <button type="button" data-screen="trainer">Trainer</button>
         <button type="button" data-screen="settings">Settings</button>
       </nav>
       <button type="button" class="theme" id="theme" aria-label="Switch theme">
@@ -121,6 +122,26 @@
     </p>
     <div class="controls" id="spread-controls"></div>
     <div id="spread-body"></div>
+  </section>
+
+  <!-- ================= Trainer ================= -->
+  <section class="screen" data-screen="trainer" hidden>
+    <p class="standfirst">
+      One hand at a time, chosen by what it costs you to get wrong &mdash; the
+      mistake&rsquo;s price, times how often the hand comes up, times how often
+      <em>you</em> have missed it. The drill follows you rather than the
+      alphabet, so the squares you keep fluffing come round more often.
+    </p>
+
+    <div class="controls" id="trainer-controls"></div>
+
+    <div id="trainer-body"></div>
+
+    <section class="block" id="trainer-tally-block" hidden>
+      <h2>This session</h2>
+      <dl class="summary" id="trainer-tally"></dl>
+      <p class="lede" id="trainer-tally-note"></p>
+    </section>
   </section>
 
   <!-- ================= Settings ================= -->

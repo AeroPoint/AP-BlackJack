@@ -127,11 +127,23 @@ worth building twice.
   single tap. Served by `POST /api/compare`, which takes two bodies of rule
   fields and is pinned against the named-pair route so the two cannot drift.
 
-- [ ] **Web UI: trainer.** The drill, free play and the counting drills exist in
-  the terminal and have no screen. This is the last module the local app does
-  not cover, and the one that most wants a screen: a drill is a loop of one
-  question and one answer, which a terminal makes you read and a screen could
-  show.
+- [~] **Web UI: trainer.** *The strategy drill is done.* One hand at a time,
+  weighted by the mistake's cost times how often the hand arrives times how
+  often this player has missed it, with the action's letter as a keyboard
+  shortcut and `Enter` for the next hand. The feedback prices every action, not
+  only the one chosen, and the tally counts what the wrong play cost rather than
+  what the session lost — which is the distinction the trainer exists to teach.
+  Served by `POST /api/drill/question` and `POST /api/drill/grade`, both
+  stateless: the weighting is the engine's `train/drill.pick`, reached through
+  `operations.next_question`, and a test asserts the browser gets the same
+  question as `bj drill` for the same seed. The client sends its per-cell tally
+  back on each request, because per-player state on a service with no
+  authentication would collide between two browsers on one network.
+  *Remaining:* free play and the counting drills. `bj play` grades a whole dealt
+  round, which needs the table state machine exposed rather than one square, and
+  `bj count` is three drills of its own. Also: a drill tally lives in
+  `localStorage`, so it is per-browser and cannot follow you between devices
+  until there is somewhere authenticated to write it.
 
 - [ ] **Saving a setting.** The settings screen is read-only, and deliberately:
   a write endpoint means an endpoint that creates files, and this service has no

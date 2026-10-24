@@ -261,8 +261,10 @@ attached. Writing it last makes it the commit point.
 
 ## What is scaffolded but not implemented
 
-- A **trainer screen**. `bj drill`, `bj play` and `bj count` exist in the
-  terminal; the engine and the API support a screen and nothing has built one.
+- **Free play and counting-drill screens.** The strategy drill has one, served
+  by `POST /api/drill/question` and `/grade`; `bj play` and `bj count` do not.
+  Free play needs the table state machine exposed, which is a bigger surface
+  than one graded square.
 - **Writing a config.** The settings screen reads; nothing writes. That needs the
   authentication question answered first, not a route added.
 

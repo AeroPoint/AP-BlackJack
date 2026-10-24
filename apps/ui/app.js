@@ -1412,6 +1412,357 @@ async function initSettings() {
   await loadSettings();
 }
 
+// --- Trainer screen ----------------------------------------------------------
+//
+// A drill is a loop of one question and one answer, which is exactly what a
+// terminal is bad at showing and a screen is good at. The hand is the whole
+// view; everything else is feedback on the last answer.
+//
+// The weighting lives on the server, because it is blackjack mathematics and
+// this app does none (see README.md). What lives here is the *tally* -- how many
+// times you have seen each square and how many times you missed it -- which the
+// server needs back on every request to weight the next question. That is the
+// price of a stateless service, and it is the right price: per-player state on
+// a server with no authentication would collide between two browsers on the
+// same network.
+//
+// The tally is kept in localStorage, per rule set, so a drill survives a reload.
+// It is per-browser and it is *not* the same store as the CLI's `--player`
+// history, which writes a file the API has no endpoint to touch.
+
+const DRILL_KEYS = { s: "S", h: "H", d: "D", p: "P", r: "R" };
+
+const trainer = {
+  schema: null,
+  rules: {},
+  question: null,
+  verdict: null,
+  seen: {},
+  asked: 0,
+  wrong: 0,
+  cost: 0,
+  unit: 25,
+  busy: false,
+  pending: null,
+};
+
+const trainerStoreKey = () => `bj.drill.${JSON.stringify(trainer.rules)}`;
+
+/* Browser storage can throw -- private windows, blocked site data -- and a
+   drill that refuses to start because it cannot remember the last one is worse
+   than one that forgets. So every read and write is best-effort. */
+function loadTally() {
+  try {
+    const raw = localStorage.getItem(trainerStoreKey());
+    const saved = raw ? JSON.parse(raw) : null;
+    trainer.seen = saved && typeof saved === "object" ? saved : {};
+  } catch {
+    trainer.seen = {};
+  }
+}
+
+function saveTally() {
+  try {
+    localStorage.setItem(trainerStoreKey(), JSON.stringify(trainer.seen));
+  } catch {
+    /* Nothing to do: the drill still works, it just will not be remembered. */
+  }
+}
+
+function rankChip(rank, kind = "") {
+  return el("span", { className: `card ${kind}`.trim(), textContent: rankName(rank) });
+}
+
+/* The hand, big. Two cards and the upcard, which is the entire question. */
+function renderHand(question) {
+  return el("div", { className: "felt" }, [
+    el("div", { className: "seat" }, [
+      el("p", { className: "seat-label", textContent: "Dealer shows" }),
+      el("div", { className: "cards" }, [rankChip(question.upcard, "dealer")]),
+    ]),
+    el("div", { className: "seat" }, [
+      el("p", { className: "seat-label", textContent: "You have" }),
+      el("div", { className: "cards" }, question.cards.map((c) => rankChip(c))),
+      el("p", { className: "seat-total mono", textContent: question.label }),
+    ]),
+  ]);
+}
+
+/* One button per legal action, coloured as the chart colours that action, with
+   its initial as the keyboard shortcut. */
+function renderAnswers(question) {
+  const row = el("div", { className: "answers" });
+  for (const action of question.legal) {
+    const button = el("button", {
+      type: "button",
+      className: "answer",
+      disabled: trainer.busy,
+    });
+    button.style.setProperty("--tint", `var(${ACTION_VAR[action]})`);
+    button.append(
+      el("span", { className: "answer-key", textContent: action }),
+      el("span", { textContent: ACTION_NAME[action] })
+    );
+    button.addEventListener("click", () => answerDrill(action));
+    row.append(button);
+  }
+  return el("div", {}, [
+    el("p", { className: "lede", textContent: "What do you do? The letters work too." }),
+    row,
+  ]);
+}
+
+/* After an answer: the verdict, then every action priced, so the feedback
+   teaches the hand rather than just marking it. */
+function renderVerdict(verdict) {
+  const out = document.createDocumentFragment();
+  let tone = "right";
+  let heading = "Correct";
+  if (verdict.beats_standard) {
+    tone = "better";
+    heading = "Better than the chart";
+  } else if (!verdict.correct) {
+    tone = "wrong";
+    heading = "Not the play";
+  }
+
+  out.append(
+    el("div", { className: `verdict-head ${tone}` }, [
+      el("b", { textContent: heading }),
+      el("span", {
+        className: "mono",
+        textContent: verdict.correct
+          ? `${ACTION_NAME[verdict.chosen]} — 0.0000 lost`
+          : `${ACTION_NAME[verdict.chosen]} cost ${verdict.cost.toFixed(4)} of a bet` +
+            ` · ${fmt.money(verdict.cost * trainer.unit)}`,
+      }),
+    ])
+  );
+  out.append(el("p", { className: "lede", textContent: verdict.message }));
+
+  const table = el("table", { className: "evs pairs" });
+  const body = el("tbody");
+  const ranked = Object.entries(verdict.evs).sort((a, b) => b[1] - a[1]);
+  for (const [action, ev] of ranked) {
+    const row = el("tr", { className: action === verdict.expected ? "best" : "" });
+    row.append(
+      el("td", {}, [
+        el("span", { className: "mono", textContent: ACTION_NAME[action] }),
+        action === verdict.chosen
+          ? el("span", { className: "muted", textContent: "  ← you" })
+          : el("span"),
+      ]),
+      el("td", { className: "n", textContent: fmt.pct(ev, 4) })
+    );
+    body.append(row);
+  }
+  table.append(body);
+
+  out.append(
+    el("p", {
+      className: "lede",
+      textContent:
+        `This spot comes up ${(verdict.frequency * 100).toFixed(2)}% of hands, and the` +
+        ` call between the best two is worth ${verdict.margin.toFixed(4)}` +
+        ` (${verdict.split_label}) — a ${verdict.importance} decision.`,
+    })
+  );
+  out.append(table);
+
+  const next = el("button", {
+    type: "button",
+    className: "run",
+    id: "drill-next",
+    textContent: "Next hand",
+  });
+  next.addEventListener("click", () => nextQuestion());
+  out.append(el("div", { className: "btnrow next-row" }, [next]));
+  return out;
+}
+
+function renderTrainer() {
+  const body = $("trainer-body");
+  if (!trainer.question) {
+    status(body, "Dealing…");
+    return;
+  }
+  const panel = el("div", { className: "drill" }, [renderHand(trainer.question)]);
+  panel.append(
+    trainer.verdict ? renderVerdict(trainer.verdict) : renderAnswers(trainer.question)
+  );
+  body.replaceChildren(panel);
+  renderTally();
+}
+
+function renderTally() {
+  if (!trainer.asked) {
+    $("trainer-tally-block").hidden = true;
+    return;
+  }
+  $("trainer-tally-block").hidden = false;
+  const right = trainer.asked - trainer.wrong;
+  const tiles = [
+    ["Hands", `${trainer.asked}`, false],
+    ["Right", `${right}<small> · ${((right / trainer.asked) * 100).toFixed(0)}%</small>`, false],
+    [
+      "Lost to mistakes",
+      `${trainer.cost.toFixed(3)}<small> bets · ${fmt.money(trainer.cost * trainer.unit)}</small>`,
+      trainer.cost > 0,
+    ],
+    [
+      "Per hundred hands",
+      `${((trainer.cost / trainer.asked) * 100).toFixed(2)}<small> bets</small>`,
+      false,
+    ],
+  ];
+  $("trainer-tally").replaceChildren(
+    ...tiles.map(([term, value, hot]) => {
+      const box = el("div", { className: hot ? "hot" : "" });
+      box.append(el("dt", { textContent: term }));
+      const dd = el("dd");
+      dd.innerHTML = value;
+      box.append(dd);
+      return box;
+    })
+  );
+
+  const tracked = Object.keys(trainer.seen).length;
+  $("trainer-tally-note").textContent =
+    `Weighted by ${tracked} square${tracked === 1 ? "" : "s"} you have seen, remembered in this` +
+    ` browser for this rule set. Losing to variance is not losing to mistakes: this counts only` +
+    ` what the wrong play cost, which is the only part you control.`;
+}
+
+async function nextQuestion() {
+  trainer.pending?.abort();
+  const controller = new AbortController();
+  trainer.pending = controller;
+  trainer.verdict = null;
+  trainer.busy = true;
+  status($("trainer-body"), "Dealing…");
+  try {
+    trainer.question = await api("/drill/question", {
+      method: "POST",
+      body: JSON.stringify({
+        rules: trainer.rules,
+        seen: trainer.seen,
+        exclude: trainer.question?.key ?? null,
+      }),
+      signal: controller.signal,
+    });
+    trainer.busy = false;
+    renderTrainer();
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    trainer.busy = false;
+    status($("trainer-body"), `Could not deal a hand: ${error.message}`, true);
+  }
+}
+
+async function answerDrill(action) {
+  if (trainer.busy || trainer.verdict || !trainer.question) return;
+  trainer.busy = true;
+  const question = trainer.question;
+  try {
+    const verdict = await api("/drill/grade", {
+      method: "POST",
+      body: JSON.stringify({
+        rules: trainer.rules,
+        cards: question.cards,
+        upcard: question.upcard,
+        chosen: action,
+      }),
+    });
+    const tally = trainer.seen[question.key] ?? [0, 0];
+    trainer.seen[question.key] = [tally[0] + 1, tally[1] + (verdict.correct ? 0 : 1)];
+    trainer.asked += 1;
+    if (!verdict.correct) {
+      trainer.wrong += 1;
+      trainer.cost += verdict.cost;
+    }
+    saveTally();
+    trainer.verdict = verdict;
+    trainer.busy = false;
+    renderTrainer();
+  } catch (error) {
+    trainer.busy = false;
+    status($("trainer-body"), `Could not grade that: ${error.message}`, true);
+  }
+}
+
+function renderTrainerControls() {
+  const fields = PRIMARY.map((spec) =>
+    segmented(spec, trainer.rules[spec.name], (value) => {
+      trainer.rules[spec.name] = value;
+      loadTally();
+      trainer.asked = 0;
+      trainer.wrong = 0;
+      trainer.cost = 0;
+      trainer.question = null;
+      renderTrainerControls();
+      nextQuestion();
+    })
+  );
+  const reset = el("button", {
+    type: "button",
+    className: "run ghost",
+    textContent: "Forget what I have missed",
+  });
+  reset.addEventListener("click", () => {
+    trainer.seen = {};
+    saveTally();
+    renderTally();
+    renderTrainerControls();
+  });
+  fields.push(
+    el("div", { className: "field wide" }, [
+      el("span", { textContent: "Starting over" }),
+      el("div", { className: "btnrow" }, [reset]),
+      el("small", {
+        textContent:
+          "Clears the per-square tally for this rule set, so the drill goes back to the" +
+          " generic error model. The session counters above reset with it.",
+      }),
+    ])
+  );
+  $("trainer-controls").replaceChildren(...fields);
+}
+
+/* A drill is a keyboard thing: one letter to answer, Enter for the next hand.
+   Bound once, and only acts while the trainer is the visible screen. */
+function initTrainerKeys() {
+  document.addEventListener("keydown", (event) => {
+    const screen = document.querySelector('.screen[data-screen="trainer"]');
+    if (!screen || screen.hidden) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.target.closest("input, select, textarea")) return;
+
+    if (trainer.verdict) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        nextQuestion();
+      }
+      return;
+    }
+    const action = DRILL_KEYS[event.key.toLowerCase()];
+    if (action && trainer.question?.legal.includes(action)) {
+      event.preventDefault();
+      answerDrill(action);
+    }
+  });
+}
+
+async function initTrainer() {
+  if (trainer.schema) return;
+  trainer.schema = await api("/schema/rules");
+  for (const field of trainer.schema.fields) {
+    if (field.name !== "name") trainer.rules[field.name] = field.default;
+  }
+  loadTally();
+  renderTrainerControls();
+  await nextQuestion();
+}
+
 // --- Boot --------------------------------------------------------------------
 
 function showScreen(name) {
@@ -1430,6 +1781,10 @@ function showScreen(name) {
     initSpread().catch((error) => {
       status($("spread-body"), `Could not load the config list: ${error.message}`, true);
     });
+  } else if (name === "trainer") {
+    initTrainer().catch((error) => {
+      status($("trainer-body"), `Could not start a drill: ${error.message}`, true);
+    });
   } else if (name === "settings") {
     initSettings().catch((error) => {
       status($("settings-body"), `Could not read the settings: ${error.message}`, true);
@@ -1444,6 +1799,7 @@ $("tabs").addEventListener("click", (event) => {
 
 initTheme();
 initSheet();
+initTrainerKeys();
 initChart().catch((error) => {
   status($("tables"), `Could not reach the solver: ${error.message}`, true);
 });

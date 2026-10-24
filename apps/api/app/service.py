@@ -638,3 +638,204 @@ def simulate_job(profile_name: str, rounds: int | None, seed: int | None) -> tup
         )
 
     return run, profile.fingerprint()
+
+
+# --- Drilling -----------------------------------------------------------------
+#
+# Stateless, both of them. Which question comes next depends on how every
+# earlier answer went, and the obvious way to serve that is a session on the
+# server -- which would mean mutable per-player state on a service with no
+# authentication, where two browsers on the same network would write over each
+# other. So the client keeps its own tallies and hands them back, and these stay
+# pure. See :func:`blackjack.operations.next_question`.
+
+#: ``"hard/16/10"``, which is how both the chart screen and the trainer key a
+#: cell. Serialised rather than nested so a client can use it as an object key.
+_KEY_PARTS = 3
+
+
+def _key_to_str(key: tuple[Any, int, int]) -> str:
+    """A cell key as the client spells it."""
+    category, row, upcard = key
+    return f"{category}/{row}/{upcard}"
+
+
+def _key_from_str(raw: str) -> tuple[Any, int, int]:
+    """Parse a cell key, rejecting anything that is not one.
+
+    Raises:
+        BadRequestError: if the key is malformed or names no known category.
+    """
+    from blackjack.ev.solver import Category
+
+    parts = raw.split("/")
+    if len(parts) != _KEY_PARTS:
+        raise BadRequestError(f"{raw!r} is not a cell key; expected 'category/row/upcard'")
+    name, row, upcard = parts
+    try:
+        category = Category(name)
+    except ValueError as exc:
+        kinds = ", ".join(sorted(c.value for c in Category))
+        raise BadRequestError(f"{name!r} is not a category; expected one of {kinds}") from exc
+    try:
+        return (category, int(row), int(upcard))
+    except ValueError as exc:
+        raise BadRequestError(f"{raw!r} has a non-numeric row or upcard") from exc
+
+
+def _tallies_from(seen: Any) -> dict[tuple[Any, int, int], tuple[int, int]]:
+    """Parse the client's per-cell ``[attempts, misses]`` map.
+
+    Raises:
+        BadRequestError: if the shape is wrong or a tally is impossible.
+    """
+    if seen is None:
+        return {}
+    if not isinstance(seen, dict):
+        raise BadRequestError("'seen' must be an object of cell key -> [attempts, misses]")
+    out: dict[tuple[Any, int, int], tuple[int, int]] = {}
+    for raw, pair in seen.items():
+        if not isinstance(pair, list | tuple) or len(pair) != 2:
+            raise BadRequestError(f"{raw!r}: expected [attempts, misses], got {pair!r}")
+        try:
+            attempts, misses = int(pair[0]), int(pair[1])
+        except (TypeError, ValueError) as exc:
+            raise BadRequestError(f"{raw!r}: attempts and misses must be whole numbers") from exc
+        if attempts < 0 or misses < 0 or misses > attempts:
+            raise BadRequestError(
+                f"{raw!r}: {misses} misses out of {attempts} attempts is not possible"
+            )
+        out[_key_from_str(raw)] = (attempts, misses)
+    return out
+
+
+def _rules_from_payload(payload: dict[str, Any]) -> RuleSet:
+    """The rules for a drill request, by name or as inline fields.
+
+    Defaults rather than refusing an empty body: a trainer that will not start
+    until it has been told the rules is worse than one that starts on the
+    commonest game in the world and lets you change it.
+
+    Raises:
+        BadRequestError: if either form is present but not usable.
+    """
+    from blackjack.config.models import ConfigError, rules_from_dict
+
+    named = payload.get("rules_name")
+    if isinstance(named, str) and named:
+        return resolve_rules(named)
+    fields = payload.get("rules")
+    if fields is None:
+        return resolve_rules("vegas6-h17")
+    if not isinstance(fields, dict):
+        raise BadRequestError("'rules' must be an object of rule fields, or use 'rules_name'")
+    try:
+        return rules_from_dict(dict(fields))
+    except ConfigError as exc:
+        raise BadRequestError(str(exc)) from exc
+
+
+def drill_question(payload: dict[str, Any]) -> dict[str, Any]:
+    """The next drill question, weighted by what the player keeps missing.
+
+    Body: the rules (by ``rules_name`` or inline ``rules``), the player's
+    ``seen`` tallies as ``{"hard/16/10": [attempts, misses]}``, an ``exclude``
+    key to avoid repeating, and an optional ``seed``.
+
+    The answer is deliberately **not** in the response. Grading is a second
+    request, so the correct play is not sitting in the page before the player
+    has committed to one, and the verdict comes from the engine rather than from
+    a comparison written in JavaScript.
+
+    Raises:
+        BadRequestError: if the rules, the tallies or the keys are not valid.
+    """
+    from blackjack.operations import next_question
+
+    rules = _rules_from_payload(payload)
+    exclude_raw = payload.get("exclude")
+    exclude = _key_from_str(exclude_raw) if isinstance(exclude_raw, str) and exclude_raw else None
+    seed = payload.get("seed")
+    if seed is not None and not isinstance(seed, int):
+        raise BadRequestError("'seed' must be a whole number")
+
+    outcome = next_question(
+        rules,
+        seen=_tallies_from(payload.get("seen")),
+        exclude=exclude,
+        seed=seed,
+    )
+    cell = outcome.drill.cell
+    return _envelope(
+        rules={"name": rules.name, "slug": rules.slug()},
+        key=_key_to_str((cell.category, cell.row, cell.upcard)),
+        category=cell.category.value,
+        row=cell.row,
+        upcard=cell.upcard,
+        cards=list(outcome.drill.cards),
+        label=cell.label,
+        legal=[action.value for action in outcome.legal],
+        frequency=cell.analysis.frequency,
+    )
+
+
+def drill_grade(payload: dict[str, Any]) -> dict[str, Any]:
+    """Grade one drill answer, and say what it cost.
+
+    Body: the rules as above, plus ``cards``, ``upcard`` and the ``chosen``
+    action. Returns the verdict with every action priced, so the feedback can
+    show the whole decision rather than a tick.
+
+    Raises:
+        BadRequestError: if the hand, the upcard or the action is not valid.
+    """
+    from blackjack.actions import Action
+    from blackjack.operations import grade_answer
+    from blackjack.train.grading import cell_key
+
+    rules = _rules_from_payload(payload)
+    raw_cards = payload.get("cards")
+    if not isinstance(raw_cards, list | tuple) or len(raw_cards) != 2:
+        raise BadRequestError("'cards' must be two card ranks, 1 for an ace through 10")
+    try:
+        cards = (int(raw_cards[0]), int(raw_cards[1]))
+        upcard = int(payload.get("upcard"))  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise BadRequestError("'cards' and 'upcard' must be whole numbers") from exc
+    if not all(1 <= rank <= 10 for rank in (*cards, upcard)):
+        raise BadRequestError("ranks run 1 for an ace through 10")
+    raw_chosen = payload.get("chosen")
+    try:
+        chosen = Action(str(raw_chosen))
+    except ValueError as exc:
+        letters = ", ".join(a.value for a in Action)
+        raise BadRequestError(
+            f"{raw_chosen!r} is not an action; expected one of {letters}"
+        ) from exc
+
+    try:
+        verdict = grade_answer(rules, cards, upcard, chosen)
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
+
+    analysis = verdict.analysis
+    return _envelope(
+        rules={"name": rules.name, "slug": rules.slug()},
+        key=_key_to_str(cell_key(cards, upcard)),
+        cards=list(cards),
+        upcard=upcard,
+        chosen=verdict.chosen.value,
+        expected=verdict.expected.value,
+        correct=verdict.correct,
+        beats_standard=verdict.beats_standard,
+        cost=verdict.cost,
+        message=verdict.message(),
+        best=analysis.best.value,
+        runner_up=analysis.runner_up.value if analysis.runner_up else None,
+        margin=analysis.margin,
+        closeness=analysis.closeness,
+        split_label=analysis.split_label,
+        importance=analysis.importance.value,
+        frequency=analysis.frequency,
+        evs={action.value: value for action, value in analysis.all_evs.items()},
+    )

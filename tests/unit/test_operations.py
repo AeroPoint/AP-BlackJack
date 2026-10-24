@@ -130,3 +130,166 @@ def test_strategy_for_profile_reports_what_it_layered_on() -> None:
     )
     assert counted.index_count == 6
     assert counted.takes_insurance
+
+
+# --- Drilling -----------------------------------------------------------------
+#
+# The point of putting the drill here rather than in the API is that the screen
+# and the terminal get the same drill. These tests say so in the only way that
+# means anything: by running the engine's own picker beside the orchestration
+# and comparing.
+
+
+@pytest.fixture(scope="module")
+def chart():
+    """One solved chart for every drill test, because solving is the slow part."""
+    from blackjack.ev.solver import solve
+
+    return solve(VEGAS_6D_H17).chart
+
+
+def test_the_screens_drill_is_the_terminals_drill(chart) -> None:
+    """Same seed, same question as ``train.drill.pick`` called directly.
+
+    If these ever diverge, someone practising in the browser is practising a
+    different curriculum from someone practising in the terminal, and neither
+    would show a symptom.
+    """
+    import random
+
+    from blackjack.train.drill import pick
+
+    for seed in range(25):
+        mine = operations.next_question(VEGAS_6D_H17, seed=seed, chart=chart).drill
+        theirs = pick(chart, None, random.Random(seed))
+        assert mine.key == theirs.key, f"seed {seed}"
+        assert mine.cards == theirs.cards, f"seed {seed}"
+
+
+def test_a_question_offers_exactly_the_actions_grading_accepts(chart) -> None:
+    """The legal set and the grader must agree, or the UI offers a dead button.
+
+    Checked both ways: every action offered grades without complaint, and an
+    action not offered is refused rather than quietly scored.
+    """
+    from blackjack.actions import Action
+
+    question = operations.next_question(VEGAS_6D_H17, seed=3, chart=chart)
+    cards, upcard = question.drill.cards, question.drill.cell.upcard
+
+    for action in question.legal:
+        verdict = operations.grade_answer(VEGAS_6D_H17, cards, upcard, action, chart=chart)
+        assert verdict.chosen is action
+
+    for action in set(Action) - set(question.legal):
+        with pytest.raises(ValueError):
+            operations.grade_answer(VEGAS_6D_H17, cards, upcard, action, chart=chart)
+
+
+def test_grading_agrees_with_the_grader_it_wraps(chart) -> None:
+    """No second opinion: the orchestration adds the shoe and the standard only."""
+    from blackjack.shoe import full_shoe
+    from blackjack.train.grading import Standard, grade
+
+    question = operations.next_question(VEGAS_6D_H17, seed=11, chart=chart)
+    cards, upcard = question.drill.cards, question.drill.cell.upcard
+    expected = question.drill.cell.action
+
+    for action in question.legal:
+        mine = operations.grade_answer(VEGAS_6D_H17, cards, upcard, action, chart=chart)
+        theirs = grade(
+            cards,
+            upcard,
+            full_shoe(VEGAS_6D_H17.decks),
+            VEGAS_6D_H17,
+            action,
+            standard=Standard.CHART,
+            expected=expected,
+        )
+        assert mine.correct == theirs.correct
+        assert mine.cost == theirs.cost
+        assert mine.expected is theirs.expected
+
+
+def test_a_missed_cell_earns_more_attention_and_a_learned_one_less(chart) -> None:
+    """What the tallies are for: the drill follows the player, not the alphabet.
+
+    Asserted on the weight rather than on sampled questions. A 1.7x weight on a
+    cell that is already rare moves its share of a sample by a fraction of a
+    percent, so a sampling test would need thousands of draws to say what one
+    weight comparison says exactly.
+    """
+    from blackjack.ev.solver import Category
+    from blackjack.train.drill import drill_weight
+
+    key = (Category.HARD, 16, 10)
+    cell = chart.cells[key]
+
+    modelled = drill_weight(cell, None)
+    missed = drill_weight(cell, operations._session_from_tallies({key: (10, 10)}))
+    learned = drill_weight(cell, operations._session_from_tallies({key: (10, 0)}))
+
+    assert missed > modelled > learned, (
+        "missing a cell should raise its weight and learning it should lower it: "
+        f"{missed:.8f} / {modelled:.8f} / {learned:.8f}"
+    )
+
+
+def test_a_rebuilt_session_weights_exactly_like_a_lived_one(chart) -> None:
+    """A client sends attempts and misses and gets the live session's weights.
+
+    The per-cell costs a real session also accumulates do not reach the
+    weighting, which is why a screen does not have to ship them back and forth
+    to get the questions it would have got from the terminal.
+    """
+    from blackjack.ev.solver import Category
+    from blackjack.train.drill import drill_weight
+    from blackjack.train.session import CellStats, Session
+
+    key = (Category.HARD, 16, 10)
+    cell = chart.cells[key]
+
+    lived = Session()
+    lived.stats[key] = CellStats(seen=4, errors=3, cost=12.5)
+    rebuilt = operations._session_from_tallies({key: (4, 3)})
+
+    assert rebuilt is not None
+    assert drill_weight(cell, rebuilt) == drill_weight(cell, lived)
+
+
+def test_an_impossible_tally_is_refused(chart) -> None:
+    """More misses than attempts is a client bug, not a weighting to honour."""
+    from blackjack.ev.solver import Category
+
+    with pytest.raises(ValueError, match="not possible"):
+        operations.next_question(VEGAS_6D_H17, seen={(Category.HARD, 16, 10): (2, 5)}, chart=chart)
+
+
+def test_excluding_a_cell_never_serves_it(chart) -> None:
+    """So the drill does not ask the same question twice in a row."""
+    from blackjack.ev.solver import Category
+
+    key = (Category.HARD, 16, 10)
+    assert key in chart.cells, "the excluded key must be a real cell for this to prove anything"
+    for seed in range(40):
+        question = operations.next_question(VEGAS_6D_H17, exclude=key, seed=seed, chart=chart)
+        assert question.drill.key != key
+
+
+@pytest.mark.parametrize(
+    ("cards", "why"),
+    [((1, 10), "a natural is not a decision"), ((10, 10, 10), "a busted hand is not either")],
+    ids=["blackjack", "busted"],
+)
+def test_grading_a_hand_with_no_chart_cell_is_an_error(chart, cards, why) -> None:
+    """A hand the chart has no square for cannot be graded against the chart.
+
+    Note what is *not* here: three cards. ``cell_key`` maps any hand length to
+    its row, so 5-5-5 is hard 15 and grading it is meaningful -- that is what
+    free play does. The cases that genuinely have no cell are the ones where
+    there is no decision to make.
+    """
+    from blackjack.actions import Action
+
+    with pytest.raises(ValueError, match="no chart cell"):
+        operations.grade_answer(VEGAS_6D_H17, cards, 10, Action.HIT, chart=chart)

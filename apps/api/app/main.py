@@ -195,6 +195,24 @@ def explain(rules_name: str, hand: str, upcard: str) -> dict[str, Any]:
     return _handle(service.explain, rules_name, hand, upcard)
 
 
+@app.post("/api/drill/question")
+def drill_question(payload: dict[str, Any]) -> dict[str, Any]:
+    """The next drill question, weighted by what this player keeps missing.
+
+    Stateless: the client sends back its own per-cell tallies, so no session
+    lives here. The answer is not in the response -- grading is a second
+    request, which keeps the correct play out of the page until the player has
+    committed to one.
+    """
+    return _handle(service.drill_question, payload)
+
+
+@app.post("/api/drill/grade")
+def drill_grade(payload: dict[str, Any]) -> dict[str, Any]:
+    """Grade one drill answer, priced on the exact shoe, with every action."""
+    return _handle(service.drill_grade, payload)
+
+
 @app.get("/api/sidebet/{name}")
 def sidebet(name: str, decks: int = Query(6, ge=1, le=8)) -> dict[str, Any]:
     """Analyse a side bet against each of its known paytables."""

@@ -356,16 +356,20 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
 - **Local app.** `apps/ui/` has four screens — chart, compare, spread and
   settings — in plain HTML, CSS and JavaScript with no build step, served at
   `/` by the API process itself. They use the standalone chart page's palette
-  and both of its colouring scales. What is **not** there: a trainer screen,
-  and any way to save a setting. Settings are read-only on purpose — a write
-  endpoint needs an authentication decision first, and this API has none.
-  `bj ui` starts it and opens a browser on it.
+  and both of its colouring scales. There is a fifth screen now: a strategy
+  drill that serves one hand at a time, weighted by what the mistake costs
+  times how often you have missed it, and prices every action in its feedback.
+  What is **not** there: free play, the counting drills, and any way to save a
+  setting. Settings are read-only on purpose — a write endpoint needs an
+  authentication decision first, and this API has none. `bj ui` starts it all
+  and opens a browser on it.
 - **Fonts offline.** The app links the three faces from Google Fonts and falls
   back to the system stack when there is no internet, which is the normal case
   for a local app. Self-hosting them is a packaging job, not a design one.
-- **The trainer has no screen.** `bj drill`, `bj play` and `bj count` exist in
-  the terminal only. It is the last module the local app does not cover, and the
-  one that most wants a screen.
+- **Free play and the counting drills have no screen.** The strategy drill does
+  (and shares the engine's weighting, so it is the same drill as `bj drill`), but
+  `bj play` and `bj count` are terminal-only. Free play is the bigger of the two:
+  grading a whole dealt round means the table state machine, not one square.
 - **Personal leak view.** Your measured miss rates persist across sessions
   with `--player`, and the drill uses them, but `bj chart --importance` and the
   chart page still rank leaks with the generic error model rather than yours.

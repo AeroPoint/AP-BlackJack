@@ -39,6 +39,8 @@ Anything that finishes in milliseconds is a plain request.
 | `POST /api/compare` | the same, for two rule sets given as `{"a": {...}, "b": {...}, "attribute": true}` -- what a screen offering every rule individually needs |
 | `GET /api/sidebet/{name}?decks=` | side bet against each known paytable |
 | `GET /api/systems/{rules}?decks=` | effect of removal and per-system BC/IC |
+| `POST /api/drill/question` | the next drill question, weighted by what the player keeps missing. Stateless: the client sends its own per-cell tallies back. The answer is **not** in the response |
+| `POST /api/drill/grade` | grade one drill answer on the exact shoe, with every action priced and what the mistake cost |
 
 ## Jobs
 
@@ -101,6 +103,6 @@ See [apps/ui/README.md](../ui/README.md).
 
 ## Not built
 
-A trainer screen, and any endpoint that writes a config -- which needs the
-authentication question answered first. See
+Endpoints for free play and the counting drills, and any endpoint that writes a
+config -- which needs the authentication question answered first. See
 [markdown/ToDo.md](../../markdown/ToDo.md).

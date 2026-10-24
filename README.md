@@ -42,7 +42,7 @@ T6 against T  --  Vegas Strip 6D H17 DAS
   Ladies, with paytables driven by config.
 - **Monte Carlo simulator.** Cross-validates the solver and reaches what closed
   form cannot: drawdowns and behavioural error.
-- **Terminal trainer.** `bj drill` and `bj play` grade every decision against
+- **Trainer, in the terminal or the browser.** `bj drill` and `bj play` grade every decision against
   the cards actually left in the shoe.
 - **Optional Rust core.** It computes bit-identical results about 125x faster.
   Without it, the engine falls back to pure Python.
@@ -106,7 +106,7 @@ Rules, counting systems, spreads and paytables are YAML files in
 | Terminal trainer (`bj drill`, `bj play`) | Working |
 | FastAPI service (`apps/api`) | Working |
 | Standalone chart page (`scripts/chart_page`) | Working, and the one reviewed UI |
-| Local app (`apps/ui`) | Working: chart, compare, spread and settings screens. `bj ui` serves it |
+| Local app (`apps/ui`) | Working: chart, compare, spread, trainer and settings screens. `bj ui` serves it |
 
 The prioritised backlog, with a definition of "done" for each item, is in
 [markdown/ToDo.md](markdown/ToDo.md).

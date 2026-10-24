@@ -31,20 +31,24 @@ library and the engine itself.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from blackjack.actions import Action
     from blackjack.bankroll.counts import TrueCountDistribution
     from blackjack.bankroll.spread import CountEdge, SpreadResult
     from blackjack.config.models import SessionConfig
     from blackjack.counting import CountSystem
-    from blackjack.ev.solver import SolveResult
+    from blackjack.ev.solver import SolveResult, StrategyChart
     from blackjack.rules import RuleSet
     from blackjack.sim.engine import BetRamp, SimConfig, SimResult
     from blackjack.sim.strategy import PlayingStrategy
     from blackjack.strategy.deviations import Index
+    from blackjack.train.drill import Drill
+    from blackjack.train.grading import Verdict
+    from blackjack.train.session import CellKey, Session
 
 Progress = Callable[[int, int], None]
 """``(done, total)``, called as a long operation advances."""
@@ -309,3 +313,134 @@ def simulate(
         config=config,
         result=run_simulation(config),
     )
+
+
+# --- Drilling -----------------------------------------------------------------
+#
+# The drill is stateful: which question comes next depends on how every earlier
+# answer went, because the weighting folds in your measured miss rate. The CLI
+# holds that state in a `Session` for the length of a loop.
+#
+# A screen cannot do that, or rather it should not: per-player state on the
+# server would mean mutable session state on a service with no authentication,
+# where two browsers on the same network would collide. So these two functions
+# are stateless, and the caller hands the tallies back each time. The weighting
+# and the grading stay here either way, which is what keeps a front end from
+# reimplementing them.
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionOutcome:
+    """One drill question, and the chart it came from."""
+
+    chart: StrategyChart
+    drill: Drill
+    legal: tuple[Action, ...]
+    """What the player may answer. Taken from the solved cell, so it agrees with
+    what grading will accept."""
+
+
+def next_question(
+    rules: RuleSet,
+    *,
+    seen: Mapping[CellKey, tuple[int, int]] | None = None,
+    exclude: CellKey | None = None,
+    seed: int | None = None,
+    chart: StrategyChart | None = None,
+) -> QuestionOutcome:
+    """Choose the next question, weighted by what the player keeps getting wrong.
+
+    Args:
+        rules: Table rules to drill.
+        seen: ``(attempts, misses)`` per cell so far. Rebuilt into a session, so
+            the weighting follows the player exactly as the CLI drill's does.
+            ``None`` weights by the generic error model alone.
+        exclude: A cell to avoid repeating immediately.
+        seed: Seeds the choice, so a sequence can be reproduced.
+        chart: A pre-solved chart, to skip re-solving.
+
+    Returns:
+        The question, without the answer in it.
+    """
+    import random
+
+    from blackjack.ev.solver import solve
+    from blackjack.train.drill import pick
+
+    solved = chart if chart is not None else solve(rules).chart
+    session = _session_from_tallies(seen)
+    drill = pick(solved, session, random.Random(seed), exclude=exclude)
+    return QuestionOutcome(
+        chart=solved,
+        drill=drill,
+        legal=tuple(drill.cell.analysis.all_evs),
+    )
+
+
+def grade_answer(
+    rules: RuleSet,
+    cards: tuple[int, ...],
+    upcard: int,
+    chosen: Action,
+    *,
+    chart: StrategyChart | None = None,
+) -> Verdict:
+    """Grade one drill answer against the chart, priced on the exact shoe.
+
+    Off the top of a full shoe, which is what a drill question poses, and held
+    to :attr:`~blackjack.train.grading.Standard.CHART` -- the same standard and
+    the same composition the CLI drill uses, so the two cannot disagree about
+    whether an answer was right.
+
+    Args:
+        rules: Table rules.
+        cards: The two cards the question showed.
+        upcard: The dealer's upcard.
+        chosen: What the player answered.
+        chart: A pre-solved chart, to skip re-solving.
+
+    Returns:
+        The verdict, including what the mistake cost.
+
+    Raises:
+        ValueError: if ``chosen`` is not legal for this hand, or the hand is not
+            a cell of this chart.
+    """
+    from blackjack.ev.solver import solve
+    from blackjack.shoe import full_shoe
+    from blackjack.train.grading import Standard, cell_key, grade
+
+    solved = chart if chart is not None else solve(rules).chart
+    key = cell_key(cards, upcard)
+    cell = solved.cells.get(key)
+    if cell is None:
+        raise ValueError(f"no chart cell for {cards} vs {upcard}")
+    return grade(
+        cards,
+        upcard,
+        full_shoe(rules.decks),
+        rules,
+        chosen,
+        standard=Standard.CHART,
+        expected=cell.action,
+    )
+
+
+def _session_from_tallies(seen: Mapping[CellKey, tuple[int, int]] | None) -> Session | None:
+    """Rebuild a session from per-cell ``(attempts, misses)``.
+
+    Only the counts matter to the weighting -- :func:`blackjack.train.drill.
+    blended_error_rate` reads ``seen`` and ``errors`` and nothing else -- so a
+    caller does not have to ship costs back and forth to get the same questions
+    it would have got from a live session.
+    """
+    from blackjack.train.session import CellStats, Session
+
+    if not seen:
+        return None
+    session = Session()
+    for key, (attempts, misses) in seen.items():
+        if attempts < 0 or misses < 0 or misses > attempts:
+            raise ValueError(f"{key}: {misses} misses out of {attempts} attempts is not possible")
+        session.stats[key] = CellStats(seen=attempts, errors=misses)
+    return session

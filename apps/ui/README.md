@@ -56,6 +56,25 @@ residual stated rather than spread around, and lists every square that changes.
 reports EV, SD, N0, SCORE and risk of ruin, each with a sentence saying what the
 figure means.
 
+**Trainer** serves one hand at a time, chosen by what it costs you to get it
+wrong: the mistake's price, times how often the hand comes up, times how often
+*you* have missed it. Answer with a button or the action's letter; `Enter` deals
+the next one. The feedback prices every action, not just the one you picked, and
+the running tally counts only what the wrong play cost — losing to variance is
+not losing to mistakes, and keeping those apart is the single most useful thing
+a trainer can teach.
+
+The weighting is the engine's, not this app's: `POST /api/drill/question` returns
+the question and `POST /api/drill/grade` returns the verdict, so a drill in the
+browser is the same drill as `bj drill` in the terminal, question for question
+on the same seed.
+
+What the screen keeps is the *tally* — how many times you have seen each
+square and how often you missed it — because a stateless service needs it back
+on every request. It lives in `localStorage`, per rule set, so a drill survives a
+reload. It is per-browser, and it is **not** the same store as the CLI's
+`--player` history, which writes a file no endpoint touches.
+
 **Settings** is read-only on purpose. A write endpoint means an endpoint that
 creates files, and this service has no authentication; see
 [markdown/ToDo.md](../../markdown/ToDo.md).
@@ -107,9 +126,12 @@ person with a phone.
 
 ## Not built
 
-The trainer. `bj drill`, `bj play` and `bj count` exist in the terminal and have
-no screen here; the engine and the API support one. Saving a setting needs the
-authentication question answered first. The three fonts load from Google Fonts
+Free play and the counting drills. The strategy drill has a screen; `bj play`
+(a whole dealt round, graded hand by hand) and `bj count` (running count, true
+count, deck estimation) do not, and both want one more than the drill did.
+Saving a setting needs the authentication question answered first, which also
+means a drill tally cannot follow you between browsers. The three fonts load
+from Google Fonts
 and fall back to the system stack offline, which is the normal case for a local
 app — self-hosting them is packaging, not design. See
 [markdown/ToDo.md](../../markdown/ToDo.md).
