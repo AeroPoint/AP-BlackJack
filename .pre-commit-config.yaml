@@ -8,20 +8,23 @@
 # Only the cheap checks are here. Cross-validation and the native build live in
 # CI, where minutes are free.
 #
-# Third-party licence text is excluded from the whitespace hooks. The OFL
+# Third-party licence text is excluded from the whitespace hooks below. The OFL
 # requires its notice be preserved, `scripts/fetch_fonts.py` writes the upstream
 # bytes, and a hook that reformats them would both alter a legal document and
-# leave that script showing a diff for ever.
-LICENCE_TEXT: &licence_text 'apps/ui/fonts/OFL-.*\.txt$'
-
+# leave that script showing a diff for ever. .gitattributes exempts the same
+# files from end-of-line conversion, for the same reason.
+#
+# Written out per hook rather than shared through a YAML anchor: an anchor needs
+# a root-level key to hang off, and pre-commit warns about any root key it does
+# not own.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace
-        exclude: *licence_text
+        exclude: 'apps/ui/fonts/OFL-.*\.txt$'
       - id: end-of-file-fixer
-        exclude: *licence_text
+        exclude: 'apps/ui/fonts/OFL-.*\.txt$'
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files
