@@ -94,6 +94,24 @@ Two numbers are tracked side by side, and the difference between them is the
 whole lesson: what the table did to you, and what you did to yourself. You can
 play perfectly and still be down.
 
+**Count** drills the three things that have to be right before the strategy
+trainer means anything: keeping a running count through a shoe, converting it
+to a true count the way your indices expect, and reading the discard tray you
+divide by. Each answer is timed, so it is a speed test as well as an accuracy
+one, on the same clock `bj count` uses.
+
+The running count carries between questions and restarts at the shuffle — and
+at the IRC, for an unbalanced system — because a slip should persist the way
+it would at a table. A conversion drill is offered only for systems that
+convert; which those are comes from `GET /api/counting` rather than a list of
+names kept here. Red 7 shows its sevens as `7r` and `7b`, because nobody at a
+table adds the half point the engine averages.
+
+The grader's note is the teaching: a running count off by exactly the IRC is
+named as that mistake, a conversion that used the wrong rounding is named as
+that, and a tray estimate says what the miss would have done to a true count at
+that depth.
+
 **Settings** is read-only on purpose. A write endpoint means an endpoint that
 creates files, and this service has no authentication; see
 [markdown/ToDo.md](../../markdown/ToDo.md).
@@ -154,11 +172,14 @@ person with a phone.
 
 ## Not built
 
-The counting drills. `bj count` — running count, true-count conversion and
-deck estimation — has no screen; it is three drills of its own rather than a
-variation on these two.
+Flashing the cards. The running-count drill shows its cards and leaves them up,
+which is what the terminal does because a terminal cannot do otherwise. A screen
+could take them away, and that is a better memory test — but it changes what
+the clock measures, from time-to-count to answer-after-the-flash, and the speed
+figures would stop being comparable with `bj count`. It is a different drill,
+worth building as one rather than as a toggle.
 
-Grading free play against **indices** is also absent, and deliberately: it needs
+Grading free play against **indices** is absent, and deliberately: it needs
 an index sweep, which is seconds of work and so belongs on the job runner rather
 than in a request. Offering a "count" standard that quietly graded against flat
 basic strategy would be worse than not offering it.

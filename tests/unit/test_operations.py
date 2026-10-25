@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -533,3 +534,172 @@ def test_the_shoe_reshuffles_and_says_so(basic) -> None:
     # The count is reset by the shuffle, so right after one it reflects only the
     # cards of the round just dealt -- never a carried-over running total.
     assert all(abs(count) <= 6 for count in counts_after_shuffle), counts_after_shuffle
+
+
+# --- Counting drills ----------------------------------------------------------
+#
+# Three drills reached by seed and index. The tests that matter are the ones
+# saying a question regenerated at index n is the question the terminal loop
+# would have asked on round n + 1 -- otherwise the browser is drilling a
+# different sequence and nothing would say so.
+
+
+def _setup(mode, **kw):
+    from blackjack.operations import CountDrillSetup
+
+    return CountDrillSetup(system=HI_LO, mode=mode, seed=kw.pop("seed", 11), **kw)
+
+
+def test_the_running_drill_matches_the_one_the_terminal_deals() -> None:
+    """Question n here is round n + 1 there, card for card.
+
+    The terminal makes one `RunningCountDrill` and pulls questions from it; this
+    rebuilds it and pulls n + 1. If those ever diverge, two people drilling the
+    same seed are counting different shoes.
+    """
+    import random
+
+    from blackjack.operations import count_question
+    from blackjack.train.counting_drill import DrillMode, RunningCountDrill
+
+    # Built with the engine's defaults, which is what CountDrillSetup now uses.
+    reference = RunningCountDrill(HI_LO, random.Random(11))
+    expected = [reference.next_question() for _ in range(8)]
+
+    setup = _setup(DrillMode.RUNNING)
+    for index, want in enumerate(expected):
+        got = count_question(setup, index).question
+        assert got.labels == want.labels, f"question {index} shows different cards"
+        assert got.expected == want.expected, f"question {index} has a different answer"
+        assert got.fresh_shoe == want.fresh_shoe
+
+
+def test_the_conversion_and_tray_drills_match_the_terminals_too() -> None:
+    """Same argument, for the two drills that draw from a bare rng."""
+    import random
+
+    from blackjack.operations import count_question
+    from blackjack.train.counting_drill import DrillMode, deck_question, true_count_question
+
+    rng = random.Random(11)
+    wanted = [true_count_question(HI_LO, rng) for _ in range(6)]
+    setup = _setup(DrillMode.TRUE)
+    for index, want in enumerate(wanted):
+        got = count_question(setup, index).question
+        assert (got.running, got.decks_remaining, got.expected) == (
+            want.running,
+            want.decks_remaining,
+            want.expected,
+        ), f"conversion question {index} differs"
+
+    rng = random.Random(11)
+    trays = [deck_question(rng) for _ in range(6)]
+    setup = _setup(DrillMode.DECKS)
+    for index, want in enumerate(trays):
+        got = count_question(setup, index).question
+        assert got.describe() == want.describe(), f"tray question {index} differs"
+        assert got.expected == want.expected
+
+
+def test_a_running_count_carries_between_questions() -> None:
+    """The point of the drill: a slip persists, as it would at a table.
+
+    Each question's answer is the count from the shuffle, not from the start of
+    that question, so consecutive answers are a running sum.
+    """
+    from blackjack.operations import count_question
+    from blackjack.train.counting_drill import DrillMode
+
+    setup = _setup(DrillMode.RUNNING, seed=7)
+    questions = [count_question(setup, index).question for index in range(6)]
+    assert questions[0].fresh_shoe, "the first question of a drill is off a fresh shoe"
+    assert any(q.expected != p.expected for p, q in pairwise(questions)), (
+        "the count never moved, so nothing is being carried"
+    )
+    # Not independent draws: the count after question n+1 differs from the count
+    # after n by the tags of only the cards question n+1 showed.
+    for before, after in pairwise(questions):
+        if after.fresh_shoe:
+            continue
+        step = after.expected - before.expected
+        assert abs(step) <= after.cards, f"a {after.cards}-card step moved the count by {step}"
+
+
+def test_grading_regenerates_the_question_rather_than_trusting_the_caller() -> None:
+    """So an answer cannot be graded against a question nobody was asked."""
+    from blackjack.operations import count_question, grade_count
+    from blackjack.train.counting_drill import DrillMode
+
+    setup = _setup(DrillMode.RUNNING, seed=7)
+    first = count_question(setup, 1).question.expected
+    second = count_question(setup, 2).question.expected
+    assert first != second, "pick two questions with different answers for this to prove anything"
+
+    assert grade_count(setup, 1, first, 3.0).correct
+    assert not grade_count(setup, 2, first, 3.0).correct, (
+        "the right answer to question 1 was accepted for question 2"
+    )
+
+
+def test_a_true_count_drill_on_an_unbalanced_system_is_refused() -> None:
+    """KO and Red 7 never convert -- that being the reason they exist."""
+    from blackjack.counting import KO
+    from blackjack.operations import CountDrillSetup, count_question
+    from blackjack.train.counting_drill import DrillMode
+
+    setup = CountDrillSetup(system=KO, mode=DrillMode.TRUE, seed=1)
+    with pytest.raises(ValueError, match="unbalanced"):
+        count_question(setup, 0)
+
+    # The same system drills a running count perfectly well.
+    running = CountDrillSetup(system=KO, mode=DrillMode.RUNNING, seed=1)
+    assert count_question(running, 0).question.cards > 0
+
+
+def test_an_unbalanced_system_starts_at_its_initial_running_count() -> None:
+    """Forgetting the IRC is the characteristic error, so it must be drillable."""
+    from blackjack.counting import KO
+    from blackjack.operations import CountDrillSetup, count_question
+    from blackjack.train.counting_drill import DrillMode
+
+    setup = CountDrillSetup(system=KO, mode=DrillMode.RUNNING, seed=4, decks=6)
+    question = count_question(setup, 0).question
+    assert question.irc != 0, "a six-deck KO shoe does not start at zero"
+
+
+def test_a_colour_dependent_rank_is_reported_with_its_two_tags() -> None:
+    """Red 7 tags a red seven +1 and a black one 0; nobody counts the average."""
+    from blackjack.counting import RED_SEVEN
+    from blackjack.operations import CountDrillSetup, count_question
+    from blackjack.train.counting_drill import DrillMode
+
+    setup = CountDrillSetup(system=RED_SEVEN, mode=DrillMode.RUNNING, seed=1)
+    split = count_question(setup, 0).split
+    assert split is not None
+    assert split.rank == 7
+    assert {split.red, split.black} == {1.0, 0.0}
+
+    plain = _setup(DrillMode.RUNNING)
+    assert count_question(plain, 0).split is None, "Hi-Lo has no colour-dependent rank"
+
+
+@pytest.mark.parametrize(
+    ("index", "match"),
+    [(-1, "must be in"), (10_000, "must be in")],
+    ids=["negative", "past-the-cap"],
+)
+def test_an_out_of_range_index_is_refused(index, match) -> None:
+    """Regenerating question n replays n of them, so the range is bounded."""
+    from blackjack.operations import count_question
+    from blackjack.train.counting_drill import DrillMode
+
+    with pytest.raises(ValueError, match=match):
+        count_question(_setup(DrillMode.RUNNING), index)
+
+
+def test_a_shoe_outside_the_engines_limits_is_refused_before_any_question() -> None:
+    from blackjack.operations import CountDrillSetup, count_question
+    from blackjack.train.counting_drill import DrillMode
+
+    with pytest.raises(ValueError, match="decks"):
+        count_question(CountDrillSetup(system=HI_LO, mode=DrillMode.RUNNING, decks=0), 0)

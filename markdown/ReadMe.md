@@ -353,24 +353,19 @@ prints only the bare EV difference, is superseded by it.
 
 Stated plainly, because a solver's credibility is in knowing its own edges:
 
-- **Local app.** `apps/ui/` has four screens — chart, compare, spread and
-  settings — in plain HTML, CSS and JavaScript with no build step, served at
-  `/` by the API process itself. They use the standalone chart page's palette
-  and both of its colouring scales. There is a fifth screen now: a strategy
-  drill that serves one hand at a time, weighted by what the mistake costs
-  times how often you have missed it, and prices every action in its feedback.
-  What is **not** there: free play, the counting drills, and any way to save a
+- **Local app.** `apps/ui/` has seven screens — chart, compare, spread,
+  trainer, free play, counting drills and settings — in plain HTML, CSS and
+  JavaScript with no build step, served at `/` by the API process itself and
+  started with `bj ui`. They use the standalone chart page's palette and both of
+  its colouring scales, and the app fetches nothing from the network.
+  Every module now has a screen. What is **not** there: any way to *save* a
   setting. Settings are read-only on purpose — a write endpoint needs an
-  authentication decision first, and this API has none. `bj ui` starts it all
-  and opens a browser on it.
+  authentication decision first, and this API has none.
 - **The standalone chart page still links the font CDN.** The app does not —
   it serves its own faces and fetches nothing from the network. The chart page
   is a single self-contained file shared by link, so its viewer has internet;
   embedding the faces would add about 340 KB to a file whose virtue is being
   one file.
-- **The counting drills have no screen.** `bj count` — running count,
-  true-count conversion, deck estimation — is terminal-only, and it is three
-  drills of its own rather than a variation on the two that have screens.
 - **Free play cannot be graded against indices.** Basic strategy and the exact
   shoe both work; grading against a counted strategy needs an index sweep, which
   is seconds of work and so belongs on the job runner rather than in a request.

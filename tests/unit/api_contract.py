@@ -245,3 +245,84 @@ PLAY_HAND: frozenset[str] = frozenset(
         "total",
     }
 )
+
+#: POST /api/count/question with mode=running. No `expected`: the
+#: answer is what the player is working out.
+COUNT_RUNNING: frozenset[str] = frozenset(
+    {
+        "backend",
+        "cards",
+        "decks",
+        "engine_version",
+        "fresh_shoe",
+        "groups",
+        "index",
+        "irc",
+        "mode",
+        "prompt",
+        "seed",
+        "split",
+        "system",
+    }
+)
+
+#: POST /api/count/question with mode=true. No `expected` and no
+#: `unrounded`; both are the answer.
+COUNT_TRUE: frozenset[str] = frozenset(
+    {
+        "backend",
+        "decks",
+        "decks_remaining",
+        "divisor",
+        "engine_version",
+        "estimation",
+        "index",
+        "mode",
+        "prompt",
+        "rounding",
+        "running",
+        "seed",
+        "system",
+    }
+)
+
+#: POST /api/count/question with mode=decks. `cards_dealt` is present
+#: only when the tray is described in cards -- in deck phrasing the exact
+#: card count is the answer, so it is withheld and arrives as null.
+COUNT_DECKS: frozenset[str] = frozenset(
+    {
+        "backend",
+        "cards_dealt",
+        "decks",
+        "describe",
+        "engine_version",
+        "in_cards",
+        "index",
+        "mode",
+        "prompt",
+        "seed",
+        "system",
+        "tray_decks",
+    }
+)
+
+#: POST /api/count/grade, for any mode.
+COUNT_GRADE: frozenset[str] = frozenset(
+    {
+        "backend",
+        "cards",
+        "correct",
+        "decks",
+        "engine_version",
+        "error",
+        "expected",
+        "given",
+        "index",
+        "mode",
+        "note",
+        "seconds",
+        "seed",
+        "system",
+        "truth",
+    }
+)

@@ -39,9 +39,12 @@ Anything that finishes in milliseconds is a plain request.
 | `POST /api/compare` | the same, for two rule sets given as `{"a": {...}, "b": {...}, "attribute": true}` -- what a screen offering every rule individually needs |
 | `GET /api/sidebet/{name}?decks=` | side bet against each known paytable |
 | `GET /api/systems/{rules}?decks=` | effect of removal and per-system BC/IC |
+| `GET /api/counting` | the counting systems, with level and whether each converts to a true count. Cheap, unlike the route above |
 | `POST /api/drill/question` | the next drill question, weighted by what the player keeps missing. Stateless: the client sends its own per-cell tallies back. The answer is **not** in the response |
 | `POST /api/drill/grade` | grade one drill answer on the exact shoe, with every action priced and what the mistake cost |
 | `POST /api/play/state` | where a free-play session stands, replayed from its seed and move log. One endpoint rather than one per move, because the log *is* the state. The undealt shoe is never in the response |
+| `POST /api/count/question` | one counting-drill question: running count, true-count conversion or deck estimation. Stateless by seed and index; the answer is not in the response |
+| `POST /api/count/grade` | grade one counting answer. Regenerates the question from the seed and index rather than trusting the caller |
 
 ## Jobs
 
@@ -104,7 +107,6 @@ See [apps/ui/README.md](../ui/README.md).
 
 ## Not built
 
-Endpoints for the counting drills, grading free play against indices (an index
-sweep is a job, not a request), and any endpoint that writes a config -- which
-needs the authentication question answered first. See
-[markdown/ToDo.md](../../markdown/ToDo.md).
+Grading free play against indices (an index sweep is a job, not a request), and
+any endpoint that writes a config -- which needs the authentication question
+answered first. See [markdown/ToDo.md](../../markdown/ToDo.md).

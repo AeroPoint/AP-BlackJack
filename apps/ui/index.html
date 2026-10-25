@@ -29,6 +29,7 @@
         <button type="button" data-screen="spread">Spread</button>
         <button type="button" data-screen="trainer">Trainer</button>
         <button type="button" data-screen="play">Play</button>
+        <button type="button" data-screen="count">Count</button>
         <button type="button" data-screen="settings">Settings</button>
       </nav>
       <button type="button" class="theme" id="theme" aria-label="Switch theme">
@@ -158,6 +159,27 @@
       <h2>This session</h2>
       <dl class="summary" id="play-tally"></dl>
       <p class="lede" id="play-tally-note"></p>
+    </section>
+  </section>
+
+  <!-- ================= Counting drills ================= -->
+  <section class="screen" data-screen="count" hidden>
+    <p class="standfirst">
+      The strategy trainer assumes the count is right. These are the three
+      things that have to be right first: keeping the running count through a
+      shoe, converting it to a true count the way your indices expect, and
+      reading the discard tray you divide by. Each answer is timed, so it is a
+      speed test as well as an accuracy one.
+    </p>
+
+    <div class="controls" id="count-controls"></div>
+
+    <div id="count-body"></div>
+
+    <section class="block" id="count-tally-block" hidden>
+      <h2>This session</h2>
+      <dl class="summary" id="count-tally"></dl>
+      <p class="lede" id="count-tally-note"></p>
     </section>
   </section>
 

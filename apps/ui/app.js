@@ -2185,6 +2185,371 @@ async function initPlay() {
   }
 }
 
+// --- Counting drills screen --------------------------------------------------
+//
+// Three drills, and they are the three things that have to be right before the
+// strategy trainer means anything: keeping the running count, converting it,
+// and reading the tray it gets divided by.
+//
+// Stateless by seed and index, like free play. The client holds a seed and a
+// question number; the server regenerates question n and grades against it, so
+// an answer can never be marked against a question nobody was asked.
+//
+// The clock is the client's, because only the client knows when the question
+// appeared. It runs from the moment the question renders to the moment an
+// answer is submitted, which is what `bj count` measures too -- so the speed
+// figures mean the same thing in both.
+//
+// Note on what is deliberately absent: the cards are not flashed and taken
+// away. A screen could, and the engine's own notes say a terminal cannot, so it
+// looks like the obvious thing a screen adds. But hiding the cards changes what
+// the clock measures -- answer-after-the-flash rather than time-to-count -- and
+// the speed figures would stop being comparable with the terminal's. It is a
+// different drill, and worth building as one rather than as a toggle here.
+
+const COUNT_MODES = [
+  ["running", "Running count"],
+  ["true", "True count"],
+  ["decks", "Deck estimation"],
+];
+
+const count = {
+  catalogue: null,
+  system: "hi-lo",
+  mode: "running",
+  decks: 6,
+  seed: null,
+  index: 0,
+  question: null,
+  verdict: null,
+  shown: 0,
+  asked: 0,
+  right: 0,
+  seconds: 0,
+  errors: [],
+  busy: false,
+  pending: null,
+};
+
+/* A card chip from a label the server sent, which may be "T", "5", or "7r" and
+   "7b" for a colour-dependent rank. Unlike the trainer's chips these are not
+   ranks to be formatted -- the server already decided what the player sees. */
+function labelChip(label) {
+  const chip = el("span", { className: "card", textContent: label });
+  if (label.endsWith("r")) chip.classList.add("card-red");
+  if (label.endsWith("b")) chip.classList.add("card-black");
+  return chip;
+}
+
+function renderCountQuestion(question) {
+  const panel = el("div", { className: "felt" });
+
+  if (question.mode === "running") {
+    if (question.fresh_shoe) {
+      panel.append(
+        el("p", {
+          className: "shoe-note",
+          textContent:
+            question.irc === 0
+              ? "Fresh shoe — the count starts at zero."
+              : `Fresh shoe — the count starts at the IRC, ${fmt.signed(question.irc)}.`,
+        })
+      );
+    }
+    for (const group of question.groups) {
+      panel.append(el("div", { className: "cards" }, group.map(labelChip)));
+    }
+    if (question.split) {
+      const name = rankName(question.split.rank);
+      panel.append(
+        el("p", {
+          className: "shoe-note",
+          textContent:
+            `${name}r is a red ${name} (${fmt.signed(question.split.red)}),` +
+            ` ${name}b a black one (${fmt.signed(question.split.black)}).`,
+        })
+      );
+    }
+  } else if (question.mode === "true") {
+    panel.append(
+      el("div", { className: "bignum mono" }, [
+        el("span", { textContent: fmt.signed(question.running) }),
+        el("small", { textContent: `running count` }),
+      ]),
+      el("div", { className: "bignum mono" }, [
+        el("span", { textContent: question.decks_remaining.toFixed(1) }),
+        el("small", { textContent: "decks remaining" }),
+      ])
+    );
+  } else {
+    panel.append(
+      el("div", { className: "bignum mono" }, [
+        el("span", {
+          textContent: question.in_cards
+            ? String(question.cards_dealt)
+            : question.tray_decks.toFixed(1),
+        }),
+        el("small", { textContent: question.in_cards ? "cards in the tray" : "decks in the tray" }),
+      ]),
+      el("p", { className: "shoe-note", textContent: `of a ${question.decks}-deck shoe` })
+    );
+  }
+  return panel;
+}
+
+function renderCountAnswer() {
+  const form = el("form", { className: "answerform" });
+  const input = el("input", {
+    type: "text",
+    id: "count-answer",
+    inputMode: "decimal",
+    autocomplete: "off",
+    placeholder: count.mode === "decks" ? "e.g. 2.5" : "e.g. +4",
+  });
+  const submit = el("button", { type: "submit", className: "run", textContent: "Answer" });
+  form.append(
+    el("label", { className: "field" }, [
+      el("span", { textContent: count.question.prompt }),
+      input,
+    ]),
+    el("div", { className: "btnrow" }, [submit])
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const given = Number(input.value.trim());
+    if (input.value.trim() === "" || Number.isNaN(given)) {
+      status($("count-note"), "That is not a number. Counts can be negative, like -3.", true);
+      return;
+    }
+    answerCount(given);
+  });
+  return form;
+}
+
+function renderCountVerdict(verdict) {
+  const out = document.createDocumentFragment();
+  out.append(
+    el("div", { className: `verdict-head ${verdict.correct ? "right" : "wrong"}` }, [
+      el("b", { textContent: verdict.correct ? "Right" : "Wrong" }),
+      el("span", {
+        className: "mono",
+        textContent:
+          `you said ${fmt.signed(verdict.given)}` +
+          (verdict.correct ? "" : ` · it was ${fmt.signed(verdict.expected)}`) +
+          ` · ${verdict.seconds.toFixed(1)}s`,
+      }),
+    ])
+  );
+  if (verdict.note) {
+    out.append(el("p", { className: "lede note", textContent: verdict.note }));
+  }
+  const next = el("button", { type: "button", className: "run", textContent: "Next question" });
+  next.addEventListener("click", () => nextCountQuestion());
+  out.append(el("div", { className: "btnrow next-row" }, [next]));
+  return out;
+}
+
+function renderCount() {
+  const body = $("count-body");
+  if (!count.question) {
+    status(body, "Dealing…");
+    return;
+  }
+  const panel = el("div", { className: "drill" }, [renderCountQuestion(count.question)]);
+  const right = el("div", {});
+  right.append(count.verdict ? renderCountVerdict(count.verdict) : renderCountAnswer());
+  right.append(el("div", { id: "count-note" }));
+  panel.append(right);
+  body.replaceChildren(panel);
+  renderCountTally();
+  if (!count.verdict) $("count-answer")?.focus();
+}
+
+function renderCountTally() {
+  if (!count.asked) {
+    $("count-tally-block").hidden = true;
+    return;
+  }
+  $("count-tally-block").hidden = false;
+  const mean = count.seconds / count.asked;
+  const tiles = [
+    ["Asked", `${count.asked}`, false],
+    [
+      "Right",
+      `${count.right}<small> · ${((count.right / count.asked) * 100).toFixed(0)}%</small>`,
+      count.right < count.asked,
+    ],
+    ["Mean time", `${mean.toFixed(1)}<small> s</small>`, false],
+  ];
+  if (count.mode === "decks" && count.errors.length) {
+    const bias = count.errors.reduce((a, b) => a + b, 0) / count.errors.length;
+    tiles.push([
+      "Mean error",
+      `${fmt.signed(Number(bias.toFixed(2)))}<small> decks</small>`,
+      Math.abs(bias) > 0.25,
+    ]);
+  }
+  $("count-tally").replaceChildren(
+    ...tiles.map(([term, value, hot]) => {
+      const box = el("div", { className: hot ? "hot" : "" });
+      box.append(el("dt", { textContent: term }));
+      const dd = el("dd");
+      dd.innerHTML = value;
+      box.append(dd);
+      return box;
+    })
+  );
+  $("count-tally-note").textContent =
+    count.mode === "decks"
+      ? "Mean error is signed: a consistent positive means you read trays high, which" +
+        " inflates every true count you take from them."
+      : "Time runs from the question appearing to your answer, so it is a speed as" +
+        " well as an accuracy figure — the same clock bj count uses.";
+}
+
+function countBody(extra = {}) {
+  return {
+    system: count.system,
+    mode: count.mode,
+    decks: count.decks,
+    seed: count.seed,
+    index: count.index,
+    ...extra,
+  };
+}
+
+async function nextCountQuestion(reset) {
+  count.pending?.abort();
+  const controller = new AbortController();
+  count.pending = controller;
+  if (reset) {
+    count.seed = newSeed();
+    count.index = 0;
+    count.asked = 0;
+    count.right = 0;
+    count.seconds = 0;
+    count.errors = [];
+  } else if (count.question) {
+    count.index += 1;
+  }
+  count.verdict = null;
+  count.busy = true;
+  status($("count-body"), "Dealing…");
+  try {
+    count.question = await api("/count/question", {
+      method: "POST",
+      body: JSON.stringify(countBody()),
+      signal: controller.signal,
+    });
+    count.shown = performance.now();
+    count.busy = false;
+    renderCount();
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    count.busy = false;
+    count.question = null;
+    status($("count-body"), `Could not set a question: ${error.message}`, true);
+  }
+}
+
+async function answerCount(given) {
+  if (count.busy || count.verdict) return;
+  count.busy = true;
+  const seconds = (performance.now() - count.shown) / 1000;
+  try {
+    const verdict = await api("/count/grade", {
+      method: "POST",
+      body: JSON.stringify(countBody({ given, seconds })),
+    });
+    count.asked += 1;
+    count.seconds += verdict.seconds;
+    if (verdict.correct) count.right += 1;
+    if (count.mode === "decks") count.errors.push(verdict.error);
+    count.verdict = verdict;
+    count.busy = false;
+    renderCount();
+  } catch (error) {
+    count.busy = false;
+    status($("count-note"), `Could not grade that: ${error.message}`, true);
+  }
+}
+
+/* Which systems convert to a true count comes from the server, because a
+   hard-coded list of names here is the thing that rots when a config is added.
+   See GET /api/counting. */
+const convertingSystems = () =>
+  count.catalogue.filter((system) => system.converts).map((system) => system.key);
+
+const systemChoices = () =>
+  count.mode === "true" ? convertingSystems() : count.catalogue.map((system) => system.key);
+
+function renderCountControls() {
+  const fields = [
+    segmented(
+      { name: "mode", label: "Drill", options: COUNT_MODES },
+      count.mode,
+      (value) => {
+        count.mode = value;
+        /* A conversion drill needs a system that converts, so switching to it
+           from an unbalanced one moves to the first that does. */
+        const allowed = systemChoices();
+        if (!allowed.includes(count.system)) count.system = allowed[0];
+        renderCountControls();
+        nextCountQuestion(true);
+      }
+    ),
+    picker(
+      "System",
+      count.system,
+      systemChoices(),
+      (value) => {
+        count.system = value;
+        renderCountControls();
+        nextCountQuestion(true);
+      }
+    ),
+    segmented(
+      { name: "decks", label: "Decks", options: [1, 2, 4, 6, 8].map((d) => [d, String(d)]) },
+      count.decks,
+      (value) => {
+        count.decks = Number(value);
+        renderCountControls();
+        nextCountQuestion(true);
+      }
+    ),
+  ];
+
+  const fresh = el("button", {
+    type: "button",
+    className: "run ghost",
+    textContent: "New shoe",
+  });
+  fresh.addEventListener("click", () => nextCountQuestion(true));
+  fields.push(
+    el("div", { className: "field wide" }, [
+      el("span", { textContent: "Start over" }),
+      el("div", { className: "btnrow" }, [fresh]),
+      el("small", {
+        textContent:
+          "A new seed and a cleared tally. In running-count mode the count also" +
+          " restarts, as it does after a shuffle.",
+      }),
+    ])
+  );
+  $("count-controls").replaceChildren(...fields);
+}
+
+async function initCount() {
+  if (count.catalogue) return;
+  count.catalogue = (await api("/counting")).systems;
+  if (!systemChoices().includes(count.system)) {
+    count.system = systemChoices()[0];
+  }
+  count.seed = newSeed();
+  renderCountControls();
+  await nextCountQuestion();
+}
+
 // --- Boot --------------------------------------------------------------------
 
 function showScreen(name) {
@@ -2210,6 +2575,10 @@ function showScreen(name) {
   } else if (name === "play") {
     initPlay().catch((error) => {
       status($("play-body"), `Could not open a table: ${error.message}`, true);
+    });
+  } else if (name === "count") {
+    initCount().catch((error) => {
+      status($("count-body"), `Could not start a counting drill: ${error.message}`, true);
     });
   } else if (name === "settings") {
     initSettings().catch((error) => {

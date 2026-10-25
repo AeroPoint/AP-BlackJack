@@ -1133,3 +1133,201 @@ def test_an_absurdly_long_log_is_refused_rather_than_replayed(client) -> None:
     )
     assert response.status_code == 400
     assert "fresh seed" in response.json()["detail"]
+
+
+# --- Counting drills ----------------------------------------------------------
+
+
+def _ask(client, **kw):
+    """One counting question, asserting it was accepted."""
+    response = client.post(
+        "/api/count/question", json={"system": "hi-lo", "seed": 1, "index": 0, **kw}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _answer(client, **kw):
+    """One graded answer, asserting it was accepted."""
+    response = client.post(
+        "/api/count/grade", json={"system": "hi-lo", "seed": 1, "index": 0, **kw}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.parametrize(
+    ("mode", "shape"),
+    [("running", "COUNT_RUNNING"), ("true", "COUNT_TRUE"), ("decks", "COUNT_DECKS")],
+)
+def test_a_counting_question_carries_no_answer(client, mode, shape) -> None:
+    """Each mode's whole key set is pinned, so adding a field comes past a test.
+
+    The answer is the thing being drilled. A question that carried it would make
+    the drill pointless for anyone who opened the network tab, and would invite
+    a client to grade itself -- which is where the rounding rules would get
+    reimplemented, wrongly, in JavaScript.
+    """
+    from tests.unit import api_contract as contract
+
+    declared = getattr(contract, shape)
+    for giveaway in ("expected", "answer", "unrounded", "remaining", "truth", "correct"):
+        assert giveaway not in declared, f"{shape} declares {giveaway!r}"
+
+    assert set(_ask(client, mode=mode)) == declared
+
+
+def test_a_tray_given_in_decks_withholds_the_card_count(client) -> None:
+    """The sharp one. In deck phrasing, the exact card count *is* the answer.
+
+    A tray described as "1.8 decks" is answered by subtracting from the shoe.
+    The card count behind that figure pins the depth exactly, so sending it
+    would hand over the answer -- but when the tray is described *in cards*, the
+    count is what the player is looking at and withholding it would be nonsense.
+    So it travels in one phrasing and not the other, and both appear across a
+    handful of seeds.
+    """
+    phrasings = {}
+    for seed in range(12):
+        body = _ask(client, mode="decks", seed=seed)
+        phrasings[body["in_cards"]] = body
+        if body["in_cards"]:
+            assert body["cards_dealt"] is not None, "a tray shown in cards must say how many"
+            assert body["tray_decks"] is None
+            assert "cards in the tray" in body["describe"]
+        else:
+            assert body["cards_dealt"] is None, "deck phrasing must not leak the exact depth"
+            assert body["tray_decks"] is not None
+            assert "decks in the tray" in body["describe"]
+    assert set(phrasings) == {True, False}, "twelve seeds produced only one phrasing"
+
+
+def test_the_same_seed_and_index_ask_the_same_question(client) -> None:
+    """So a session is reproducible and grading can regenerate it."""
+    first = _ask(client, mode="running", seed=99, index=3)
+    again = _ask(client, mode="running", seed=99, index=3)
+    assert first == again
+    assert _ask(client, mode="running", seed=99, index=4) != first
+
+
+def test_a_running_count_is_graded_exactly(client) -> None:
+    """A count is a sum, not an estimate: near enough is wrong."""
+    right = _answer(client, mode="running", seed=1, index=0, given=0, seconds=2.0)
+    expected = right["expected"]
+
+    exact = _answer(client, mode="running", seed=1, index=0, given=expected, seconds=2.0)
+    assert exact["correct"] is True
+    assert exact["cards"] > 0, "a running-count grade reports how many cards it covered"
+
+    off_by_one = _answer(client, mode="running", seed=1, index=0, given=expected + 1, seconds=2.0)
+    assert off_by_one["correct"] is False
+    assert "off by" in off_by_one["note"]
+
+
+def test_a_conversion_grade_shows_its_working(client) -> None:
+    """The note is the teaching, not the tick."""
+    body = _ask(client, mode="true", seed=3)
+    graded = _answer(client, mode="true", seed=3, given=0, seconds=1.5)
+    assert str(body["divisor"]) in graded["note"] or f"{body['divisor']:g}" in graded["note"]
+    assert graded["note"], "a conversion grade always explains the arithmetic"
+
+
+def test_a_tray_grade_says_what_the_miss_would_cost(client) -> None:
+    """Deck estimation matters because it is the divisor of every true count."""
+    graded = _answer(client, mode="decks", seed=5, given=1.0, seconds=3.0)
+    assert graded["correct"] is False
+    assert graded["truth"] is not None, "the real depth is reported, not just the half-deck answer"
+    assert graded["error"] != 0
+    assert "true count" in graded["note"].lower()
+
+
+def test_an_unbalanced_system_cannot_be_drilled_on_conversion(client) -> None:
+    """KO never converts, which is the reason it exists. Running count is fine."""
+    refused = client.post("/api/count/question", json={"system": "ko", "mode": "true", "seed": 1})
+    assert refused.status_code == 400
+    assert "unbalanced" in refused.json()["detail"]
+
+    assert _ask(client, system="ko", mode="running")["irc"] != 0, (
+        "a KO shoe starts at its initial running count, which is the thing to drill"
+    )
+
+
+def test_a_colour_dependent_rank_is_described(client) -> None:
+    """Red 7 tags a red seven +1 and a black one 0; the labels must say which."""
+    body = _ask(client, system="red-7", mode="running")
+    assert body["split"] == {"rank": 7, "red": 1.0, "black": 0.0}
+    assert _ask(client, system="hi-lo", mode="running")["split"] is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"mode": "vibes"},
+        {"system": 5},
+        {"index": -1},
+        {"index": 1.5},
+        {"index": True},
+        {"seed": "lucky"},
+        {"decks": 0},
+        {"decks": 99},
+        {"decks": "six"},
+        {"groups": 0},
+        {"cards_per_group": 99},
+        {"penetration": 0.01},
+        {"penetration": 2},
+        {"mode": "true", "rounding": "guess"},
+        {"mode": "true", "system": "ko"},
+    ],
+    ids=[
+        "unknown-mode",
+        "system-not-a-string",
+        "negative-index",
+        "fractional-index",
+        "index-is-a-bool",
+        "seed-not-a-number",
+        "zero-decks",
+        "too-many-decks",
+        "decks-not-a-number",
+        "zero-groups",
+        "absurd-group-size",
+        "penetration-too-low",
+        "penetration-above-one",
+        "unknown-rounding",
+        "conversion-on-an-unbalanced-system",
+    ],
+)
+def test_a_malformed_counting_request_is_a_client_error(client, payload) -> None:
+    """Not a 500, and the message names the field."""
+    response = client.post("/api/count/question", json={"system": "hi-lo", **payload})
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"given": "six"},
+        {"given": None},
+        {"given": 1, "seconds": -1},
+        {"given": 1, "seconds": "ages"},
+    ],
+    ids=[
+        "no-answer",
+        "answer-not-a-number",
+        "null-answer",
+        "negative-seconds",
+        "seconds-not-a-number",
+    ],
+)
+def test_a_malformed_counting_answer_is_a_client_error(client, payload) -> None:
+    response = client.post(
+        "/api/count/grade", json={"system": "hi-lo", "mode": "running", "seed": 1, **payload}
+    )
+    assert response.status_code == 400, response.text
+
+
+def test_an_unknown_counting_system_is_a_404_not_a_400(client) -> None:
+    """A missing config is not a malformed request."""
+    response = client.post("/api/count/question", json={"system": "nope", "mode": "running"})
+    assert response.status_code == 404

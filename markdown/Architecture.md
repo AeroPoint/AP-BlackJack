@@ -261,8 +261,6 @@ attached. Writing it last makes it the commit point.
 
 ## What is scaffolded but not implemented
 
-- **A counting-drill screen.** The strategy drill and free play have one; the
-  running-count, true-count and deck-estimation drills do not.
 - **Indices in free play.** Grading against a counted strategy needs an index
   sweep, which is a job rather than a request.
 

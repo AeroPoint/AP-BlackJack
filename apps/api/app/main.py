@@ -226,6 +226,33 @@ def play_state(payload: dict[str, Any]) -> dict[str, Any]:
     return _handle(service.play_state, payload)
 
 
+@app.get("/api/counting")
+def counting_catalogue() -> dict[str, Any]:
+    """The counting systems, with whether each converts to a true count.
+
+    So a client does not have to know which systems are unbalanced. Cheap:
+    ``GET /api/systems/{rules}`` is the expensive per-system analysis.
+    """
+    return service.counting_catalogue()
+
+
+@app.post("/api/count/question")
+def count_question(payload: dict[str, Any]) -> dict[str, Any]:
+    """One counting-drill question: running count, true count or deck estimation.
+
+    Stateless by seed and index, as free play is. The answer is not in the
+    response -- and for deck estimation the exact card count *is* the answer, so
+    it travels only when it is also what the player is shown.
+    """
+    return _handle(service.count_question, payload)
+
+
+@app.post("/api/count/grade")
+def count_grade(payload: dict[str, Any]) -> dict[str, Any]:
+    """Grade one counting-drill answer, with the engine's note on what went wrong."""
+    return _handle(service.count_grade, payload)
+
+
 @app.get("/api/sidebet/{name}")
 def sidebet(name: str, decks: int = Query(6, ge=1, le=8)) -> dict[str, Any]:
     """Analyse a side bet against each of its known paytables."""

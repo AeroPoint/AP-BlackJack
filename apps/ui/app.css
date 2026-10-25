@@ -971,6 +971,36 @@ p.lede.warn b { color: inherit; }
   font-size: 12.5px; opacity: 0.85;
 }
 
+/* --- counting drills -------------------------------------------------------- */
+
+/* A single figure to read, which is what the conversion and tray drills show
+   instead of cards. */
+.bignum {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.bignum span { font-size: 38px; font-weight: 600; letter-spacing: -0.02em; }
+.bignum small {
+  font-family: var(--font-body);
+  font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  opacity: 0.74;
+}
+.shoe-note { margin: 0; font-size: 12.5px; opacity: 0.82; text-align: center; }
+
+/* The colour of a colour-dependent rank is carried by the label too ("7r"),
+   never by the swatch alone. */
+.card-red { color: var(--band-critical); }
+.card-black { color: var(--ink); }
+
+.answerform { display: flex; flex-direction: column; gap: 12px; }
+.answerform input {
+  font-family: var(--font-mono); font-size: 22px; text-align: center;
+  padding: 12px; min-height: 54px;
+}
+.answerform button.run { width: auto; min-width: 11rem; }
+
+/* The graders write several lines, and the line breaks carry meaning. */
+p.lede.note { white-space: pre-line; }
+
 /* --- wide bodies, and a phone on its side ----------------------------------- */
 /*
  * Last in the file on purpose: these rules tune the two cases the earlier
