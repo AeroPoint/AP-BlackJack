@@ -452,14 +452,31 @@ def counting_systems(rules_name: str, decks: int) -> dict[str, Any]:
 
 
 def indices_job(
-    rules_name: str,
+    rules_name: str | None,
     system_name: str,
     decks_remaining: float | None,
+    inline_rules: dict[str, Any] | None = None,
 ) -> tuple[Any, str | None]:
-    """Build the callable and fingerprint for an index-generation job."""
+    """Build the callable and fingerprint for an index-generation job.
+
+    The rule set arrives either as a stored name or as inline fields. Free play
+    needs the second: its table is edited on screen and has no name to give.
+
+    Raises:
+        BadRequestError: if the table is named both ways, or neither way is
+            usable.
+    """
     from blackjack import operations
 
-    rules = resolve_rules(rules_name)
+    if rules_name is not None and inline_rules is not None:
+        raise BadRequestError(
+            "name the table in the query or send it inline, not both -- otherwise "
+            "one of them is silently ignored and the sweep is for the wrong table"
+        )
+    if inline_rules is not None:
+        rules = _rules_from_payload({"rules": inline_rules})
+    else:
+        rules = resolve_rules(rules_name if rules_name is not None else "vegas6-h17")
     system = resolve_system(system_name)
     config = SessionConfig(rules=rules, system=system)
 
@@ -467,6 +484,9 @@ def indices_job(
         outcome = operations.indices(
             rules, system, decks_remaining=decks_remaining, progress=progress
         )
+        # Kept, so free play can grade against these indices without redoing the
+        # sweep inside a request. See `remember_indices`.
+        remember_indices(rules, system, decks_remaining, outcome)
         insurance = outcome.insurance_index
         return _envelope(
             rules={"name": rules.name, "slug": rules.slug()},
@@ -837,6 +857,143 @@ def drill_grade(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+# --- Prepared index sweeps ----------------------------------------------------
+#
+# Grading free play against a counted strategy needs deviation indices, and
+# generating them takes 1.7 seconds on the native core and 34.5 without it,
+# measured. This module's own rule is that such work is a job: a slow request is
+# indistinguishable from a hung one, and holding a connection open for a sweep is
+# wrong even when it works.
+#
+# So the sweep stays a job, and what it produces is kept here. A free-play step
+# asking for `count` grading looks for a prepared sweep and *refuses* if there
+# is none, naming the job that makes one, rather than quietly doing 34 seconds
+# of work inside a button press. Refusing is the honest half of the design:
+# without it this would be a cache that is fast when warm and looks broken when
+# cold, which is the worst of both.
+
+#: Bounded because these are caches, not session stores: a handful of tables is
+#: all anyone drills at once, and each entry is a solved chart or a short list of
+#: indices. Shared by the solve caches below and the sweep store above them.
+_STRATEGY_CACHE_SIZE = 8
+
+#: How many sweeps to keep. Each is a short list of indices; the cost is the
+#: sweep that produced it, which is why they are kept at all.
+_PREPARED_LIMIT = 8
+
+#: Prepared sweeps, oldest first, keyed by what they were derived for. A plain
+#: dict rather than `lru_cache` because this has to be *probed* without being
+#: computed -- the whole point is to answer "is this ready?" without doing the
+#: work if it is not.
+_PREPARED: dict[tuple[RuleSet, CountSystem, float | None], Any] = {}
+
+
+class NotReadyError(RuntimeError):
+    """The request needs work that has not been done yet.
+
+    Mapped to 409 by the HTTP layer: the request is well formed and the server
+    understood it, but something has to happen first. A 400 would say the client
+    was wrong, and a 503 would say the server was broken; neither is true.
+    """
+
+
+def _prepared_key(
+    rules: RuleSet, system: CountSystem, decks_remaining: float | None
+) -> tuple[RuleSet, CountSystem, float | None]:
+    """What a sweep is identified by. All three change the indices."""
+    return (rules, system, decks_remaining)
+
+
+def remember_indices(
+    rules: RuleSet, system: CountSystem, decks_remaining: float | None, outcome: Any
+) -> None:
+    """Keep a completed sweep, so a free-play step can grade against it."""
+    key = _prepared_key(rules, system, decks_remaining)
+    _PREPARED.pop(key, None)
+    _PREPARED[key] = outcome
+    while len(_PREPARED) > _PREPARED_LIMIT:
+        del _PREPARED[next(iter(_PREPARED))]
+
+
+def recall_indices(
+    rules: RuleSet, system: CountSystem, decks_remaining: float | None = None
+) -> Any:
+    """A prepared sweep, or ``None`` if nobody has run one for these inputs."""
+    return _PREPARED.get(_prepared_key(rules, system, decks_remaining))
+
+
+def _counted_strategy(rules: RuleSet, system: CountSystem) -> Any:
+    """A strategy that deviates, built from a prepared sweep.
+
+    Compiling is cheap; the sweep is not, which is why this asks for one rather
+    than generating it.
+
+    Raises:
+        NotReadyError: if no sweep has been prepared for these inputs.
+    """
+    from blackjack.sim.strategy import compile_strategy
+
+    outcome = recall_indices(rules, system)
+    if outcome is None:
+        raise NotReadyError(
+            f"grading against {system.name} indices needs an index sweep first, which is a "
+            f"job rather than a request: POST /api/jobs/indices with this rule set and "
+            f"system, poll it to completion, then play. The sweep takes a couple of seconds "
+            f"on the native core and about thirty without it."
+        )
+    return compile_strategy(
+        _solved_chart(rules),
+        name="counted",
+        indices=list(outcome.indices),
+        insurance_index=outcome.insurance_index,
+    )
+
+
+@lru_cache(maxsize=_STRATEGY_CACHE_SIZE)
+def _solved_chart(rules: RuleSet) -> Any:
+    """The solved chart for these rules, cached as the basic strategy is.
+
+    Separate from :func:`_compiled_strategy` because a counted strategy needs
+    the chart itself to compile indices onto, not the flat strategy built from
+    it.
+    """
+    from blackjack.ev.solver import solve
+
+    return solve(rules).chart
+
+
+def prepared_indices(payload: dict[str, Any]) -> dict[str, Any]:
+    """Whether a counted strategy is ready for these rules and system.
+
+    Lets a screen find out before it offers counted grading, instead of
+    offering it and handling a 409. Cheap: it probes, it never sweeps.
+
+    Raises:
+        BadRequestError: if the rules or system are not valid.
+        NotFoundError: if the counting system does not exist.
+    """
+    rules = _rules_from_payload(payload)
+    system_name = payload.get("system", "hi-lo")
+    if not isinstance(system_name, str):
+        raise BadRequestError("'system' must be the name of a counting system")
+    system = resolve_system(system_name)
+
+    outcome = recall_indices(rules, system)
+    return _envelope(
+        rules={"name": rules.name, "slug": rules.slug()},
+        system=system.name,
+        ready=outcome is not None,
+        count=len(outcome.indices) if outcome else 0,
+        insurance_index=(
+            None
+            if outcome is None or outcome.insurance_index == float("inf")
+            else outcome.insurance_index
+        ),
+        # Named here so a client does not have to know where to go next.
+        prepare_with="POST /api/jobs/indices",
+    )
+
+
 # --- Free play ----------------------------------------------------------------
 #
 # Stateless like the drill, but for a harder reason. Free play has a shoe that
@@ -852,11 +1009,6 @@ def drill_grade(payload: dict[str, Any]) -> dict[str, Any]:
 # What the client never receives is the undealt shoe. It gets what `RoundState`
 # exposes, which is what a player at a table can see, plus the count -- which
 # the UI hides by default, because counting it yourself is the exercise.
-
-
-#: Bounded because it is a cache, not a session store: a handful of tables is
-#: all anyone drills at once, and each entry is a solved chart.
-_STRATEGY_CACHE_SIZE = 8
 
 
 @lru_cache(maxsize=_STRATEGY_CACHE_SIZE)
@@ -919,10 +1071,26 @@ def _hand_payload(hand: Any) -> dict[str, Any]:
     }
 
 
-#: What a caller may be held to. ``count`` is absent on purpose: grading against
-#: indices needs an index sweep, which is seconds of work and therefore a job
-#: rather than a request. See markdown/ToDo.md.
-PLAY_STANDARDS = ("chart", "exact")
+#: What a caller may be held to. ``count`` needs a prepared index sweep, which
+#: is a job rather than a request -- see `_counted_strategy`, which refuses
+#: rather than sweeping inside a button press.
+PLAY_STANDARDS = ("chart", "exact", "count")
+
+
+def _strategy_for_standard(rules: RuleSet, system: CountSystem, standard: Any) -> Any:
+    """The strategy a standard is graded against.
+
+    ``exact`` needs none -- it is held to the shoe itself. ``chart`` needs the
+    flat solved strategy, which is cached. ``count`` needs one with deviations
+    compiled on, which needs a prepared sweep and refuses without one.
+    """
+    from blackjack.train.grading import Standard
+
+    if standard is Standard.EXACT:
+        return None
+    if standard is Standard.COUNT:
+        return _counted_strategy(rules, system)
+    return _compiled_strategy(rules)
 
 
 def play_state(payload: dict[str, Any]) -> dict[str, Any]:
@@ -985,7 +1153,7 @@ def play_state(payload: dict[str, Any]) -> dict[str, Any]:
             seed=seed,
             standard=standard,
             unit=unit,
-            strategy=None if standard is Standard.EXACT else _compiled_strategy(rules),
+            strategy=_strategy_for_standard(rules, system, standard),
         )
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc

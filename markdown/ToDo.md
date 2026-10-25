@@ -171,12 +171,24 @@ worth building twice.
   answer in the second phrasing, so it travels only when it is also what the
   player is being shown. A test asserts both phrasings appear and that only the
   first carries the count.
-  *Remaining:* grading free play against **indices** — which needs an index
-  sweep, so it belongs on the job runner rather than in a request. A "count"
-  standard that silently graded against flat basic strategy would be worse than
-  none, so the endpoint refuses it and says why. And flashing the cards in the
-  running-count drill, which is a better memory test but changes what the clock
-  measures, so it is a different drill rather than a toggle.
+  *Counted grading is done too.* Free play grades against basic strategy, the
+  exact shoe, or a counted strategy that deviates on this table's indices. The
+  sweep that makes one costs 1.7 s on the native core and 34.5 s without it, so
+  it stays a job: `POST /api/jobs/indices`, which now takes the rule set inline
+  as well as by name because free play's table is edited on screen and has no
+  stored name. The result is kept server-side, and
+  `POST /api/play/state` with `standard: "count"` returns **409** until a sweep
+  exists, naming the job in the message. Refusing is the honest half: a cache
+  without it would be fast when warm and look broken when cold, and 30 seconds
+  inside a button press is exactly the "slow request indistinguishable from a
+  hung one" this project's API notes forbid. `POST /api/play/indices` probes
+  readiness cheaply so the screen can show a progress figure instead of
+  appearing to freeze. Changing the table discards the sweep, since it was
+  derived for the old one, and a test checks that a different table is refused
+  again.
+  *Remaining:* flashing the cards in the running-count drill, which is a better
+  memory test but changes what the clock measures — so it is a different drill
+  rather than a toggle here.
   Also: a tally or a session lives in `localStorage`, so it is per-browser and
   cannot follow you between devices until there is somewhere authenticated to
   write it.

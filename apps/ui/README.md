@@ -79,8 +79,15 @@ reload. It is per-browser, and it is **not** the same store as the CLI's
 something, and money that moves. Every decision is priced against the cards
 *actually left*, so the feedback is what the mistake cost at this table rather
 than at an average one. Grade yourself against basic strategy or against the
-exact shoe. The count is hidden by default, because working it out is the
-exercise; a control shows it when you want to check yourself.
+exact shoe, or against a **counted** strategy that deviates on the indices for
+that table. That last one needs an index sweep first — a couple of seconds on
+the native core, about thirty without it — so it runs as a job with a visible
+progress figure rather than inside a button press, and the screen says so
+instead of appearing to hang. Changing the table discards the sweep, because it
+was derived for the old one.
+
+The count is hidden by default, because working it out is the exercise; a
+control shows it when you want to check yourself.
 
 The session is a seed and a list of moves, and nothing else. The server replays
 them to rebuild the table, which means this screen never holds the shoe — it

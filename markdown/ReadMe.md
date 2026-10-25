@@ -366,11 +366,6 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
   is a single self-contained file shared by link, so its viewer has internet;
   embedding the faces would add about 340 KB to a file whose virtue is being
   one file.
-- **Free play cannot be graded against indices.** Basic strategy and the exact
-  shoe both work; grading against a counted strategy needs an index sweep, which
-  is seconds of work and so belongs on the job runner rather than in a request.
-  The endpoint refuses that standard rather than quietly grading against flat
-  basic strategy while claiming otherwise.
 - **Personal leak view.** Your measured miss rates persist across sessions
   with `--player`, and the drill uses them, but `bj chart --importance` and the
   chart page still rank leaks with the generic error model rather than yours.

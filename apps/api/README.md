@@ -45,6 +45,7 @@ Anything that finishes in milliseconds is a plain request.
 | `POST /api/play/state` | where a free-play session stands, replayed from its seed and move log. One endpoint rather than one per move, because the log *is* the state. The undealt shoe is never in the response |
 | `POST /api/count/question` | one counting-drill question: running count, true-count conversion or deck estimation. Stateless by seed and index; the answer is not in the response |
 | `POST /api/count/grade` | grade one counting answer. Regenerates the question from the seed and index rather than trusting the caller |
+| `POST /api/play/indices` | whether a counted strategy is ready for these rules and system. Probes only; never runs the sweep |
 
 ## Jobs
 
@@ -53,7 +54,7 @@ Anything that takes seconds is a job. `POST` starts one and returns an id;
 
 | route | typical duration |
 |---|---|
-| `POST /api/jobs/indices` | ~2 s |
+| `POST /api/jobs/indices` | ~2 s on the native core, ~30 s without one. The rule set is named in the query or sent inline as `{"rules": {...}}`, which is what free play needs since its table has no stored name. The result is kept, so free play can then grade against it |
 | `POST /api/jobs/spread` | ~0.5 s. An optional body overrides fields of the named profile -- the ramp, the unit, the bankroll, the pace -- and the job's fingerprint reflects the override, not the stored profile |
 | `POST /api/jobs/simulate` | as long as you ask for |
 | `GET /api/jobs` | listing, without results |
@@ -107,6 +108,14 @@ See [apps/ui/README.md](../ui/README.md).
 
 ## Not built
 
-Grading free play against indices (an index sweep is a job, not a request), and
-any endpoint that writes a config -- which needs the authentication question
+Any endpoint that writes a config, which needs the authentication question
 answered first. See [markdown/ToDo.md](../../markdown/ToDo.md).
+
+## A note on 409
+
+`POST /api/play/state` with `standard: "count"` returns **409** until an index
+sweep has been run for that table and system. The request is well formed and the
+service is healthy; something has to happen first, and the response names it.
+Doing the sweep inside the request instead would break this file's own rule that
+a slow request is indistinguishable from a hung one -- 30 seconds inside a button
+press looks exactly like a server that has stopped answering.

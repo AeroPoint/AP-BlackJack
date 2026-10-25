@@ -87,6 +87,10 @@ def _handle(fn: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         raise HTTPException(404, str(exc)) from None
     except service.BadRequestError as exc:
         raise HTTPException(400, str(exc)) from None
+    except service.NotReadyError as exc:
+        # 409, not 400 or 503: the request is well formed and the server is
+        # healthy, but a prerequisite job has not been run. The message names it.
+        raise HTTPException(409, str(exc)) from None
 
 
 # --- Fast endpoints -----------------------------------------------------------
@@ -214,6 +218,16 @@ def drill_grade(payload: dict[str, Any]) -> dict[str, Any]:
     return _handle(service.drill_grade, payload)
 
 
+@app.post("/api/play/indices")
+def prepared_indices(payload: dict[str, Any]) -> dict[str, Any]:
+    """Whether a counted strategy is ready for these rules and system.
+
+    Lets a screen find out before offering counted grading, rather than
+    offering it and handling a 409. Probes only; it never runs the sweep.
+    """
+    return _handle(service.prepared_indices, payload)
+
+
 @app.post("/api/play/state")
 def play_state(payload: dict[str, Any]) -> dict[str, Any]:
     """Where a free-play session stands, replayed from its seed and move log.
@@ -270,12 +284,25 @@ def systems(rules_name: str, decks: int = Query(1, ge=1, le=8)) -> dict[str, Any
 
 @app.post("/api/jobs/indices", status_code=202)
 def start_indices(
-    rules: str = Query("vegas6-h17"),
+    rules: str | None = Query(None),
     system: str = Query("hi-lo"),
     decks_remaining: float | None = Query(None, gt=0, le=8),
+    body: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Start an index sweep. Takes a couple of seconds on the native core."""
-    fn, fingerprint = _handle(service.indices_job, rules, system, decks_remaining)
+    """Start an index sweep. Takes a couple of seconds on the native core.
+
+    The rule set may be named in the query or sent inline as ``{"rules": {...}}``
+    in the body -- free play needs the second, because its table is edited on
+    screen and has no stored name. Naming it both ways is refused rather than
+    resolved by precedence.
+
+    The result is also kept server-side, so free play can then grade against
+    these indices without sweeping again inside a request. See
+    ``POST /api/play/indices``.
+    """
+    fn, fingerprint = _handle(
+        service.indices_job, rules, system, decks_remaining, (body or {}).get("rules")
+    )
     return runner.submit("indices", fn, fingerprint=fingerprint).to_dict()
 
 

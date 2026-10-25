@@ -1768,6 +1768,105 @@ async function initTrainer() {
   await nextQuestion();
 }
 
+/* --- Counted grading --------------------------------------------------------
+ *
+ * Grading against indices needs an index sweep, which takes a couple of seconds
+ * on the native core and about thirty without one. That is a job, not a
+ * request, so the server refuses to grade against indices until a sweep has
+ * been run -- and this is the part of the screen that runs one.
+ *
+ * Which means counted grading has a visible preparing state, and that is the
+ * honest thing to show: the alternative is a button press that silently takes
+ * thirty seconds and looks broken.
+ */
+
+const indices = { ready: false, preparing: false, note: "", count: 0 };
+
+/* The sweep is keyed on the rules and the system, so changing the table
+   invalidates it. Cleared rather than re-run, because re-running is seconds
+   and the player may not want counted grading at all. */
+function forgetIndices() {
+  indices.ready = false;
+  indices.count = 0;
+  indices.note = "";
+}
+
+async function probeIndices() {
+  const body = await api("/play/indices", {
+    method: "POST",
+    body: JSON.stringify({ rules: play.rules, system: "hi-lo" }),
+  });
+  indices.ready = body.ready;
+  indices.count = body.count;
+  return body.ready;
+}
+
+/* Runs the sweep as a job and polls it, reporting the two coarse steps the
+   engine reports rather than inventing a smooth bar. */
+async function prepareIndices() {
+  if (indices.preparing) return;
+  indices.preparing = true;
+  indices.note = "Deriving the indices for this table…";
+  renderPlay();
+  try {
+    if (await probeIndices()) {
+      indices.note = "";
+      return;
+    }
+    const started = await api("/jobs/indices?system=hi-lo", {
+      method: "POST",
+      body: JSON.stringify({ rules: play.rules }),
+    });
+    for (;;) {
+      const job = await api(`/jobs/${started.id}`);
+      if (job.status === "succeeded") {
+        indices.ready = true;
+        indices.count = job.result.indices.length;
+        indices.note = "";
+        break;
+      }
+      if (job.status === "failed" || job.status === "cancelled") {
+        throw new Error(job.error || `the sweep ${job.status}`);
+      }
+      const done = Math.round((job.progress ?? 0) * 100);
+      indices.note = `Deriving the indices for this table… ${done}%`;
+      renderPlay();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  } catch (error) {
+    indices.note = `Could not derive the indices: ${error.message}`;
+  } finally {
+    indices.preparing = false;
+    renderPlay();
+  }
+}
+
+/* What the right-hand column shows while the sweep is outstanding: the reason,
+   and the one button that fixes it. */
+function renderIndicesGate() {
+  const out = el("div", {});
+  out.append(
+    el("p", {
+      className: "lede",
+      textContent:
+        indices.note ||
+        "Grading against indices needs a sweep of this table first — a couple of" +
+          " seconds on the native core, about thirty without it. It is a job rather than" +
+          " a request, so it runs in the background and you can watch it.",
+    })
+  );
+  if (!indices.preparing) {
+    const go = el("button", {
+      type: "button",
+      className: "run",
+      textContent: "Derive the indices",
+    });
+    go.addEventListener("click", () => prepareIndices());
+    out.append(el("div", { className: "btnrow" }, [go]));
+  }
+  return out;
+}
+
 // --- Free play screen --------------------------------------------------------
 //
 // A whole dealt round: a shoe that depletes, a count that means something, and
@@ -1892,6 +1991,11 @@ async function sendMoves(...moves) {
     play.busy = false;
     /* The move is not kept, so the log still matches what the server replayed
        and the next attempt starts from a state that really happened. */
+    if (error.message.includes("index sweep")) {
+      forgetIndices();
+      renderPlay();
+      return;
+    }
     renderPlay();
     status($("play-note"), `That move was refused: ${error.message}`, true);
   }
@@ -2014,8 +2118,12 @@ function renderPlay() {
   const state = play.state;
   const panel = el("div", { className: "drill" }, [renderTable(state)]);
   const right = el("div", {});
-  right.append(renderPlayActions(state));
-  if (state.verdict) right.append(renderVerdict(state.verdict, { withNext: false }));
+  if (play.standard === "count" && !indices.ready) {
+    right.append(renderIndicesGate());
+  } else {
+    right.append(renderPlayActions(state));
+    if (state.verdict) right.append(renderVerdict(state.verdict, { withNext: false }));
+  }
   right.append(el("div", { id: "play-note" }));
   panel.append(right);
   body.replaceChildren(panel);
@@ -2069,6 +2177,8 @@ function renderPlayControls() {
   const fields = PRIMARY.map((spec) =>
     segmented(spec, play.rules[spec.name], (value) => {
       play.rules[spec.name] = value;
+      /* The sweep was derived for the old table, so it no longer applies. */
+      forgetIndices();
       startPlay(true);
     })
   );
@@ -2080,6 +2190,7 @@ function renderPlayControls() {
         label: "Graded against",
         options: [
           ["chart", "Basic strategy"],
+          ["count", "Counted"],
           ["exact", "The exact shoe"],
         ],
       },
@@ -2088,6 +2199,13 @@ function renderPlayControls() {
         play.standard = value;
         savePlay();
         renderPlayControls();
+        /* Counted grading needs a sweep of this table, so find out whether one
+           exists before drawing a table that cannot be graded. */
+        if (value === "count" && !indices.ready) {
+          probeIndices()
+            .then(() => renderPlay())
+            .catch(() => renderPlay());
+        }
         renderPlay();
       }
     )

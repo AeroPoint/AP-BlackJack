@@ -1056,20 +1056,6 @@ def test_both_standards_are_playable(client, standard) -> None:
     assert state["standard"] == standard
 
 
-def test_grading_against_indices_is_refused_for_now_and_says_why(client) -> None:
-    """Rather than offered and silently ignoring the count.
-
-    It needs an index sweep, which is seconds of work and so belongs on the job
-    runner, not in a request. Saying so is better than a standard that quietly
-    grades against flat basic strategy while claiming otherwise.
-    """
-    response = client.post(
-        "/api/play/state", json={"rules_name": "vegas6-h17", "log": [], "standard": "count"}
-    )
-    assert response.status_code == 400
-    assert "chart, exact" in response.json()["detail"]
-
-
 @pytest.mark.parametrize(
     "body",
     [
@@ -1331,3 +1317,184 @@ def test_an_unknown_counting_system_is_a_404_not_a_400(client) -> None:
     """A missing config is not a malformed request."""
     response = client.post("/api/count/question", json={"system": "nope", "mode": "running"})
     assert response.status_code == 404
+
+
+# --- Grading free play against indices ----------------------------------------
+#
+# The sweep that makes a counted strategy takes 1.7 s on the native core and
+# 34.5 s without one, so it is a job and free play *refuses* to grade against
+# indices until one has been run. The fast tests here cover the refusal, the
+# readiness probe and the store; the two that need a real sweep are marked slow,
+# because the matrix builds no accelerator and already runs one sweep.
+
+
+@pytest.fixture
+def no_prepared_indices():
+    """Run with the sweep store empty, and leave it as it was found.
+
+    The store is module-level state on the service, so a test that prepares a
+    sweep would otherwise decide the result of one that expects none, depending
+    on the order they ran in.
+    """
+    from apps.api.app import service
+
+    saved = dict(service._PREPARED)
+    service._PREPARED.clear()
+    yield
+    service._PREPARED.clear()
+    service._PREPARED.update(saved)
+
+
+def test_counted_grading_without_a_sweep_is_a_409_naming_the_job(
+    client, no_prepared_indices
+) -> None:
+    """Not a 400, not a 500, and not thirty seconds of silence.
+
+    The request is well formed and the server is healthy; something has to
+    happen first. Doing the sweep inside the request instead would be the thing
+    this project's own API notes forbid: a slow request is indistinguishable
+    from a hung one.
+    """
+    response = client.post(
+        "/api/play/state",
+        json={"rules": {"decks": 6}, "standard": "count", "seed": 1, "log": ["d"]},
+    )
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert "POST /api/jobs/indices" in detail, "the refusal must say what to do next"
+    assert "job rather than a request" in detail
+
+
+def test_the_readiness_probe_is_cheap_and_honest(client, no_prepared_indices) -> None:
+    """So a screen can offer counted grading only when it would work."""
+    body = client.post("/api/play/indices", json={"rules": {"decks": 6}, "system": "hi-lo"}).json()
+    assert body["ready"] is False
+    assert body["count"] == 0
+    assert body["insurance_index"] is None
+    assert body["prepare_with"] == "POST /api/jobs/indices"
+
+
+def test_the_sweep_store_round_trips_and_is_bounded() -> None:
+    """A cache, not a session store: it forgets the oldest rather than growing."""
+    from apps.api.app import service
+
+    from blackjack.config.loader import resolve_system
+    from blackjack.rules import VEGAS_6D_H17
+
+    saved = dict(service._PREPARED)
+    service._PREPARED.clear()
+    try:
+        system = resolve_system("hi-lo")
+        marker = object()
+        assert service.recall_indices(VEGAS_6D_H17, system) is None
+        service.remember_indices(VEGAS_6D_H17, system, None, marker)
+        assert service.recall_indices(VEGAS_6D_H17, system) is marker
+
+        # The depth is part of the key: indices solved at a different depth are
+        # different indices.
+        assert service.recall_indices(VEGAS_6D_H17, system, 2.0) is None
+
+        for depth in range(service._PREPARED_LIMIT + 4):
+            service.remember_indices(VEGAS_6D_H17, system, float(depth), object())
+        assert len(service._PREPARED) <= service._PREPARED_LIMIT
+    finally:
+        service._PREPARED.clear()
+        service._PREPARED.update(saved)
+
+
+def test_a_sweep_can_be_asked_for_with_an_inline_rule_set(client) -> None:
+    """Free play's table is edited on screen, so it has no name to give."""
+    started = client.post("/api/jobs/indices?system=hi-lo", json={"rules": {"decks": 2}})
+    assert started.status_code == 202, started.text
+    assert started.json()["status"] in {"pending", "running"}
+
+
+def test_naming_the_table_twice_for_a_sweep_is_refused(client) -> None:
+    """Rather than resolved by a precedence nobody would guess."""
+    response = client.post(
+        "/api/jobs/indices?rules=vegas6-h17&system=hi-lo", json={"rules": {"decks": 2}}
+    )
+    assert response.status_code == 400
+    assert "not both" in response.json()["detail"]
+
+
+def test_an_unknown_standard_still_names_the_three_that_work(client) -> None:
+    response = client.post(
+        "/api/play/state", json={"rules": {"decks": 6}, "standard": "perfect", "log": []}
+    )
+    assert response.status_code == 400
+    assert "chart, exact, count" in response.json()["detail"]
+
+
+@pytest.mark.slow
+def test_a_prepared_sweep_makes_counted_grading_work(client, no_prepared_indices) -> None:
+    """The whole flow: refused, swept, accepted.
+
+    Slow because it runs a real sweep, which is the point -- the refusal above
+    is only honest if preparing really does lift it.
+    """
+    rules = {"decks": 6, "hit_soft_17": True}
+    before = client.post(
+        "/api/play/state", json={"rules": rules, "standard": "count", "seed": 1, "log": ["d"]}
+    )
+    assert before.status_code == 409
+
+    started = client.post("/api/jobs/indices?system=hi-lo", json={"rules": rules})
+    job = _await_job(client, started.json()["id"], timeout=SPREAD_TIMEOUT)
+    assert job["status"] == "succeeded", job.get("error")
+    assert job["result"]["indices"], "a sweep that found no indices proves nothing"
+
+    probe = client.post("/api/play/indices", json={"rules": rules, "system": "hi-lo"}).json()
+    assert probe["ready"] is True
+    assert probe["count"] == len(job["result"]["indices"])
+
+    after = client.post(
+        "/api/play/state", json={"rules": rules, "standard": "count", "seed": 1, "log": ["d"]}
+    )
+    assert after.status_code == 200, after.text
+    assert after.json()["standard"] == "count"
+
+
+@pytest.mark.slow
+def test_a_counted_strategy_deviates_and_basic_strategy_does_not(client) -> None:
+    """Proof the indices reach the grader, rather than being generated and shelved.
+
+    Checked against the famous index plays: at a high count the counted
+    strategy stands 16 against a ten and 12 against a three, and at a low one it
+    gives up doubles. At a true count of zero it must agree with basic strategy
+    everywhere -- that being what a true count of zero means.
+    """
+    from apps.api.app import service
+
+    from blackjack import operations
+    from blackjack.config.loader import resolve_system
+    from blackjack.rules import VEGAS_6D_H17
+
+    system = resolve_system("hi-lo")
+    saved = dict(service._PREPARED)
+    try:
+        service.remember_indices(
+            VEGAS_6D_H17, system, None, operations.indices(VEGAS_6D_H17, system)
+        )
+        flat = service._compiled_strategy(VEGAS_6D_H17)
+        counted = service._counted_strategy(VEGAS_6D_H17, system)
+
+        def disagreements(true_count: float) -> set[tuple[int, int]]:
+            out = set()
+            for total in range(8, 21):
+                for upcard in (1, *range(2, 11)):
+                    a = flat.action(total, False, upcard, num_cards=2, true_count=true_count)
+                    b = counted.action(total, False, upcard, num_cards=2, true_count=true_count)
+                    if a is not b:
+                        out.add((total, upcard))
+            return out
+
+        assert not disagreements(0.0), "a true count of zero is where basic strategy is correct"
+        high = disagreements(4.0)
+        low = disagreements(-3.0)
+        assert (16, 10) in high, "standing 16 v 10 at a high count is the index play"
+        assert (12, 3) in high, "standing 12 v 3 at a high count is another"
+        assert low, "a low count should give up some doubles"
+    finally:
+        service._PREPARED.clear()
+        service._PREPARED.update(saved)

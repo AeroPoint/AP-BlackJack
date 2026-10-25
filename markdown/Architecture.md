@@ -261,8 +261,6 @@ attached. Writing it last makes it the commit point.
 
 ## What is scaffolded but not implemented
 
-- **Indices in free play.** Grading against a counted strategy needs an index
-  sweep, which is a job rather than a request.
 
 The trainer's state machine is driven over HTTP by replaying a seed and a move
 log rather than by holding a session, which keeps the undealt shoe out of the
