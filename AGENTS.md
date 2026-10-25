@@ -244,6 +244,9 @@ Also run:
   human with a phone, because no test can tell you that;
 - `uv run python scripts/chart_page/build.py out/chart.html` if you touched
   `scripts/chart_page/` or `ev/importance.py`. Its self-check must pass.
+- `uv run python scripts/fetch_fonts.py --check` if you touched `apps/ui/fonts/`.
+  It verifies every family's licence upstream and that the licence files are
+  still beside the fonts, which the OFL requires.
 
 A pull request should be one logical change. It should include tests for that
 change, say whether any numeric output moved and why, and update the docs listed

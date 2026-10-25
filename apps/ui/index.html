@@ -6,13 +6,9 @@
 <meta name="color-scheme" content="light dark">
 <title>Blackjack Solver</title>
 
-<!-- The faces the chart page uses. They load from a CDN when there is one and
-     fall back to the system stack when there is not, which is the normal case
-     for a local app with no internet. Self-hosting them is the follow-up; see
-     markdown/ToDo.md. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<!-- The faces are served from fonts/, declared in app.css. Nothing here loads
+     from the network: a local app is normally offline, and falling back to the
+     system stack is a different design rather than a slightly worse one. -->
 <link rel="stylesheet" href="./app.css">
 </head>
 <body>

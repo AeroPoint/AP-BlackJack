@@ -363,9 +363,11 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
   setting. Settings are read-only on purpose — a write endpoint needs an
   authentication decision first, and this API has none. `bj ui` starts it all
   and opens a browser on it.
-- **Fonts offline.** The app links the three faces from Google Fonts and falls
-  back to the system stack when there is no internet, which is the normal case
-  for a local app. Self-hosting them is a packaging job, not a design one.
+- **The standalone chart page still links the font CDN.** The app does not —
+  it serves its own faces and fetches nothing from the network. The chart page
+  is a single self-contained file shared by link, so its viewer has internet;
+  embedding the faces would add about 340 KB to a file whose virtue is being
+  one file.
 - **The counting drills have no screen.** `bj count` — running count,
   true-count conversion, deck estimation — is terminal-only, and it is three
   drills of its own rather than a variation on the two that have screens.

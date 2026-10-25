@@ -139,3 +139,82 @@ def test_both_themes_define_every_token_the_light_one_does() -> None:
 
     assert base, "no tokens found in the base :root block"
     assert later <= base, f"defined only after a media query: {sorted(later - base)}"
+
+
+# --- the self-hosted faces ----------------------------------------------------
+#
+# The app serves its own fonts so it looks right with no internet, which is the
+# normal case for a local app. That adds three things a test should hold: the
+# files the stylesheet asks for must exist, they must really be fonts, and the
+# licences must still be beside them -- the OFL requires that, so a tidy-up that
+# deleted them would be a licence breach rather than a cleanup.
+
+
+FONTS = UI / "fonts"
+
+
+def test_every_font_the_stylesheet_asks_for_exists() -> None:
+    """A missing font is a silent fallback to the system stack.
+
+    Nothing errors, nothing logs: the page just renders in a different typeface
+    than it was designed in, which is exactly the failure self-hosting them was
+    meant to end.
+    """
+    css = (UI / "app.css").read_text(encoding="utf-8")
+    refs = re.findall(r'url\("([^"]+)"\)', css)
+    assert refs, "expected the stylesheet to declare @font-face sources"
+    for ref in refs:
+        target = (UI / ref.lstrip("./")).resolve()
+        assert target.is_file(), f"{ref} is declared but not present"
+
+
+@pytest.mark.parametrize("path", sorted(FONTS.glob("*.woff2")), ids=lambda p: p.name)
+def test_a_font_file_is_really_a_font(path: Path) -> None:
+    """Checks the magic bytes, because a failed download is still a file.
+
+    A 404 page saved as a .woff2 is the shape this takes, and the browser's only
+    symptom is the fallback typeface again.
+    """
+    assert path.read_bytes()[:4] == b"wOF2", f"{path.name} is not woff2"
+
+
+def test_the_fonts_are_there_at_all() -> None:
+    """Guard against the two tests above passing over an empty directory."""
+    assert len(list(FONTS.glob("*.woff2"))) >= 6, "expected the three families' subsets"
+
+
+def test_each_family_ships_its_licence() -> None:
+    """A condition of using these fonts, not a courtesy.
+
+    All three are SIL Open Font License 1.1, which permits redistribution --
+    including commercially, which this repository needs -- provided the licence
+    travels with the files. See scripts/fetch_fonts.py, which refuses to fetch a
+    family licensed on terms this repository cannot redistribute.
+    """
+    licences = sorted(path.name for path in FONTS.glob("OFL-*.txt"))
+    assert licences == [
+        "OFL-archivo.txt",
+        "OFL-bricolage-grotesque.txt",
+        "OFL-ibm-plex-mono.txt",
+    ], licences
+    for path in FONTS.glob("OFL-*.txt"):
+        text = path.read_text(encoding="utf-8")
+        assert "SIL OPEN FONT LICENSE" in text.upper(), f"{path.name} is not the OFL"
+        assert "Copyright" in text, f"{path.name} has lost its copyright notice"
+
+
+def test_the_app_asks_the_network_for_nothing() -> None:
+    """The point of self-hosting: offline, it is the same app.
+
+    A link to a font CDN is the easy thing to reintroduce and the hard thing to
+    notice, because on a machine with internet it looks perfect.
+    """
+    for name in ("index.html", "app.css", "app.js"):
+        text = (UI / name).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            bare = line.strip()
+            if bare.startswith(("*", "//", "/*", "<!--")):
+                continue  # prose may name a URL; only code may not fetch one
+            assert "https://" not in bare and "http://" not in bare, (
+                f"{name} reaches the network: {bare[:80]}"
+            )

@@ -170,10 +170,27 @@ worth building twice.
   somebody else, that is a decision to take on purpose rather than by adding a
   route. Decide the authentication question first; the endpoint is the easy half.
 
-- [ ] **Self-host the three fonts.** `apps/ui/` links them from Google Fonts and
-  falls back to the system stack, so a machine with no internet — the normal
-  case for a local app — gets a different page from the one that was designed.
-  Packaging, not design.
+- [x] **Self-host the three fonts.** *Done.* `apps/ui/` serves its own faces
+  and the app now fetches nothing from the network at all, which a test asserts
+  by scanning the three source files for a URL outside a comment. 10 woff2 files,
+  255 KB: latin and latin-ext only, since Cyrillic and Vietnamese would roughly
+  triple the weight for text this app never renders, and the two variable
+  families ship one file for a weight range rather than one per weight.
+  `scripts/fetch_fonts.py` is how the directory was built and regenerates it
+  byte for byte, so it is reproducible rather than a pile of binaries somebody
+  once downloaded. It also *verifies the licence* against `google/fonts`
+  metadata and refuses anything this repository cannot redistribute: all three
+  are SIL Open Font License 1.1, which permits commercial redistribution
+  provided the licence travels with the files, so the `OFL-*.txt` are shipped
+  and a test asserts they are still there.
+  One fix fell out of it: `.woff2` has no entry in Windows' MIME table, so
+  StaticFiles was serving fonts as `application/octet-stream`. The app registers
+  `font/woff2` itself rather than trusting the host.
+  *Not done:* the standalone chart page still links the CDN. It is a single
+  self-contained file shared by link, so a viewer has internet by definition,
+  and embedding the faces as base64 would add about 340 KB to a file whose whole
+  virtue is being one file. Worth doing only if that page ever needs to work
+  from a local copy offline.
 
 - [x] **Delete `apps/web/`.** *Done.* 13 tracked files and 69 MB of
   `node_modules`. It was superseded on every axis: no build step, no Node, both

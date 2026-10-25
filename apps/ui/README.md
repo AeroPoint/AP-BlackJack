@@ -115,6 +115,15 @@ properties of any client of this API rather than of that one.
 - **Colour is never the only carrier of meaning.** The action letter is always
   rendered in the square, whichever colouring is active, so the chart still reads
   in greyscale and with the common colour-vision deficiencies.
+- **The faces are served, not linked.** `fonts/` holds 10 woff2 files, latin
+  and latin-ext only, declared by `@font-face` at the top of `app.css`. The app
+  fetches nothing from the network, so offline it is the same app rather than a
+  slightly worse one. All three families are SIL Open Font License 1.1 and their
+  licences ship beside them in `fonts/OFL-*.txt`, which the licence requires
+  rather than merely invites; IBM Plex reserves the name "Plex", which only
+  constrains *modified* versions, and these are the upstream files re-served.
+  `scripts/fetch_fonts.py` rebuilds the directory and checks each family's
+  licence before downloading anything.
 - **The design tokens are a deliberate copy** of
   [scripts/chart_page/page-head.html](../../scripts/chart_page/page-head.html).
   That page is the surface that was reviewed and settled; this one matches it on
@@ -155,8 +164,5 @@ than in a request. Offering a "count" standard that quietly graded against flat
 basic strategy would be worse than not offering it.
 
 Saving a setting needs the authentication question answered first, which also
-means a drill tally or a play session cannot follow you between browsers. The
-three fonts load from Google Fonts
-and fall back to the system stack offline, which is the normal case for a local
-app — self-hosting them is packaging, not design. See
+means a drill tally or a play session cannot follow you between browsers. See
 [markdown/ToDo.md](../../markdown/ToDo.md).

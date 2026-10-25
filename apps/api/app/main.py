@@ -33,6 +33,7 @@ back deliberately.
 
 from __future__ import annotations
 
+import mimetypes
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -319,6 +320,13 @@ def cancel_job(job_id: str) -> dict[str, Any]:
 # checkout has it -- unlike the React front end this replaced, whose build was
 # absent until someone ran npm.
 _UI = Path(__file__).resolve().parents[2] / "ui"
+
+# StaticFiles types a response from the system's MIME table, and Windows has no
+# entry for woff2 -- so the fonts went out as application/octet-stream, which is
+# wrong, host-dependent, and the sort of thing that works here and warns
+# somewhere else. Registered explicitly rather than left to the machine.
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
 
 if (_UI / "index.html").is_file():
     app.mount("/", StaticFiles(directory=_UI, html=True), name="ui")

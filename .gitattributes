@@ -2,6 +2,14 @@
 *.bat  text eol=crlf
 *.ps1  text eol=crlf
 *.png  binary
+*.woff2 binary
+*.woff  binary
+
+# Third-party licence text, stored exactly as upstream publishes it. The OFL
+# requires its notice be preserved, and scripts/fetch_fonts.py writes upstream
+# bytes -- so line-ending normalisation here would both touch a legal document
+# and leave that script reporting a diff for ever.
+apps/ui/fonts/OFL-*.txt -text
 *.pdf  binary
 *.xlsx binary
 *.mat  binary
