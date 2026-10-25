@@ -139,11 +139,30 @@ worth building twice.
   question as `bj drill` for the same seed. The client sends its per-cell tally
   back on each request, because per-player state on a service with no
   authentication would collide between two browsers on one network.
-  *Remaining:* free play and the counting drills. `bj play` grades a whole dealt
-  round, which needs the table state machine exposed rather than one square, and
-  `bj count` is three drills of its own. Also: a drill tally lives in
-  `localStorage`, so it is per-browser and cannot follow you between devices
-  until there is somewhere authenticated to write it.
+  *Free play is done too.* A real dealt round, served by
+  `POST /api/play/state`: one endpoint rather than one per move, because the
+  session *is* a seed plus a move log and the server replays it to rebuild the
+  table. Replay measures 0.016 ms a round, so 400 hands rebuild and grade in
+  7 ms — cheaper than one solve.
+  That shape was chosen over a server-side session for three reasons, in order
+  of how much they matter: the undealt shoe never reaches the client, which is
+  the only way free play is worth practising on; no per-player state sits on a
+  service with no authentication, where two browsers on one network would
+  corrupt each other's shoe; and a session is reproducible from a seed and a
+  move list, which is how everything else stochastic in this project reports
+  itself. A test scans the response for anything shaped like a composition.
+  Decisions are priced against the cards actually left, and a test drives
+  `play_step` and `loop._grade_here` through the same twelve rounds and compares
+  every verdict, so the browser cannot start grading differently from the
+  terminal.
+  *Remaining:* the counting drills (`bj count` is three drills of its own), and
+  grading free play against **indices** — which needs an index sweep, so it
+  belongs on the job runner rather than in a request. A "count" standard that
+  silently graded against flat basic strategy would be worse than none, so the
+  endpoint refuses it and says why.
+  Also: a tally or a session lives in `localStorage`, so it is per-browser and
+  cannot follow you between devices until there is somewhere authenticated to
+  write it.
 
 - [ ] **Saving a setting.** The settings screen is read-only, and deliberately:
   a write endpoint means an endpoint that creates files, and this service has no

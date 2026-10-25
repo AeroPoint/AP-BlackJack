@@ -75,6 +75,25 @@ on every request. It lives in `localStorage`, per rule set, so a drill survives 
 reload. It is per-browser, and it is **not** the same store as the CLI's
 `--player` history, which writes a file no endpoint touches.
 
+**Play** deals a real round: a shoe that runs down, a count that means
+something, and money that moves. Every decision is priced against the cards
+*actually left*, so the feedback is what the mistake cost at this table rather
+than at an average one. Grade yourself against basic strategy or against the
+exact shoe. The count is hidden by default, because working it out is the
+exercise; a control shows it when you want to check yourself.
+
+The session is a seed and a list of moves, and nothing else. The server replays
+them to rebuild the table, which means this screen never holds the shoe — it
+could not, because the undealt cards are precisely what a player must not see.
+A test scans the response for anything shaped like a composition. The log is
+also the save file: keep it and the session resumes to the card, and the same
+seed and moves deal the same cards again, which is how a surprising hand gets
+reported.
+
+Two numbers are tracked side by side, and the difference between them is the
+whole lesson: what the table did to you, and what you did to yourself. You can
+play perfectly and still be down.
+
 **Settings** is read-only on purpose. A write endpoint means an endpoint that
 creates files, and this service has no authentication; see
 [markdown/ToDo.md](../../markdown/ToDo.md).
@@ -126,12 +145,18 @@ person with a phone.
 
 ## Not built
 
-Free play and the counting drills. The strategy drill has a screen; `bj play`
-(a whole dealt round, graded hand by hand) and `bj count` (running count, true
-count, deck estimation) do not, and both want one more than the drill did.
+The counting drills. `bj count` — running count, true-count conversion and
+deck estimation — has no screen; it is three drills of its own rather than a
+variation on these two.
+
+Grading free play against **indices** is also absent, and deliberately: it needs
+an index sweep, which is seconds of work and so belongs on the job runner rather
+than in a request. Offering a "count" standard that quietly graded against flat
+basic strategy would be worse than not offering it.
+
 Saving a setting needs the authentication question answered first, which also
-means a drill tally cannot follow you between browsers. The three fonts load
-from Google Fonts
+means a drill tally or a play session cannot follow you between browsers. The
+three fonts load from Google Fonts
 and fall back to the system stack offline, which is the normal case for a local
 app — self-hosting them is packaging, not design. See
 [markdown/ToDo.md](../../markdown/ToDo.md).

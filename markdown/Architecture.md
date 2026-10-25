@@ -261,10 +261,16 @@ attached. Writing it last makes it the commit point.
 
 ## What is scaffolded but not implemented
 
-- **Free play and counting-drill screens.** The strategy drill has one, served
-  by `POST /api/drill/question` and `/grade`; `bj play` and `bj count` do not.
-  Free play needs the table state machine exposed, which is a bigger surface
-  than one graded square.
+- **A counting-drill screen.** The strategy drill and free play have one; the
+  running-count, true-count and deck-estimation drills do not.
+- **Indices in free play.** Grading against a counted strategy needs an index
+  sweep, which is a job rather than a request.
+
+The trainer's state machine is driven over HTTP by replaying a seed and a move
+log rather than by holding a session, which keeps the undealt shoe out of the
+client and lets the service stay stateless — see
+[apps/ui/README.md](../apps/ui/README.md) and
+`blackjack.operations.play_step`.
 - **Writing a config.** The settings screen reads; nothing writes. That needs the
   authentication question answered first, not a route added.
 

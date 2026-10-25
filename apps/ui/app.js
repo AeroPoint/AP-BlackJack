@@ -40,6 +40,7 @@ const fmt = {
   ev: (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(5),
   pct: (v, d = 4) => (v >= 0 ? "+" : "−") + Math.abs(v * 100).toFixed(d) + "%",
   pts: (v) => (v <= 0 ? "0.0000" : "+" + v.toFixed(4)),
+  signed: (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v),
   money: (v) => {
     const a = Math.abs(v);
     return (v < 0 ? "−" : "") + a.toFixed(a < 10 ? 2 : 0);
@@ -1514,7 +1515,7 @@ function renderAnswers(question) {
 
 /* After an answer: the verdict, then every action priced, so the feedback
    teaches the hand rather than just marking it. */
-function renderVerdict(verdict) {
+function renderVerdict(verdict, { withNext = true } = {}) {
   const out = document.createDocumentFragment();
   let tone = "right";
   let heading = "Correct";
@@ -1569,14 +1570,18 @@ function renderVerdict(verdict) {
   );
   out.append(table);
 
-  const next = el("button", {
-    type: "button",
-    className: "run",
-    id: "drill-next",
-    textContent: "Next hand",
-  });
-  next.addEventListener("click", () => nextQuestion());
-  out.append(el("div", { className: "btnrow next-row" }, [next]));
+  // Free play reuses this panel but deals its own next hand from the table's
+  // action row, so the button is the drill's and only the drill's.
+  if (withNext) {
+    const next = el("button", {
+      type: "button",
+      className: "run",
+      id: "drill-next",
+      textContent: "Next hand",
+    });
+    next.addEventListener("click", () => nextQuestion());
+    out.append(el("div", { className: "btnrow next-row" }, [next]));
+  }
   return out;
 }
 
@@ -1763,6 +1768,423 @@ async function initTrainer() {
   await nextQuestion();
 }
 
+// --- Free play screen --------------------------------------------------------
+//
+// A whole dealt round: a shoe that depletes, a count that means something, and
+// money that moves. The drill asks about one square; this asks you to play.
+//
+// The state lives in two strings and a list: the rules, the seed, and every
+// move made so far. The server replays them and hands back the table. So this
+// screen holds no game state of its own beyond that log -- it cannot, because
+// the shoe is 312 cards it is never shown, which is exactly the point. A player
+// who could read the undealt cards would not be practising anything.
+//
+// Which also means: the log is the save file. Keep it and the session resumes
+// to the card.
+
+const PHASE_PROMPT = {
+  betting: "Deal when you are ready.",
+  insurance: "The dealer shows an ace. Insurance?",
+  player: "Your move.",
+  settled: "Round over.",
+};
+
+const play = {
+  schema: null,
+  rules: {},
+  seed: null,
+  unit: 25,
+  standard: "chart",
+  showCount: false,
+  log: [],
+  state: null,
+  /* Tallies the client keeps, as the drill does: the server grades one decision
+     per request and does not accumulate. Money is the server's, from replay. */
+  decisions: 0,
+  errors: 0,
+  cost: 0,
+  busy: false,
+  pending: null,
+};
+
+const playStoreKey = () => "bj.play";
+
+function savePlay() {
+  try {
+    localStorage.setItem(
+      playStoreKey(),
+      JSON.stringify({
+        rules: play.rules,
+        seed: play.seed,
+        unit: play.unit,
+        standard: play.standard,
+        showCount: play.showCount,
+        log: play.log,
+        decisions: play.decisions,
+        errors: play.errors,
+        cost: play.cost,
+      })
+    );
+  } catch {
+    /* A session that cannot be remembered still plays. */
+  }
+}
+
+function loadPlay() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(playStoreKey()) ?? "null");
+    if (!saved || !Array.isArray(saved.log)) return false;
+    Object.assign(play, {
+      rules: saved.rules ?? play.rules,
+      seed: saved.seed ?? null,
+      unit: saved.unit ?? 25,
+      standard: saved.standard ?? "chart",
+      showCount: Boolean(saved.showCount),
+      log: saved.log,
+      decisions: saved.decisions ?? 0,
+      errors: saved.errors ?? 0,
+      cost: saved.cost ?? 0,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/* A seed makes a session reproducible, which is how a surprising hand gets
+   reported. Chosen here rather than server-side so it can be shown and reused. */
+const newSeed = () => Math.floor(Math.random() * 2_147_483_647);
+
+async function sendMoves(...moves) {
+  play.pending?.abort();
+  const controller = new AbortController();
+  play.pending = controller;
+  play.busy = true;
+  renderPlay();
+  const attempted = [...play.log, ...moves];
+  try {
+    const state = await api("/play/state", {
+      method: "POST",
+      body: JSON.stringify({
+        rules: play.rules,
+        system: "hi-lo",
+        standard: play.standard,
+        seed: play.seed,
+        unit: play.unit,
+        log: attempted,
+      }),
+      signal: controller.signal,
+    });
+    play.log = attempted;
+    play.state = state;
+    if (state.verdict) {
+      play.decisions += 1;
+      if (!state.verdict.correct) {
+        play.errors += 1;
+        play.cost += state.verdict.cost;
+      }
+    }
+    play.busy = false;
+    savePlay();
+    renderPlay();
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    play.busy = false;
+    /* The move is not kept, so the log still matches what the server replayed
+       and the next attempt starts from a state that really happened. */
+    renderPlay();
+    status($("play-note"), `That move was refused: ${error.message}`, true);
+  }
+}
+
+function cardRow(cards, kind = "") {
+  return el("div", { className: "cards" }, cards.map((c) => rankChip(c, kind)));
+}
+
+function renderTable(state) {
+  const seats = [];
+  const dealerCards = state.dealer_cards.length ? state.dealer_cards : [state.upcard];
+  seats.push(
+    el("div", { className: "seat" }, [
+      el("p", {
+        className: "seat-label",
+        textContent: state.phase === "settled" ? "Dealer" : "Dealer shows",
+      }),
+      cardRow(dealerCards, "dealer"),
+      el("p", {
+        className: "seat-total mono",
+        textContent: state.dealer_natural ? "blackjack" : "",
+      }),
+    ])
+  );
+
+  for (const [index, hand] of state.hands.entries()) {
+    const active = index === state.active && state.phase === "player";
+    const notes = [];
+    if (hand.from_split) notes.push("split");
+    if (hand.doubled) notes.push("doubled");
+    if (hand.surrendered) notes.push("surrendered");
+    if (hand.busted) notes.push("bust");
+    else if (hand.is_natural) notes.push("blackjack");
+    seats.push(
+      el("div", { className: `seat${active ? " active" : ""}` }, [
+        el("p", {
+          className: "seat-label",
+          textContent:
+            state.hands.length > 1 ? `Hand ${index + 1} · ${hand.bet}u` : "You have",
+        }),
+        cardRow(hand.cards),
+        el("p", {
+          className: "seat-total mono",
+          textContent: `${hand.total}${hand.soft ? " soft" : ""}${
+            notes.length ? ` · ${notes.join(", ")}` : ""
+          }`,
+        }),
+      ])
+    );
+  }
+
+  const felt = el("div", { className: "felt" }, seats);
+  if (play.showCount) {
+    felt.append(
+      el("div", { className: "countbar mono" }, [
+        el("span", { textContent: `RC ${fmt.signed(state.running_count)}` }),
+        el("span", { textContent: `TC ${fmt.signed(state.true_count)}` }),
+        el("span", { textContent: `${state.decks_remaining.toFixed(1)}d left` }),
+      ])
+    );
+  }
+  return felt;
+}
+
+function renderPlayActions(state) {
+  const out = el("div", {});
+  out.append(el("p", { className: "lede", textContent: PHASE_PROMPT[state.phase] ?? "" }));
+  const row = el("div", { className: "answers" });
+
+  const add = (label, letter, tint, moves) => {
+    const button = el("button", { type: "button", className: "answer", disabled: play.busy });
+    if (tint) button.style.setProperty("--tint", `var(${tint})`);
+    button.append(
+      el("span", { className: "answer-key", textContent: letter }),
+      el("span", { textContent: label })
+    );
+    button.addEventListener("click", () => sendMoves(...moves));
+    row.append(button);
+  };
+
+  if (state.phase === "betting") {
+    add("Deal", "↵", "--act-h", ["d"]);
+  } else if (state.phase === "insurance") {
+    add("Take insurance", "Y", "--act-p", ["i:y"]);
+    add("No insurance", "N", "--act-s", ["i:n"]);
+  } else if (state.phase === "player") {
+    for (const action of state.legal) {
+      add(ACTION_NAME[action], action, ACTION_VAR[action], [`a:${action}`]);
+    }
+  } else if (state.phase === "settled") {
+    const net = state.round_net;
+    const word = net > 0 ? "won" : net < 0 ? "lost" : "pushed";
+    out.append(
+      el("p", { className: `verdict-head ${net > 0 ? "right" : net < 0 ? "wrong" : ""}` }, [
+        el("b", { textContent: word }),
+        el("span", {
+          className: "mono",
+          textContent:
+            net === 0
+              ? "the bet comes back"
+              : `${Math.abs(net)} unit${Math.abs(net) === 1 ? "" : "s"} · ${fmt.money(
+                  Math.abs(net) * play.unit
+                )}`,
+        }),
+      ])
+    );
+    add("Next hand", "↵", "--act-h", ["f", "d"]);
+  }
+  out.append(row);
+  return out;
+}
+
+function renderPlay() {
+  const body = $("play-body");
+  if (!play.state) {
+    status(body, "Opening a table…");
+    return;
+  }
+  const state = play.state;
+  const panel = el("div", { className: "drill" }, [renderTable(state)]);
+  const right = el("div", {});
+  right.append(renderPlayActions(state));
+  if (state.verdict) right.append(renderVerdict(state.verdict, { withNext: false }));
+  right.append(el("div", { id: "play-note" }));
+  panel.append(right);
+  body.replaceChildren(panel);
+  renderPlayTally();
+}
+
+function renderPlayTally() {
+  const state = play.state;
+  if (!state) return;
+  $("play-tally-block").hidden = false;
+  const tiles = [
+    ["Hands", `${state.hands_played}`, false],
+    [
+      "At the table",
+      `${fmt.signed(state.net)}<small> units · ${fmt.money(state.net * play.unit)}</small>`,
+      state.net < 0,
+    ],
+    [
+      "Lost to mistakes",
+      `${play.cost.toFixed(3)}<small> units · ${fmt.money(play.cost * play.unit)}</small>`,
+      play.cost > 0,
+    ],
+    [
+      "Decisions right",
+      play.decisions
+        ? `${play.decisions - play.errors}/${play.decisions}<small> · ${(
+            ((play.decisions - play.errors) / play.decisions) *
+            100
+          ).toFixed(0)}%</small>`
+        : "—",
+      false,
+    ],
+  ];
+  $("play-tally").replaceChildren(
+    ...tiles.map(([term, value, hot]) => {
+      const box = el("div", { className: hot ? "hot" : "" });
+      box.append(el("dt", { textContent: term }));
+      const dd = el("dd");
+      dd.innerHTML = value;
+      box.append(dd);
+      return box;
+    })
+  );
+  $("play-tally-note").textContent =
+    `Two different numbers, and the difference is the whole lesson: what the table did to you,` +
+    ` and what you did to yourself. You can play perfectly and still be down.` +
+    ` Seed ${play.seed} · ${play.log.length} moves — the same seed and moves deal the same cards again.`;
+}
+
+function renderPlayControls() {
+  const fields = PRIMARY.map((spec) =>
+    segmented(spec, play.rules[spec.name], (value) => {
+      play.rules[spec.name] = value;
+      startPlay(true);
+    })
+  );
+
+  fields.push(
+    segmented(
+      {
+        name: "standard",
+        label: "Graded against",
+        options: [
+          ["chart", "Basic strategy"],
+          ["exact", "The exact shoe"],
+        ],
+      },
+      play.standard,
+      (value) => {
+        play.standard = value;
+        savePlay();
+        renderPlayControls();
+        renderPlay();
+      }
+    )
+  );
+  fields.push(
+    segmented(
+      {
+        name: "showCount",
+        label: "Show the count",
+        options: [
+          [false, "Hidden"],
+          [true, "Shown"],
+        ],
+      },
+      play.showCount,
+      (value) => {
+        play.showCount = value === true || value === "true";
+        savePlay();
+        renderPlayControls();
+        renderPlay();
+      }
+    )
+  );
+
+  const fresh = el("button", { type: "button", className: "run ghost", textContent: "New shoe" });
+  fresh.addEventListener("click", () => startPlay(true));
+  fields.push(
+    el("div", { className: "field wide" }, [
+      el("span", { textContent: "Start over" }),
+      el("div", { className: "btnrow" }, [fresh]),
+      el("small", {
+        textContent:
+          "A new seed, a fresh shoe and a cleared tally. The old session is not kept.",
+      }),
+    ])
+  );
+  $("play-controls").replaceChildren(...fields);
+}
+
+async function startPlay(reset) {
+  if (reset) {
+    play.seed = newSeed();
+    play.log = [];
+    play.decisions = 0;
+    play.errors = 0;
+    play.cost = 0;
+    play.state = null;
+  }
+  renderPlayControls();
+  await sendMoves(...(play.log.length ? [] : ["d"]));
+}
+
+/* The table is a keyboard thing too: the action's letter, Y/N for insurance,
+   Enter to deal or to move on. */
+function initPlayKeys() {
+  document.addEventListener("keydown", (event) => {
+    const screen = document.querySelector('.screen[data-screen="play"]');
+    if (!screen || screen.hidden || play.busy || !play.state) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.target.closest("input, select, textarea")) return;
+
+    const phase = play.state.phase;
+    const key = event.key.toLowerCase();
+    if (phase === "betting" && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      sendMoves("d");
+    } else if (phase === "settled" && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      sendMoves("f", "d");
+    } else if (phase === "insurance" && (key === "y" || key === "n")) {
+      event.preventDefault();
+      sendMoves(`i:${key}`);
+    } else if (phase === "player") {
+      const action = DRILL_KEYS[key];
+      if (action && play.state.legal.includes(action)) {
+        event.preventDefault();
+        sendMoves(`a:${action}`);
+      }
+    }
+  });
+}
+
+async function initPlay() {
+  if (play.schema) return;
+  play.schema = await api("/schema/rules");
+  for (const field of play.schema.fields) {
+    if (field.name !== "name") play.rules[field.name] = field.default;
+  }
+  const resumed = loadPlay();
+  if (!resumed || play.seed === null) {
+    await startPlay(true);
+  } else {
+    renderPlayControls();
+    await sendMoves();
+  }
+}
+
 // --- Boot --------------------------------------------------------------------
 
 function showScreen(name) {
@@ -1785,6 +2207,10 @@ function showScreen(name) {
     initTrainer().catch((error) => {
       status($("trainer-body"), `Could not start a drill: ${error.message}`, true);
     });
+  } else if (name === "play") {
+    initPlay().catch((error) => {
+      status($("play-body"), `Could not open a table: ${error.message}`, true);
+    });
   } else if (name === "settings") {
     initSettings().catch((error) => {
       status($("settings-body"), `Could not read the settings: ${error.message}`, true);
@@ -1800,6 +2226,7 @@ $("tabs").addEventListener("click", (event) => {
 initTheme();
 initSheet();
 initTrainerKeys();
+initPlayKeys();
 initChart().catch((error) => {
   status($("tables"), `Could not reach the solver: ${error.message}`, true);
 });

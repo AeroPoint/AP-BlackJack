@@ -213,6 +213,18 @@ def drill_grade(payload: dict[str, Any]) -> dict[str, Any]:
     return _handle(service.drill_grade, payload)
 
 
+@app.post("/api/play/state")
+def play_state(payload: dict[str, Any]) -> dict[str, Any]:
+    """Where a free-play session stands, replayed from its seed and move log.
+
+    One endpoint rather than one per move, because the log *is* the state: the
+    client appends a move and posts the whole thing. Stateless for the same
+    reason the drill is, and for a stronger one -- the state here is the order
+    of the shoe, which is exactly what a player must not be handed.
+    """
+    return _handle(service.play_state, payload)
+
+
 @app.get("/api/sidebet/{name}")
 def sidebet(name: str, decks: int = Query(6, ge=1, le=8)) -> dict[str, Any]:
     """Analyse a side bet against each of its known paytables."""

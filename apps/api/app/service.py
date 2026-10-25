@@ -19,6 +19,7 @@ printed in a terminal.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 from blackjack.backend import ACTIVE
@@ -722,9 +723,16 @@ def _rules_from_payload(payload: dict[str, Any]) -> RuleSet:
     from blackjack.config.models import ConfigError, rules_from_dict
 
     named = payload.get("rules_name")
+    fields = payload.get("rules")
+    if named is not None and fields is not None:
+        raise BadRequestError(
+            "send 'rules_name' or 'rules', not both -- otherwise one of them is "
+            "silently ignored and the table is not the one you asked for"
+        )
     if isinstance(named, str) and named:
         return resolve_rules(named)
-    fields = payload.get("rules")
+    if named is not None:
+        raise BadRequestError("'rules_name' must be a non-empty string")
     if fields is None:
         return resolve_rules("vegas6-h17")
     if not isinstance(fields, dict):
@@ -818,24 +826,195 @@ def drill_grade(payload: dict[str, Any]) -> dict[str, Any]:
     except ValueError as exc:
         raise BadRequestError(str(exc)) from exc
 
-    analysis = verdict.analysis
+    # The same serialisation free play uses, so one graded decision does not
+    # get described two ways depending on which screen asked.
     return _envelope(
         rules={"name": rules.name, "slug": rules.slug()},
         key=_key_to_str(cell_key(cards, upcard)),
         cards=list(cards),
         upcard=upcard,
-        chosen=verdict.chosen.value,
-        expected=verdict.expected.value,
-        correct=verdict.correct,
-        beats_standard=verdict.beats_standard,
-        cost=verdict.cost,
-        message=verdict.message(),
-        best=analysis.best.value,
-        runner_up=analysis.runner_up.value if analysis.runner_up else None,
-        margin=analysis.margin,
-        closeness=analysis.closeness,
-        split_label=analysis.split_label,
-        importance=analysis.importance.value,
-        frequency=analysis.frequency,
-        evs={action.value: value for action, value in analysis.all_evs.items()},
+        **_verdict_payload(verdict, 25.0),
+    )
+
+
+# --- Free play ----------------------------------------------------------------
+#
+# Stateless like the drill, but for a harder reason. Free play has a shoe that
+# depletes -- the whole point, since a count only means something if the cards
+# really are gone -- and that state is the order of 312 cards, far too much to
+# hand a client and exactly the information a player must not have.
+#
+# `Table` seeds its own randomness, so the state is recoverable from the seed
+# and the moves made since. The client keeps those; the server rebuilds and
+# replays. Measured at 0.016 ms a round, so 400 hands rebuild and grade in
+# 7 ms. See :func:`blackjack.operations.play_step`.
+#
+# What the client never receives is the undealt shoe. It gets what `RoundState`
+# exposes, which is what a player at a table can see, plus the count -- which
+# the UI hides by default, because counting it yourself is the exercise.
+
+
+#: Bounded because it is a cache, not a session store: a handful of tables is
+#: all anyone drills at once, and each entry is a solved chart.
+_STRATEGY_CACHE_SIZE = 8
+
+
+@lru_cache(maxsize=_STRATEGY_CACHE_SIZE)
+def _compiled_strategy(rules: RuleSet) -> Any:
+    """A compiled basic strategy for these rules, solved once.
+
+    Free play grades every decision against what the chart says to do, which
+    needs the chart. Solving costs 25 ms on the native core and **1.3 seconds**
+    without it, measured, and a free-play step happens every time the player
+    presses a button -- so this is the one thing in the service that is cached.
+
+    Pure, so caching it is memoisation rather than state: the same rules always
+    give the same strategy. Nothing here is per-player.
+    """
+    from blackjack.ev.solver import solve
+    from blackjack.sim.strategy import compile_strategy
+
+    return compile_strategy(solve(rules).chart)
+
+
+def _verdict_payload(verdict: Any, unit: float) -> dict[str, Any]:
+    """One graded decision, as both the drill and free play report it.
+
+    Shared so the two cannot describe the same verdict differently. The trainer
+    screens read the same fields whichever they came from.
+    """
+    analysis = verdict.analysis
+    return {
+        "chosen": verdict.chosen.value,
+        "expected": verdict.expected.value,
+        "correct": verdict.correct,
+        "beats_standard": verdict.beats_standard,
+        "cost": verdict.cost,
+        "message": verdict.message(unit),
+        "best": analysis.best.value,
+        "runner_up": analysis.runner_up.value if analysis.runner_up else None,
+        "margin": analysis.margin,
+        "closeness": analysis.closeness,
+        "split_label": analysis.split_label,
+        "importance": analysis.importance.value,
+        "frequency": analysis.frequency,
+        "evs": {action.value: value for action, value in analysis.all_evs.items()},
+    }
+
+
+def _hand_payload(hand: Any) -> dict[str, Any]:
+    """One player hand, with the derived facts a screen would otherwise redo."""
+    return {
+        "cards": list(hand.cards),
+        "total": hand.total,
+        "soft": hand.soft,
+        "busted": hand.busted,
+        "bet": hand.bet,
+        "from_split": hand.from_split,
+        "doubled": hand.doubled,
+        "surrendered": hand.surrendered,
+        "done": hand.done,
+        "is_natural": hand.is_natural,
+        "label": hand.label(),
+    }
+
+
+#: What a caller may be held to. ``count`` is absent on purpose: grading against
+#: indices needs an index sweep, which is seconds of work and therefore a job
+#: rather than a request. See markdown/ToDo.md.
+PLAY_STANDARDS = ("chart", "exact")
+
+
+def play_state(payload: dict[str, Any]) -> dict[str, Any]:
+    """Replay a free-play session and report where it stands.
+
+    Body: the rules (``rules_name`` or inline ``rules``), the counting
+    ``system``, the ``standard`` to be graded against, the ``seed``, the
+    ``unit``, and ``log`` -- every move so far as compact strings. The last move
+    is graded if it was a decision.
+
+    One endpoint rather than one per move, because the log *is* the state: a
+    client appends its move and posts the whole thing, which is idempotent and
+    leaves nothing to get out of step.
+
+    Raises:
+        BadRequestError: if the rules, system, standard, seed or log are not
+            valid, or a move is illegal where it appears.
+    """
+    from blackjack.operations import play_step
+    from blackjack.train.grading import Standard
+
+    rules = _rules_from_payload(payload)
+
+    system_name = payload.get("system", "hi-lo")
+    if not isinstance(system_name, str):
+        raise BadRequestError("'system' must be the name of a counting system")
+    system = resolve_system(system_name)
+
+    raw_standard = payload.get("standard", "chart")
+    if raw_standard not in PLAY_STANDARDS:
+        allowed = ", ".join(PLAY_STANDARDS)
+        raise BadRequestError(f"'standard' must be one of {allowed}; got {raw_standard!r}")
+    standard = Standard(raw_standard)
+
+    seed = payload.get("seed")
+    if seed is not None and not isinstance(seed, int):
+        raise BadRequestError("'seed' must be a whole number")
+
+    unit = payload.get("unit", 25.0)
+    try:
+        unit = float(unit)
+    except (TypeError, ValueError) as exc:
+        raise BadRequestError("'unit' must be a number") from exc
+    if not 0 < unit <= 1_000_000:
+        raise BadRequestError("'unit' must be above zero")
+
+    log = payload.get("log", [])
+    if not isinstance(log, list) or not all(isinstance(move, str) for move in log):
+        raise BadRequestError("'log' must be a list of move strings")
+    if len(log) > 20_000:
+        raise BadRequestError(
+            "'log' is longer than 20000 moves; start a new session with a fresh seed"
+        )
+
+    try:
+        outcome = play_step(
+            rules,
+            system,
+            log=log,
+            seed=seed,
+            standard=standard,
+            unit=unit,
+            strategy=None if standard is Standard.EXACT else _compiled_strategy(rules),
+        )
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
+
+    state = outcome.state
+    return _envelope(
+        rules={"name": rules.name, "slug": rules.slug()},
+        system=system.name,
+        standard=standard.value,
+        seed=seed,
+        unit=unit,
+        phase=state.phase.value,
+        hands=[_hand_payload(hand) for hand in state.hands],
+        active=state.active,
+        upcard=state.upcard,
+        dealer_cards=list(state.dealer_cards),
+        dealer_natural=state.dealer_natural,
+        insurance_bet=state.insurance_bet,
+        round_net=state.net,
+        legal=[action.value for action in outcome.legal],
+        # The count. Shown only if the player asks, because working it out is
+        # the exercise -- but the server has it either way, so withholding it
+        # here would be theatre.
+        running_count=state.running_count,
+        true_count=state.true_count,
+        decks_remaining=state.decks_remaining,
+        needs_shuffle=outcome.table.needs_shuffle,
+        shuffled=outcome.shuffled,
+        hands_played=outcome.hands_played,
+        net=outcome.net,
+        verdict=_verdict_payload(outcome.verdict, unit) if outcome.verdict else None,
     )

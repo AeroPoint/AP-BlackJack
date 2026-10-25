@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from blackjack import operations
+from blackjack.actions import Action
 from blackjack.config.models import RampConfig, SessionConfig
 from blackjack.counting import HI_LO
 from blackjack.rules import VEGAS_6D_H17
@@ -293,3 +294,242 @@ def test_grading_a_hand_with_no_chart_cell_is_an_error(chart, cards, why) -> Non
 
     with pytest.raises(ValueError, match="no chart cell"):
         operations.grade_answer(VEGAS_6D_H17, cards, 10, Action.HIT, chart=chart)
+
+
+# --- Free play ----------------------------------------------------------------
+#
+# Free play is stateless by replay, which only works if replay is exact. These
+# tests are mostly about that, plus the one property that matters more: the
+# browser must grade a decision the way the terminal does.
+
+
+@pytest.fixture(scope="module")
+def basic():
+    """A compiled basic strategy, solved once for the module."""
+    from blackjack.ev.solver import solve
+    from blackjack.sim.strategy import compile_strategy
+
+    return compile_strategy(solve(VEGAS_6D_H17).chart)
+
+
+def _play_to_settled(basic, seed=42, rounds=1, standard=None):
+    """Drive `play_step` through whole rounds, returning the log and outcome."""
+    from blackjack.train.grading import Standard
+
+    standard = standard or Standard.CHART
+    log: list[str] = []
+    out = None
+    for _ in range(rounds):
+        log.append("d")
+        out = operations.play_step(
+            VEGAS_6D_H17, HI_LO, log=log, seed=seed, standard=standard, strategy=basic
+        )
+        while out.state.phase.value in ("insurance", "player"):
+            if out.state.phase.value == "insurance":
+                log.append("i:n")
+            else:
+                hand = out.state.hand
+                log.append("a:S" if hand.total >= 17 else "a:H")
+            out = operations.play_step(
+                VEGAS_6D_H17, HI_LO, log=log, seed=seed, standard=standard, strategy=basic
+            )
+        log.append("f")
+        out = operations.play_step(
+            VEGAS_6D_H17, HI_LO, log=log, seed=seed, standard=standard, strategy=basic
+        )
+    return log, out
+
+
+def test_replay_is_exact(basic) -> None:
+    """The property the whole design rests on.
+
+    If the same seed and log could give different cards, a free-play session
+    would silently rewrite its own history between one button press and the
+    next.
+    """
+    log, first = _play_to_settled(basic, rounds=6)
+    again = operations.play_step(VEGAS_6D_H17, HI_LO, log=log, seed=42, strategy=basic)
+    assert again.net == first.net
+    assert again.hands_played == first.hands_played
+    assert again.state.decks_remaining == first.state.decks_remaining
+    assert again.state.running_count == first.state.running_count
+    assert again.table.composition() == first.table.composition()
+
+
+def test_a_different_seed_is_a_different_shoe(basic) -> None:
+    """Otherwise the seed would be decoration."""
+    log, _ = _play_to_settled(basic, seed=42, rounds=4)
+    same = operations.play_step(VEGAS_6D_H17, HI_LO, log=log, seed=42, strategy=basic)
+    # A log is only meaningful with its own seed, so compare on a log of plain
+    # deals, which is valid under any seed that does not offer insurance.
+    plain = ["d"]
+    a = operations.play_step(VEGAS_6D_H17, HI_LO, log=plain, seed=1, strategy=basic)
+    b = operations.play_step(VEGAS_6D_H17, HI_LO, log=plain, seed=2, strategy=basic)
+    assert same.net is not None
+    assert (a.state.upcard, [h.cards for h in a.state.hands]) != (
+        b.state.upcard,
+        [h.cards for h in b.state.hands],
+    )
+
+
+def test_a_log_replayed_under_the_wrong_seed_fails_loudly(basic) -> None:
+    """Rather than quietly diverging into a different game.
+
+    The seed decides whether the dealer shows an ace, so an insurance move in
+    the log is only legal under the seed it was made on.
+    """
+    log, _ = _play_to_settled(basic, seed=42, rounds=1)
+    assert "i:n" in log, "seed 42's first round is the insurance case this test needs"
+    with pytest.raises(ValueError, match="insurance is not on offer"):
+        operations.play_step(VEGAS_6D_H17, HI_LO, log=log, seed=43, strategy=basic)
+
+
+def test_the_browser_grades_a_hand_the_way_the_terminal_does(basic) -> None:
+    """The one that matters: same decision, same verdict, same price.
+
+    Free play prices a decision against the *live* shoe, not a full one, and
+    against the hand's real context -- split or not, two cards or five. This
+    drives `play_step` and `loop._grade_here` through the same sequence and
+    compares every verdict.
+    """
+    from blackjack.train.grading import Standard
+    from blackjack.train.loop import _grade_here
+    from blackjack.train.table import Phase, Table
+
+    # The reference: drive a Table directly, as the terminal loop does.
+    table = Table(VEGAS_6D_H17, HI_LO, seed=7)
+    reference: list[tuple[str, bool, float]] = []
+    log: list[str] = []
+    for _ in range(12):
+        log.append("d")
+        state = table.deal(1.0)
+        if state.phase is Phase.INSURANCE:
+            state = table.take_insurance(False)
+            log.append("i:n")
+        while state.phase is Phase.PLAYER:
+            hand = state.hand
+            assert hand is not None
+            chosen = Action.STAND if hand.total >= 17 else Action.HIT
+            if chosen not in table.legal():
+                chosen = next(iter(table.legal()))
+            verdict = _grade_here(table, basic, hand, state, chosen, VEGAS_6D_H17, Standard.CHART)
+            reference.append((chosen.value, verdict.correct, verdict.cost))
+            log.append(f"a:{chosen.value}")
+            state = table.act(chosen)
+        log.append("f")
+        table.finish()
+
+    # Now replay the same log through the orchestration, one step at a time,
+    # and collect the verdict each step reports.
+    mine: list[tuple[str, bool, float]] = []
+    for index in range(1, len(log) + 1):
+        out = operations.play_step(VEGAS_6D_H17, HI_LO, log=log[:index], seed=7, strategy=basic)
+        if out.verdict is not None:
+            mine.append((out.verdict.chosen.value, out.verdict.correct, out.verdict.cost))
+
+    assert mine == reference, "the browser and the terminal disagree about a decision"
+    assert len(reference) >= 12, f"only {len(reference)} decisions graded; too few to prove much"
+
+
+def test_only_the_last_move_is_graded(basic) -> None:
+    """Grading every replayed move would cost seconds for answers already given."""
+    log, out = _play_to_settled(basic, rounds=2)
+    assert log[-1] == "f"
+    assert out.verdict is None, "a collect is not a decision"
+
+    decision = log.index("a:S") if "a:S" in log else log.index("a:H")
+    stepped = operations.play_step(
+        VEGAS_6D_H17, HI_LO, log=log[: decision + 1], seed=42, strategy=basic
+    )
+    assert stepped.verdict is not None, "the last move here is a decision"
+
+
+def test_the_money_comes_from_replay_not_from_the_caller(basic) -> None:
+    """So a client cannot drift from, or lie about, what the table paid."""
+    from blackjack.train.table import Phase, Table
+
+    log, out = _play_to_settled(basic, seed=11, rounds=8)
+
+    table = Table(VEGAS_6D_H17, HI_LO, seed=11)
+    total = 0.0
+    hands = 0
+    for move in log:
+        op, _, arg = move.partition(":")
+        if op == "d":
+            table.deal(1.0)
+        elif op == "i":
+            table.take_insurance(arg == "y")
+        elif op == "a":
+            table.act(Action(arg))
+        elif op == "f":
+            total += table.finish()
+            hands += 1
+    assert table.state().phase is Phase.BETTING
+    assert out.net == total
+    assert out.hands_played == hands
+
+
+def test_exact_needs_no_strategy_and_chart_refuses_without_one() -> None:
+    """`exact` holds you to the shoe itself, so there is no chart to consult."""
+    from blackjack.train.grading import Standard
+
+    out = operations.play_step(VEGAS_6D_H17, HI_LO, log=["d"], seed=1, standard=Standard.EXACT)
+    assert out.state.phase.value in ("player", "insurance", "settled")
+
+    with pytest.raises(ValueError, match="needs a compiled strategy"):
+        operations.play_step(VEGAS_6D_H17, HI_LO, log=["d"], seed=1, standard=Standard.CHART)
+
+
+@pytest.mark.parametrize(
+    ("log", "match"),
+    [
+        (["x"], "expected"),
+        (["a:H"], "no hand is awaiting"),
+        (["f"], "has not settled"),
+        (["d", "d"], "already in progress"),
+        (["d", "f"], "has not settled"),
+        (["d:0"], "a bet runs"),
+        (["d:-1"], "a bet runs"),
+        (["d:abc"], "is not a bet"),
+        (["d:99999"], "a bet runs"),
+    ],
+    ids=[
+        "gibberish",
+        "act-before-deal",
+        "collect-before-deal",
+        "deal-twice",
+        "collect-mid-round",
+        "zero-bet",
+        "negative-bet",
+        "non-numeric-bet",
+        "absurd-bet",
+    ],
+)
+def test_a_malformed_log_is_refused_with_the_move_that_broke_it(basic, log, match) -> None:
+    """A client bug must not become a 500, and must say which move was wrong."""
+    with pytest.raises(ValueError, match=match):
+        operations.play_step(VEGAS_6D_H17, HI_LO, log=log, seed=42, strategy=basic)
+
+
+def test_the_shoe_reshuffles_and_says_so(basic) -> None:
+    """A player needs to know the count just went back to zero."""
+    log: list[str] = []
+    seen_shuffle = False
+    counts_after_shuffle = []
+    for _ in range(400):
+        log.append("d")
+        out = operations.play_step(VEGAS_6D_H17, HI_LO, log=log, seed=3, strategy=basic)
+        if out.shuffled:
+            seen_shuffle = True
+            counts_after_shuffle.append(out.state.running_count)
+        while out.state.phase.value in ("insurance", "player"):
+            if out.state.phase.value == "insurance":
+                log.append("i:n")
+            else:
+                log.append("a:S" if out.state.hand.total >= 17 else "a:H")
+            out = operations.play_step(VEGAS_6D_H17, HI_LO, log=log, seed=3, strategy=basic)
+        log.append("f")
+    assert seen_shuffle, "400 rounds of six decks must have reached the cut card"
+    # The count is reset by the shuffle, so right after one it reflects only the
+    # cards of the round just dealt -- never a carried-over running total.
+    assert all(abs(count) <= 6 for count in counts_after_shuffle), counts_after_shuffle

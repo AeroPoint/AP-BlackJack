@@ -106,7 +106,7 @@ Rules, counting systems, spreads and paytables are YAML files in
 | Terminal trainer (`bj drill`, `bj play`) | Working |
 | FastAPI service (`apps/api`) | Working |
 | Standalone chart page (`scripts/chart_page`) | Working, and the one reviewed UI |
-| Local app (`apps/ui`) | Working: chart, compare, spread, trainer and settings screens. `bj ui` serves it |
+| Local app (`apps/ui`) | Working: chart, compare, spread, trainer, free play and settings screens. `bj ui` serves it |
 
 The prioritised backlog, with a definition of "done" for each item, is in
 [markdown/ToDo.md](markdown/ToDo.md).

@@ -41,6 +41,7 @@ Anything that finishes in milliseconds is a plain request.
 | `GET /api/systems/{rules}?decks=` | effect of removal and per-system BC/IC |
 | `POST /api/drill/question` | the next drill question, weighted by what the player keeps missing. Stateless: the client sends its own per-cell tallies back. The answer is **not** in the response |
 | `POST /api/drill/grade` | grade one drill answer on the exact shoe, with every action priced and what the mistake cost |
+| `POST /api/play/state` | where a free-play session stands, replayed from its seed and move log. One endpoint rather than one per move, because the log *is* the state. The undealt shoe is never in the response |
 
 ## Jobs
 
@@ -103,6 +104,7 @@ See [apps/ui/README.md](../ui/README.md).
 
 ## Not built
 
-Endpoints for free play and the counting drills, and any endpoint that writes a
-config -- which needs the authentication question answered first. See
+Endpoints for the counting drills, grading free play against indices (an index
+sweep is a job, not a request), and any endpoint that writes a config -- which
+needs the authentication question answered first. See
 [markdown/ToDo.md](../../markdown/ToDo.md).

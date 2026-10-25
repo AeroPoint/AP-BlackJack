@@ -32,6 +32,7 @@
         <button type="button" data-screen="compare">Compare</button>
         <button type="button" data-screen="spread">Spread</button>
         <button type="button" data-screen="trainer">Trainer</button>
+        <button type="button" data-screen="play">Play</button>
         <button type="button" data-screen="settings">Settings</button>
       </nav>
       <button type="button" class="theme" id="theme" aria-label="Switch theme">
@@ -141,6 +142,26 @@
       <h2>This session</h2>
       <dl class="summary" id="trainer-tally"></dl>
       <p class="lede" id="trainer-tally-note"></p>
+    </section>
+  </section>
+
+  <!-- ================= Free play ================= -->
+  <section class="screen" data-screen="play" hidden>
+    <p class="standfirst">
+      A real dealt round: a shoe that runs down, a count that means something,
+      and money that moves. Every decision is priced against the cards
+      <em>actually left</em> &mdash; so the feedback is what the mistake cost at
+      this table, not at an average one.
+    </p>
+
+    <div class="controls" id="play-controls"></div>
+
+    <div id="play-body"></div>
+
+    <section class="block" id="play-tally-block" hidden>
+      <h2>This session</h2>
+      <dl class="summary" id="play-tally"></dl>
+      <p class="lede" id="play-tally-note"></p>
     </section>
   </section>
 

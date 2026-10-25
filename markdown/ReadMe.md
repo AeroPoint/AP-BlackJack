@@ -366,10 +366,14 @@ Stated plainly, because a solver's credibility is in knowing its own edges:
 - **Fonts offline.** The app links the three faces from Google Fonts and falls
   back to the system stack when there is no internet, which is the normal case
   for a local app. Self-hosting them is a packaging job, not a design one.
-- **Free play and the counting drills have no screen.** The strategy drill does
-  (and shares the engine's weighting, so it is the same drill as `bj drill`), but
-  `bj play` and `bj count` are terminal-only. Free play is the bigger of the two:
-  grading a whole dealt round means the table state machine, not one square.
+- **The counting drills have no screen.** `bj count` — running count,
+  true-count conversion, deck estimation — is terminal-only, and it is three
+  drills of its own rather than a variation on the two that have screens.
+- **Free play cannot be graded against indices.** Basic strategy and the exact
+  shoe both work; grading against a counted strategy needs an index sweep, which
+  is seconds of work and so belongs on the job runner rather than in a request.
+  The endpoint refuses that standard rather than quietly grading against flat
+  basic strategy while claiming otherwise.
 - **Personal leak view.** Your measured miss rates persist across sessions
   with `--player`, and the drill uses them, but `bj chart --importance` and the
   chart page still rank leaks with the generic error model rather than yours.

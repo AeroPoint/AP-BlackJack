@@ -31,12 +31,14 @@ library and the engine itself.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from blackjack.actions import Action
+from blackjack.train.grading import Standard
+
 if TYPE_CHECKING:
-    from blackjack.actions import Action
     from blackjack.bankroll.counts import TrueCountDistribution
     from blackjack.bankroll.spread import CountEdge, SpreadResult
     from blackjack.config.models import SessionConfig
@@ -49,6 +51,7 @@ if TYPE_CHECKING:
     from blackjack.train.drill import Drill
     from blackjack.train.grading import Verdict
     from blackjack.train.session import CellKey, Session
+    from blackjack.train.table import Hand, RoundState, Table
 
 Progress = Callable[[int, int], None]
 """``(done, total)``, called as a long operation advances."""
@@ -444,3 +447,250 @@ def _session_from_tallies(seen: Mapping[CellKey, tuple[int, int]] | None) -> Ses
             raise ValueError(f"{key}: {misses} misses out of {attempts} attempts is not possible")
         session.stats[key] = CellStats(seen=attempts, errors=misses)
     return session
+
+
+# --- Free play ----------------------------------------------------------------
+#
+# Free play has a shoe that depletes, which is the whole point of it: the count
+# only means something if the cards really are gone. That makes it stateful in a
+# way the drill is not, and the state is far too big to hand a client -- it is
+# the order of 312 cards.
+#
+# But `Table` seeds its own randomness, so the state is recoverable from the
+# seed and the list of moves made since. The caller keeps those two things and
+# the table is rebuilt and replayed on each step. Replay costs 0.016 ms a round
+# measured, so a thousand-round session rebuilds in 16 ms -- less than a single
+# solve -- and in exchange:
+#
+#   * no session state on a service with no authentication, so two browsers on
+#     one network cannot corrupt each other's shoe;
+#   * the client cannot see the undealt cards, because it never holds them. It
+#     gets what `RoundState` exposes and nothing more;
+#   * a session is reproducible from a seed and a move list, which is how every
+#     other stochastic thing in this project reports itself.
+#
+# Only the *last* move is graded. Grading costs about 3 ms a decision, so
+# grading the whole replay would turn a long session into seconds of work for
+# answers the caller already has. The money is different: `finish()` returns it
+# and replay reproduces it exactly, so the running total comes back from the
+# server and cannot drift.
+
+#: The moves a caller may record, as the compact strings a session log holds.
+#: ``d`` deal (optionally ``d:2`` to bet two units), ``i:y``/``i:n`` insurance,
+#: ``a:H`` an action, ``f`` finish the round and collect.
+_MOVE_HELP = "expected 'd', 'd:<bet>', 'i:y', 'i:n', 'a:<SHDPR>' or 'f'"
+
+
+@dataclass(frozen=True, slots=True)
+class PlayOutcome:
+    """Where a replayed session stands, and how its last decision went."""
+
+    table: Table
+    state: RoundState
+    legal: tuple[Action, ...]
+    """Actions the active hand may take. Empty unless a hand is awaiting one."""
+
+    verdict: Verdict | None
+    """The grade for the last move, when that move was a decision."""
+
+    hands_played: int
+    """Rounds collected, from replay rather than from the caller's arithmetic."""
+
+    net: float
+    """Units won or lost across the session, likewise."""
+
+    shuffled: bool
+    """Whether the last deal reached the cut card and reshuffled."""
+
+
+def play_step(
+    rules: RuleSet,
+    system: CountSystem,
+    *,
+    log: Sequence[str],
+    seed: int | None = None,
+    standard: Standard = Standard.CHART,
+    unit: float = 25.0,
+    strategy: PlayingStrategy | None = None,
+) -> PlayOutcome:
+    """Replay a free-play session and report where it stands.
+
+    Args:
+        rules: Table rules.
+        system: Counting system tracked alongside play.
+        log: Every move so far, oldest first. The last one is graded if it was
+            a decision.
+        seed: Seeds the shoe. The same seed and log always give the same cards.
+        standard: What to hold the player to. ``CHART`` needs ``strategy``;
+            ``EXACT`` holds them to the shoe itself and needs none.
+        unit: Bet size, for quoting costs in money.
+        strategy: A compiled strategy, so a caller serving many steps does not
+            re-solve for each. Required for ``Standard.CHART``.
+
+    Returns:
+        The state after the whole log, with the last decision graded.
+
+    Raises:
+        ValueError: if a move is malformed, illegal in its phase, or if
+            ``Standard.CHART`` is asked for without a strategy.
+    """
+    from blackjack.train.table import Phase, Table
+
+    if standard is not Standard.EXACT and strategy is None:
+        raise ValueError(f"grading against {standard.value} needs a compiled strategy")
+
+    table = Table(rules, system, seed=seed, unit=unit)
+    hands = 0
+    net = 0.0
+    shuffled = False
+    verdict: Verdict | None = None
+    last = len(log) - 1
+
+    for index, move in enumerate(log):
+        op, _, arg = move.partition(":")
+        grading = index == last
+
+        if op == "d":
+            if table.state().phase is not Phase.BETTING:
+                raise ValueError(f"move {index} ({move!r}): a round is already in progress")
+            bet = _parse_bet(arg, index, move)
+            shuffled = table.needs_shuffle
+            table.deal(bet)
+        elif op == "i":
+            if table.state().phase is not Phase.INSURANCE:
+                raise ValueError(f"move {index} ({move!r}): insurance is not on offer")
+            if arg not in ("y", "n"):
+                raise ValueError(f"move {index} ({move!r}): insurance is 'i:y' or 'i:n'")
+            table.take_insurance(arg == "y")
+        elif op == "a":
+            verdict = _act_and_grade(table, arg, index, move, rules, standard, strategy, grading)
+            if not grading:
+                verdict = None
+        elif op == "f":
+            if table.state().phase is not Phase.SETTLED:
+                raise ValueError(f"move {index} ({move!r}): the round has not settled")
+            net += table.finish()
+            hands += 1
+        else:
+            raise ValueError(f"move {index} ({move!r}): {_MOVE_HELP}")
+
+    state = table.state()
+    return PlayOutcome(
+        table=table,
+        state=state,
+        legal=tuple(sorted(table.legal(), key=lambda a: a.value))
+        if state.phase is Phase.PLAYER
+        else (),
+        verdict=verdict,
+        hands_played=hands,
+        net=net,
+        shuffled=shuffled,
+    )
+
+
+def _parse_bet(arg: str, index: int, move: str) -> float:
+    """A bet in units, defaulting to one."""
+    if not arg:
+        return 1.0
+    try:
+        bet = float(arg)
+    except ValueError as exc:
+        raise ValueError(f"move {index} ({move!r}): {arg!r} is not a bet") from exc
+    if not bet > 0 or bet > 10_000:
+        raise ValueError(f"move {index} ({move!r}): a bet runs from just above 0 to 10000 units")
+    return bet
+
+
+def _act_and_grade(
+    table: Table,
+    arg: str,
+    index: int,
+    move: str,
+    rules: RuleSet,
+    standard: Standard,
+    strategy: PlayingStrategy | None,
+    grading: bool,
+) -> Verdict | None:
+    """Apply one decision, grading it first if the caller wants the verdict.
+
+    Grading happens *before* the action, because the price of a decision is
+    measured against the shoe as it stood when the decision was made.
+    """
+    from blackjack.train.table import Phase
+
+    state = table.state()
+    if state.phase is not Phase.PLAYER:
+        raise ValueError(f"move {index} ({move!r}): no hand is awaiting a decision")
+    try:
+        action = Action(arg)
+    except ValueError as exc:
+        raise ValueError(f"move {index} ({move!r}): {arg!r} is not an action") from exc
+    if action not in table.legal():
+        allowed = ", ".join(sorted(a.value for a in table.legal()))
+        raise ValueError(
+            f"move {index} ({move!r}): {action.label} is not legal; allowed: {allowed}"
+        )
+
+    verdict = None
+    if grading:
+        hand = state.hand
+        assert hand is not None
+        verdict = _grade_in_play(table, strategy, hand, state, action, rules, standard)
+    table.act(action)
+    return verdict
+
+
+def _grade_in_play(
+    table: Table,
+    strategy: PlayingStrategy | None,
+    hand: Hand,
+    state: RoundState,
+    chosen: Action,
+    rules: RuleSet,
+    standard: Standard,
+) -> Verdict:
+    """Price one decision against the live shoe, whatever kind of hand it is.
+
+    The same construction :func:`blackjack.train.loop._grade_here` uses, and for
+    the same reason: every decision the table asks for gets graded, including a
+    hand reached by hitting and a hand off a split. The cost is always measured
+    against the cards actually left, because that is what the mistake really
+    cost at this table.
+    """
+    from blackjack.train.grading import grade
+
+    cards = tuple(hand.cards)
+    upcard = state.upcard
+
+    # The live shoe with this hand's cards and the upcard put back, because
+    # `grade` removes them itself. A sibling split hand's cards stay out: those
+    # really are gone.
+    comp = list(table.composition())
+    for rank in (*cards, upcard):
+        comp[rank - 1] += 1.0
+
+    expected: Action | None = None
+    if standard is not Standard.EXACT:
+        assert strategy is not None
+        pair = cards[0] if len(cards) == 2 and cards[0] == cards[1] else None
+        expected = strategy.action(
+            hand.total,
+            hand.soft,
+            upcard,
+            pair_rank=pair,
+            num_cards=len(cards),
+            after_split=hand.from_split,
+            true_count=state.true_count if standard is Standard.COUNT else 0.0,
+        )
+
+    return grade(
+        cards,
+        upcard,
+        tuple(comp),
+        rules,
+        chosen,
+        after_split=hand.from_split,
+        splits_used=state.splits_used,
+        standard=standard,
+        expected=expected,
+    )

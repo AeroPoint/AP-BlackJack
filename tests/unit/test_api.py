@@ -350,6 +350,9 @@ def test_response_shape_matches_the_declared_contract(client, compare_solve_cach
     solved = client.get("/api/solve/vegas6-h17").json()
     compared = client.get("/api/compare/vegas6-h17/vegas6-s17-ls").json()
     drilled = client.post("/api/drill/question", json={"rules_name": "vegas6-h17"}).json()
+    played = client.post(
+        "/api/play/state", json={"rules_name": "vegas6-h17", "seed": 42, "log": ["d"]}
+    ).json()
     verdict = client.post(
         "/api/drill/grade",
         json={"rules_name": "vegas6-h17", "cards": [10, 6], "upcard": 10, "chosen": "H"},
@@ -366,6 +369,8 @@ def test_response_shape_matches_the_declared_contract(client, compare_solve_cach
         ("Configs", contract.CONFIGS, client.get("/api/configs").json()),
         ("DrillQuestion", contract.DRILL_QUESTION, drilled),
         ("DrillVerdict", contract.DRILL_VERDICT, verdict),
+        ("PlayState", contract.PLAY_STATE, played),
+        ("PlayHand", contract.PLAY_HAND, played["hands"][0]),
     ):
         missing = declared - set(payload)
         assert not missing, f"{name}: the contract expects {sorted(missing)}, not sent"
@@ -382,6 +387,8 @@ def test_response_shape_matches_the_declared_contract(client, compare_solve_cach
         ("CellChange", contract.CELL_CHANGE, unplayed[0]),
         ("DrillQuestion", contract.DRILL_QUESTION, drilled),
         ("DrillVerdict", contract.DRILL_VERDICT, verdict),
+        ("PlayState", contract.PLAY_STATE, played),
+        ("PlayHand", contract.PLAY_HAND, played["hands"][0]),
     ):
         extra = set(payload) - declared
         assert not extra, f"{name}: the server sends undeclared {sorted(extra)}"
@@ -923,3 +930,206 @@ def test_a_malformed_grade_request_is_a_client_error(client, payload) -> None:
     response = client.post("/api/drill/grade", json={"rules_name": "vegas6-h17", **payload})
     assert response.status_code == 400, response.text
     assert response.json()["detail"]
+
+
+# --- Free play ----------------------------------------------------------------
+
+
+def _play(client, log, **kw):
+    """One free-play step, asserting it was accepted."""
+    body = {"rules_name": "vegas6-h17", "seed": 42, "log": log, **kw}
+    response = client.post("/api/play/state", json=body)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _round(client, log, **kw):
+    """Append moves to play one whole round, returning the settled state."""
+    log.append("d")
+    state = _play(client, log, **kw)
+    while state["phase"] in ("insurance", "player"):
+        if state["phase"] == "insurance":
+            log.append("i:n")
+        else:
+            hand = state["hands"][state["active"]]
+            log.append("a:S" if hand["total"] >= 17 else "a:H")
+        state = _play(client, log, **kw)
+    return state
+
+
+def test_a_whole_round_can_be_played(client) -> None:
+    """Deal, decide, settle, collect."""
+    log: list[str] = []
+    settled = _round(client, log)
+    assert settled["phase"] == "settled"
+    assert settled["dealer_cards"], "the dealer's hand is revealed once it settles"
+    assert settled["hands"]
+
+    collected = _play(client, [*log, "f"])
+    assert collected["phase"] == "betting"
+    assert collected["hands_played"] == 1
+    assert collected["hands"] == [], "a collected round leaves the table empty"
+
+
+def test_the_undealt_shoe_never_reaches_the_client(client) -> None:
+    """The property that makes free play worth practising on.
+
+    If the remaining composition were in the payload, anyone could read the
+    count -- or the next card -- out of the network tab, and the exercise would
+    be pointless. The client gets what somebody at the table can see.
+
+    Checked by scanning the whole serialised response for the shape of a
+    composition, rather than by naming fields, so a field added later that
+    happens to carry it fails here.
+    """
+    import json
+
+    log: list[str] = []
+    settled = _round(client, log)
+    blob = json.dumps(settled)
+
+    for forbidden in ("composition", "remaining_cards", "shoe", "stack", "undealt", "cards_left"):
+        assert forbidden not in blob, f"the response carries {forbidden!r}"
+
+    # The dealt cards are legitimately present; a ten-long per-rank vector is
+    # not, and that is what a composition looks like.
+    for value in settled.values():
+        assert not (
+            isinstance(value, list)
+            and len(value) == 10
+            and all(isinstance(x, int | float) for x in value)
+        ), f"a ten-long numeric vector looks like a composition: {value}"
+
+
+def test_the_count_is_served_because_hiding_it_here_would_be_theatre(client) -> None:
+    """The count is in the payload; the screen decides whether to show it.
+
+    The CLI has `--show-count` for the same reason. Working the count out is the
+    exercise, so the UI hides it by default -- but the server has it either way,
+    and a player who wants to check themselves should be able to.
+    """
+    state = _play(client, ["d"])
+    assert "running_count" in state
+    assert "true_count" in state
+    assert state["decks_remaining"] > 0
+
+
+def test_a_session_is_reproducible_from_its_seed(client) -> None:
+    """Same seed, same log, same cards -- which is how a bug gets reported."""
+    log: list[str] = []
+    first = _round(client, log)
+    again = _play(client, log)
+    assert again["dealer_cards"] == first["dealer_cards"]
+    assert again["hands"] == first["hands"]
+    assert again["running_count"] == first["running_count"]
+
+
+def test_a_decision_is_graded_as_it_is_made(client) -> None:
+    """And priced against the live shoe, with the whole decision shown."""
+    log = ["d"]
+    state = _play(client, log)
+    if state["phase"] == "insurance":
+        log.append("i:n")
+        state = _play(client, log)
+    assert state["phase"] == "player"
+
+    log.append(f"a:{state['legal'][0]}")
+    graded = _play(client, log)
+    verdict = graded["verdict"]
+    assert verdict is not None
+    assert verdict["chosen"] == log[-1].split(":")[1]
+    assert verdict["message"]
+    assert verdict["evs"]
+    assert verdict["importance"]
+
+
+def test_collecting_a_round_is_not_a_graded_decision(client) -> None:
+    log: list[str] = []
+    _round(client, log)
+    assert _play(client, [*log, "f"])["verdict"] is None
+
+
+@pytest.mark.parametrize("standard", ["chart", "exact"])
+def test_both_standards_are_playable(client, standard) -> None:
+    """`chart` holds you to basic strategy; `exact` to the shoe itself."""
+    state = _play(client, ["d"], standard=standard)
+    assert state["standard"] == standard
+
+
+def test_grading_against_indices_is_refused_for_now_and_says_why(client) -> None:
+    """Rather than offered and silently ignoring the count.
+
+    It needs an index sweep, which is seconds of work and so belongs on the job
+    runner, not in a request. Saying so is better than a standard that quietly
+    grades against flat basic strategy while claiming otherwise.
+    """
+    response = client.post(
+        "/api/play/state", json={"rules_name": "vegas6-h17", "log": [], "standard": "count"}
+    )
+    assert response.status_code == 400
+    assert "chart, exact" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"log": "d"},
+        {"log": [1]},
+        {"log": ["zzz"]},
+        {"log": ["f"]},
+        {"log": ["d", "d"]},
+        {"log": ["d:0"]},
+        {"seed": "lucky"},
+        {"unit": 0},
+        {"unit": "lots"},
+        {"standard": "perfect"},
+        {"system": 5},
+        {"rules": {"decks": "six"}},
+        {"rules_name": "vegas6-h17", "rules": {"decks": 2}},
+    ],
+    ids=[
+        "log-not-a-list",
+        "move-not-a-string",
+        "gibberish-move",
+        "collect-before-deal",
+        "deal-twice",
+        "zero-bet",
+        "seed-not-a-number",
+        "zero-unit",
+        "unit-not-a-number",
+        "unknown-standard",
+        "system-not-a-string",
+        "bad-rule-value",
+        "both-a-name-and-inline-rules",
+    ],
+)
+def test_a_malformed_play_request_is_a_client_error(client, body) -> None:
+    """Not a 500, and the message says which move or field was wrong.
+
+    Cases that carry their own table are posted as they are: adding
+    ``rules_name`` on top would be refused for naming the table twice, and the
+    case would pass without ever reaching what it meant to test.
+    """
+    table = {} if "rules" in body or "rules_name" in body else {"rules_name": "vegas6-h17"}
+    response = client.post("/api/play/state", json={**table, **body})
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"]
+
+
+def test_an_unknown_counting_system_is_a_404(client) -> None:
+    """A missing config is not a malformed request."""
+    response = client.post(
+        "/api/play/state", json={"rules_name": "vegas6-h17", "log": [], "system": "nope"}
+    )
+    assert response.status_code == 404
+
+
+def test_an_absurdly_long_log_is_refused_rather_than_replayed(client) -> None:
+    """Replay is cheap but not free, and an unbounded log is a way to make it
+    expensive from outside. The cap is a session's worth, with a way out."""
+    response = client.post(
+        "/api/play/state",
+        json={"rules_name": "vegas6-h17", "log": ["d"] * 20_001},
+    )
+    assert response.status_code == 400
+    assert "fresh seed" in response.json()["detail"]

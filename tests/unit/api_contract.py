@@ -196,3 +196,52 @@ DRILL_VERDICT: frozenset[str] = frozenset(
         "upcard",
     }
 )
+
+#: POST /api/play/state. The whole table as a player at it can see it -- and
+#: deliberately no more: the undealt shoe is never in here, which is the
+#: property that makes free play worth practising on.
+PLAY_STATE: frozenset[str] = frozenset(
+    {
+        "active",
+        "backend",
+        "dealer_cards",
+        "dealer_natural",
+        "decks_remaining",
+        "engine_version",
+        "hands",
+        "hands_played",
+        "insurance_bet",
+        "legal",
+        "needs_shuffle",
+        "net",
+        "phase",
+        "round_net",
+        "rules",
+        "running_count",
+        "seed",
+        "shuffled",
+        "standard",
+        "system",
+        "true_count",
+        "unit",
+        "upcard",
+        "verdict",
+    }
+)
+
+#: One player hand within a free-play round.
+PLAY_HAND: frozenset[str] = frozenset(
+    {
+        "bet",
+        "busted",
+        "cards",
+        "done",
+        "doubled",
+        "from_split",
+        "is_natural",
+        "label",
+        "soft",
+        "surrendered",
+        "total",
+    }
+)
