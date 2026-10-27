@@ -1001,6 +1001,15 @@ p.lede.warn b { color: inherit; }
 /* The graders write several lines, and the line breaks carry meaning. */
 p.lede.note { white-space: pre-line; }
 
+/* A card not yet dealt. It holds its place so the row does not jump about as
+   cards arrive -- a counter should be reading cards, not chasing a layout --
+   and it is plainly empty rather than a face-down card, because there is no
+   hidden card here to misread it as. */
+.card.slot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
 /* --- wide bodies, and a phone on its side ----------------------------------- */
 /*
  * Last in the file on purpose: these rules tune the two cases the earlier

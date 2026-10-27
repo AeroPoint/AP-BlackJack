@@ -107,6 +107,20 @@ to a true count the way your indices expect, and reading the discard tray you
 divide by. Each answer is timed, so it is a speed test as well as an accuracy
 one, on the same clock `bj count` uses.
 
+The cards can be dealt at a **dealing speed** rather than put up all at once:
+1, 2 or 3 a second, one at a time, which is the thing the drill is actually for
+— the engine's own note calls the error mode "keeping a sum of tags through a
+shoe at dealing speed", and says a terminal cannot do it. Undealt cards hold
+their place so the row does not jump about as they arrive, and space finishes the
+deal when you have already beaten the pace.
+
+The cards **stay** once dealt. Taking them away again would make it a memory
+test, and it would break the clock: the time reported is from the question being
+fully visible to the answer, which is what `bj count` measures, and that stops
+meaning anything once the referent is gone. At a pace the clock starts at the
+*last* card for the same reason. Pacing is entirely in the browser; the API has
+no notion of it, and the question and the grade are identical either way.
+
 The running count carries between questions and restarts at the shuffle — and
 at the IRC, for an unbalanced system — because a slip should persist the way
 it would at a table. A conversion drill is offered only for systems that
@@ -178,13 +192,6 @@ What no test can tell you is whether a screen *looks* right. That still takes a
 person with a phone.
 
 ## Not built
-
-Flashing the cards. The running-count drill shows its cards and leaves them up,
-which is what the terminal does because a terminal cannot do otherwise. A screen
-could take them away, and that is a better memory test — but it changes what
-the clock measures, from time-to-count to answer-after-the-flash, and the speed
-figures would stop being comparable with `bj count`. It is a different drill,
-worth building as one rather than as a toggle.
 
 Grading free play against **indices** is absent, and deliberately: it needs
 an index sweep, which is seconds of work and so belongs on the job runner rather

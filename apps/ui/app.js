@@ -2331,15 +2331,36 @@ const COUNT_MODES = [
   ["decks", "Deck estimation"],
 ];
 
+/* Dealing speed, in seconds per card. Zero puts the whole question up at once,
+   which is what the terminal does because a terminal cannot do otherwise.
+   Anything else deals them one at a time, which is the skill actually being
+   drilled: the engine's own note calls the error mode "keeping a sum of tags
+   through a shoe at dealing speed".
+
+   The cards *stay* once dealt. Taking them away again would be a memory test
+   rather than a counting one, and it would break the clock: the figure below is
+   the time from the question being fully visible to the answer, which is what
+   `bj count` measures, and it stops meaning that if the referent is gone. */
+const COUNT_PACES = [
+  [0, "All at once"],
+  [1, "1/sec"],
+  [0.5, "2/sec"],
+  [0.33, "3/sec"],
+];
+
 const count = {
   catalogue: null,
   system: "hi-lo",
   mode: "running",
   decks: 6,
+  pace: 0,
   seed: null,
   index: 0,
   question: null,
   verdict: null,
+  dealt: 0,
+  dealing: false,
+  dealTimer: null,
   shown: 0,
   asked: 0,
   right: 0,
@@ -2348,6 +2369,89 @@ const count = {
   busy: false,
   pending: null,
 };
+
+const countStoreKey = () => "bj.count";
+
+function saveCount() {
+  try {
+    localStorage.setItem(
+      countStoreKey(),
+      JSON.stringify({
+        system: count.system,
+        mode: count.mode,
+        decks: count.decks,
+        pace: count.pace,
+      })
+    );
+  } catch {
+    /* A drill that cannot remember its settings still drills. */
+  }
+}
+
+function loadCount() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(countStoreKey()) ?? "null");
+    if (!saved) return;
+    Object.assign(count, {
+      system: saved.system ?? count.system,
+      mode: saved.mode ?? count.mode,
+      decks: saved.decks ?? count.decks,
+      pace: typeof saved.pace === "number" ? saved.pace : 0,
+    });
+  } catch {
+    /* Nothing to restore. */
+  }
+}
+
+/* How many cards a running-count question shows in total. */
+const countCardTotal = (question) =>
+  (question.groups ?? []).reduce((sum, group) => sum + group.length, 0);
+
+/* Whether the question is still arriving, so the answer cannot be submitted
+   against cards the player has not seen. */
+const stillDealing = () => count.dealing;
+
+function stopDealing() {
+  if (count.dealTimer !== null) {
+    clearInterval(count.dealTimer);
+    count.dealTimer = null;
+  }
+  count.dealing = false;
+}
+
+/* Deal the rest at once. Bound to a key and a button, because being made to
+   wait for a pace you have already beaten is just friction. */
+function dealTheRest() {
+  if (!count.dealing) return;
+  stopDealing();
+  count.dealt = countCardTotal(count.question);
+  count.shown = performance.now();
+  renderCount();
+}
+
+/* Reveal the cards one at a time, then start the clock. The clock starts at the
+   *last* card rather than the first, so the figure stays what it is in the
+   terminal: time from a fully visible question to an answer. */
+function startDealing() {
+  stopDealing();
+  const total = countCardTotal(count.question);
+  if (count.mode !== "running" || count.pace <= 0 || total === 0) {
+    count.dealt = total;
+    count.shown = performance.now();
+    return;
+  }
+  count.dealt = 1;
+  count.dealing = true;
+  count.dealTimer = setInterval(() => {
+    count.dealt += 1;
+    if (count.dealt >= total) {
+      count.dealt = total;
+      stopDealing();
+      count.shown = performance.now();
+    }
+    renderCount();
+  }, count.pace * 1000);
+}
 
 /* A card chip from a label the server sent, which may be "T", "5", or "7r" and
    "7b" for a colour-dependent rank. Unlike the trainer's chips these are not
@@ -2374,8 +2478,17 @@ function renderCountQuestion(question) {
         })
       );
     }
+    /* Only the cards dealt so far. The rest keep their place, so the row does
+       not jump about as they arrive -- a counter should be reading cards, not
+       chasing a moving layout. */
+    let seen = 0;
     for (const group of question.groups) {
-      panel.append(el("div", { className: "cards" }, group.map(labelChip)));
+      const row = el("div", { className: "cards" });
+      for (const label of group) {
+        seen += 1;
+        row.append(seen <= count.dealt ? labelChip(label) : el("span", { className: "card slot" }));
+      }
+      panel.append(row);
     }
     if (question.split) {
       const name = rankName(question.split.rank);
@@ -2417,23 +2530,47 @@ function renderCountQuestion(question) {
 
 function renderCountAnswer() {
   const form = el("form", { className: "answerform" });
+  const dealing = stillDealing();
   const input = el("input", {
     type: "text",
     id: "count-answer",
     inputMode: "decimal",
     autocomplete: "off",
+    disabled: dealing,
     placeholder: count.mode === "decks" ? "e.g. 2.5" : "e.g. +4",
   });
-  const submit = el("button", { type: "submit", className: "run", textContent: "Answer" });
+  const submit = el("button", {
+    type: "submit",
+    className: "run",
+    disabled: dealing,
+    textContent: "Answer",
+  });
+  const buttons = el("div", { className: "btnrow" }, [submit]);
+  if (dealing) {
+    /* Being made to wait for a pace you have already beaten is friction, so
+       there is always a way to finish the deal. */
+    const rest = el("button", {
+      type: "button",
+      className: "run ghost",
+      textContent: "Deal the rest",
+    });
+    rest.addEventListener("click", () => dealTheRest());
+    buttons.append(rest);
+  }
   form.append(
     el("label", { className: "field" }, [
-      el("span", { textContent: count.question.prompt }),
+      el("span", {
+        textContent: dealing
+          ? `Dealing… ${count.dealt} of ${countCardTotal(count.question)}`
+          : count.question.prompt,
+      }),
       input,
     ]),
-    el("div", { className: "btnrow" }, [submit])
+    buttons
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (stillDealing()) return;
     const given = Number(input.value.trim());
     if (input.value.trim() === "" || Number.isNaN(given)) {
       status($("count-note"), "That is not a number. Counts can be negative, like -3.", true);
@@ -2480,7 +2617,7 @@ function renderCount() {
   panel.append(right);
   body.replaceChildren(panel);
   renderCountTally();
-  if (!count.verdict) $("count-answer")?.focus();
+  if (!count.verdict && !stillDealing()) $("count-answer")?.focus();
 }
 
 function renderCountTally() {
@@ -2517,12 +2654,17 @@ function renderCountTally() {
       return box;
     })
   );
+  const paced = count.mode === "running" && count.pace > 0;
   $("count-tally-note").textContent =
     count.mode === "decks"
       ? "Mean error is signed: a consistent positive means you read trays high, which" +
         " inflates every true count you take from them."
-      : "Time runs from the question appearing to your answer, so it is a speed as" +
-        " well as an accuracy figure — the same clock bj count uses.";
+      : paced
+        ? "Time runs from the last card landing to your answer, not from the first —" +
+          " so it stays the figure bj count reports, and the dealing speed above sets" +
+          " how hard it was to arrive at."
+        : "Time runs from the question appearing to your answer, so it is a speed as" +
+          " well as an accuracy figure — the same clock bj count uses.";
 }
 
 function countBody(extra = {}) {
@@ -2559,13 +2701,14 @@ async function nextCountQuestion(reset) {
       body: JSON.stringify(countBody()),
       signal: controller.signal,
     });
-    count.shown = performance.now();
     count.busy = false;
+    startDealing();
     renderCount();
   } catch (error) {
     if (error.name === "AbortError") return;
     count.busy = false;
     count.question = null;
+    stopDealing();
     status($("count-body"), `Could not set a question: ${error.message}`, true);
   }
 }
@@ -2612,6 +2755,7 @@ function renderCountControls() {
            from an unbalanced one moves to the first that does. */
         const allowed = systemChoices();
         if (!allowed.includes(count.system)) count.system = allowed[0];
+        saveCount();
         renderCountControls();
         nextCountQuestion(true);
       }
@@ -2622,6 +2766,7 @@ function renderCountControls() {
       systemChoices(),
       (value) => {
         count.system = value;
+        saveCount();
         renderCountControls();
         nextCountQuestion(true);
       }
@@ -2631,11 +2776,32 @@ function renderCountControls() {
       count.decks,
       (value) => {
         count.decks = Number(value);
+        saveCount();
         renderCountControls();
         nextCountQuestion(true);
       }
     ),
   ];
+
+  /* Only the running count has cards to deal. The other two drills show one
+     figure, and pacing a single number would be theatre. */
+  if (count.mode === "running") {
+    fields.push(
+      segmented(
+        { name: "pace", label: "Dealing speed", options: COUNT_PACES },
+        count.pace,
+        (value) => {
+          count.pace = Number(value);
+          saveCount();
+          renderCountControls();
+          if (count.question) {
+            startDealing();
+            renderCount();
+          }
+        }
+      )
+    );
+  }
 
   const fresh = el("button", {
     type: "button",
@@ -2657,8 +2823,23 @@ function renderCountControls() {
   $("count-controls").replaceChildren(...fields);
 }
 
+/* Space deals the rest, which is the one keystroke this screen wants: the
+   answer box has focus the moment the deal ends, so everything else is typing. */
+function initCountKeys() {
+  document.addEventListener("keydown", (event) => {
+    const screen = document.querySelector('.screen[data-screen="count"]');
+    if (!screen || screen.hidden || !stillDealing()) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      dealTheRest();
+    }
+  });
+}
+
 async function initCount() {
   if (count.catalogue) return;
+  loadCount();
   count.catalogue = (await api("/counting")).systems;
   if (!systemChoices().includes(count.system)) {
     count.system = systemChoices()[0];
@@ -2714,6 +2895,7 @@ initTheme();
 initSheet();
 initTrainerKeys();
 initPlayKeys();
+initCountKeys();
 initChart().catch((error) => {
   status($("tables"), `Could not reach the solver: ${error.message}`, true);
 });

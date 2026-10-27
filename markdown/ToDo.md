@@ -186,12 +186,21 @@ worth building twice.
   appearing to freeze. Changing the table discards the sweep, since it was
   derived for the old one, and a test checks that a different table is refused
   again.
-  *Remaining:* flashing the cards in the running-count drill, which is a better
-  memory test but changes what the clock measures — so it is a different drill
-  rather than a toggle here.
-  Also: a tally or a session lives in `localStorage`, so it is per-browser and
-  cannot follow you between devices until there is somewhere authenticated to
-  write it.
+  *Dealing speed is done.* The running-count drill deals its cards one at a
+  time at 1, 2 or 3 a second rather than putting the question up whole, which is
+  the skill the engine's own note describes: "keeping a sum of tags through a
+  shoe at dealing speed", which a terminal cannot do. Undealt cards hold their
+  place, the answer is gated until the deal finishes, and space deals the rest.
+  Built instead of flashing the cards, which was the obvious thing a screen
+  adds and is the wrong one: the cards being gone makes it a recall test, and it
+  breaks the clock, which measures time from a fully visible question to an
+  answer — the figure `bj count` reports. At a pace the clock starts at the
+  last card, for the same reason. Entirely a browser concern: the API has no
+  notion of a pace, and a test confirms the question and the grade are identical
+  whatever seconds are reported.
+  *Remaining:* a tally or a session lives in `localStorage`, so it is
+  per-browser and cannot follow you between devices until there is somewhere
+  authenticated to write it.
 
 - [ ] **Saving a setting.** The settings screen is read-only, and deliberately:
   a write endpoint means an endpoint that creates files, and this service has no
