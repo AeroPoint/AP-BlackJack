@@ -124,6 +124,30 @@ def test_the_page_declares_a_character_set_and_a_viewport() -> None:
     assert "width=device-width" in html
 
 
+def test_the_range_control_is_drawn_for_both_rendering_engines() -> None:
+    """A slider's track and thumb are the one widget with no shared selector.
+
+    Turning the native appearance off is a single declaration that applies
+    everywhere; drawing what replaces it takes `::-webkit-*` and `::-moz-*`
+    rules that each engine ignores the other's. Style only one and the other
+    engine keeps a default thumb -- on a track this stylesheet has already
+    reduced to 4px, so it renders as a dot adrift from a hairline, and only on
+    the browser the author was not using.
+    """
+    text = (UI / "app.css").read_text(encoding="utf-8")
+    assert 'input[type="range"]' in text, "no range control is styled; this check has rotted"
+    assert "-webkit-appearance: none" in text, "the native appearance is still on"
+
+    for webkit, gecko in (
+        ("::-webkit-slider-runnable-track", "::-moz-range-track"),
+        ("::-webkit-slider-thumb", "::-moz-range-thumb"),
+    ):
+        assert text.count(webkit) == text.count(gecko), (
+            f"{text.count(webkit)} {webkit} rules against {text.count(gecko)} {gecko}:"
+            " one engine is being styled and the other is not"
+        )
+
+
 def test_both_themes_define_every_token_the_light_one_does() -> None:
     """A token defined only under a media query is the classic unreadable page.
 

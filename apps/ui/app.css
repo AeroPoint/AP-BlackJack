@@ -426,6 +426,53 @@ select, input[type="number"], input[type="text"] {
 input[type="number"] { font-family: var(--font-mono); }
 .field small { color: var(--faint); font-size: 11px; }
 
+/* A dial, for a quantity with more steps than a segmented control can hold.
+   The readout shares the line because a track and a thumb carry no numbers,
+   and it is kept short enough to do so on the narrowest phone -- the sentence
+   that says what the value means goes in the note below instead. */
+.slider { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.slider output {
+  flex: 0 0 auto;
+  font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums;
+  color: var(--ink); white-space: nowrap;
+}
+
+/* Drawn rather than left to the platform: the default thumb is well under the
+   44px a thumb on glass needs, and the track has to take its colours from the
+   same tokens as everything else so both themes resolve as a set. The height
+   is the touch target; the track inside it is 4px. */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  flex: 1 1 auto; min-width: 0;
+  height: 40px; margin: 0; padding: 0;
+  background: transparent; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: var(--line);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px; border-radius: 2px; background: var(--line);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--felt); border: 2px solid var(--panel);
+  margin-top: -9px;  /* centres a 22px thumb on a 4px track */
+}
+input[type="range"]::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--felt); border: 2px solid var(--panel);
+}
+/* The ring goes on the thumb rather than the whole 40px box, which would draw
+   an outline around empty space either side of the track. */
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--felt);
+}
+input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--felt);
+}
+
 details.advanced {
   border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--panel); padding: 0 13px; margin: 0 0 18px;

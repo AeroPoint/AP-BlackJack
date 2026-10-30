@@ -171,6 +171,42 @@ function segmented(spec, value, onPick) {
   ]);
 }
 
+/* A dial rather than a set of choices, for a control whose value is a quantity
+   with more steps than a segmented control can hold. A track and a thumb carry
+   no numbers at all, so the value is always written out beside it, and the note
+   below says what that value means. */
+function slider(spec, value, onChange) {
+  const input = el("input", {
+    type: "range",
+    min: String(spec.min),
+    max: String(spec.max),
+    step: "1",
+    value: String(value),
+  });
+  /* Named here rather than by the label's text, which would otherwise swallow
+     the readout and the note into the accessible name. And a step number
+     announced on its own means nothing, so the value is announced as what it
+     is -- which is what aria-valuetext is for. */
+  input.setAttribute("aria-label", spec.label);
+  const readout = el("output", {});
+  const note = el("small", {});
+  const show = (step) => {
+    readout.textContent = spec.format(step);
+    note.textContent = spec.note(step);
+    input.setAttribute("aria-valuetext", `${spec.format(step)}. ${spec.note(step)}`);
+  };
+  show(value);
+  /* `input` tracks the thumb, `change` commits. Dragging across six steps must
+     not do the committed work six times. */
+  input.addEventListener("input", () => show(Number(input.value)));
+  input.addEventListener("change", () => onChange(Number(input.value)));
+  return el("label", { className: "field wide" }, [
+    el("span", { textContent: spec.label }),
+    el("div", { className: "slider" }, [input, readout]),
+    note,
+  ]);
+}
+
 function genericControl(field, value, onPick) {
   const label = el("label", { className: "field" }, [el("span", { textContent: field.name })]);
   let input;
@@ -2331,29 +2367,71 @@ const COUNT_MODES = [
   ["decks", "Deck estimation"],
 ];
 
-/* Dealing speed, in seconds per card. Zero puts the whole question up at once,
-   which is what the terminal does because a terminal cannot do otherwise.
-   Anything else deals them one at a time, which is the skill actually being
-   drilled: the engine's own note calls the error mode "keeping a sum of tags
-   through a shoe at dealing speed".
+/* Dealing speed, as seconds per card at each step of an eleven-step dial. Step
+   11 puts the whole question up at once, which is what the terminal does
+   because a terminal cannot do otherwise. Anything else deals the cards one at
+   a time, which is the skill actually being drilled: the engine's own note
+   calls the error mode "keeping a sum of tags through a shoe at dealing speed".
+
+   The two ends are fixed -- two seconds a card at 1, a tenth of a second at 10
+   -- and the steps between them are spaced so each is roughly a quarter to a
+   third quicker than the last, rather than by a constant number of
+   milliseconds. A dial that steps linearly in seconds is useless at the fast
+   end, where the whole range from brisk to impossible is the last step.
 
    The cards *stay* once dealt. Taking them away again would be a memory test
    rather than a counting one, and it would break the clock: the figure below is
    the time from the question being fully visible to the answer, which is what
    `bj count` measures, and it stops meaning that if the referent is gone. */
-const COUNT_PACES = [
-  [0, "All at once"],
-  [1, "1/sec"],
-  [0.5, "2/sec"],
-  [0.33, "3/sec"],
-];
+const COUNT_SPEEDS = [2, 1.5, 1.2, 0.9, 0.7, 0.5, 0.4, 0.3, 0.2, 0.1, 0];
+const COUNT_SPEED_TOP = COUNT_SPEEDS.length;
+
+const clampSpeed = (step) => Math.min(Math.max(Math.round(step), 1), COUNT_SPEED_TOP);
+const speedSeconds = (step) => COUNT_SPEEDS[clampSpeed(step) - 1];
+
+/* What sits beside the track: the interval, kept short enough to share a line
+   with the slider on a phone. */
+const speedLabel = (step) => {
+  const gap = speedSeconds(step);
+  return gap > 0 ? `${gap} s` : "All at once";
+};
+
+/* And the line under it, which is where the teaching goes. A rate, because
+   that is how a dealer's speed is described, and a comparison with one: a
+   hand-dealt game puts out a card every 0.3 to 0.7 seconds, so that is the
+   band this calls table speed. Slower is practice; quicker is drilling past
+   the thing being drilled for. */
+function speedNote(step) {
+  const gap = speedSeconds(step);
+  if (gap <= 0) {
+    return "The whole question at once — the same question, and what bj count must do in a terminal.";
+  }
+  const rate = Number((1 / gap).toFixed(1));
+  const against =
+    gap > 0.7 ? "slower than a dealer" : gap < 0.3 ? "quicker than any dealer" : "about table speed";
+  return `${rate} ${rate === 1 ? "card" : "cards"} a second, ${against}.`;
+}
+
+/* The dial replaced a four-choice control that stored seconds, so a setting
+   written by that screen is read as the step nearest to it. The top step is
+   never chosen by distance: "all at once" is not a speed. */
+function speedStepFor(seconds) {
+  if (!(seconds > 0)) return COUNT_SPEED_TOP;
+  let best = 1;
+  for (let step = 2; step < COUNT_SPEED_TOP; step += 1) {
+    if (Math.abs(speedSeconds(step) - seconds) < Math.abs(speedSeconds(best) - seconds)) {
+      best = step;
+    }
+  }
+  return best;
+}
 
 const count = {
   catalogue: null,
   system: "hi-lo",
   mode: "running",
   decks: 6,
-  pace: 0,
+  speed: COUNT_SPEED_TOP,
   seed: null,
   index: 0,
   question: null,
@@ -2380,7 +2458,7 @@ function saveCount() {
         system: count.system,
         mode: count.mode,
         decks: count.decks,
-        pace: count.pace,
+        speed: count.speed,
       })
     );
   } catch {
@@ -2396,7 +2474,12 @@ function loadCount() {
       system: saved.system ?? count.system,
       mode: saved.mode ?? count.mode,
       decks: saved.decks ?? count.decks,
-      pace: typeof saved.pace === "number" ? saved.pace : 0,
+      speed:
+        typeof saved.speed === "number"
+          ? clampSpeed(saved.speed)
+          : typeof saved.pace === "number"
+            ? speedStepFor(saved.pace)
+            : count.speed,
     });
   } catch {
     /* Nothing to restore. */
@@ -2435,7 +2518,8 @@ function dealTheRest() {
 function startDealing() {
   stopDealing();
   const total = countCardTotal(count.question);
-  if (count.mode !== "running" || count.pace <= 0 || total === 0) {
+  const gap = speedSeconds(count.speed);
+  if (count.mode !== "running" || gap <= 0 || total === 0) {
     count.dealt = total;
     count.shown = performance.now();
     return;
@@ -2450,7 +2534,7 @@ function startDealing() {
       count.shown = performance.now();
     }
     renderCount();
-  }, count.pace * 1000);
+  }, gap * 1000);
 }
 
 /* A card chip from a label the server sent, which may be "T", "5", or "7r" and
@@ -2617,7 +2701,16 @@ function renderCount() {
   panel.append(right);
   body.replaceChildren(panel);
   renderCountTally();
-  if (!count.verdict && !stillDealing()) $("count-answer")?.focus();
+  if (!count.verdict && !stillDealing()) focusCountAnswer();
+}
+
+/* The answer box takes focus the moment a question is ready, because typing is
+   the next thing -- unless the hand is already on a control, which is the case
+   while someone is walking the dealing-speed dial up with the arrow keys. */
+function focusCountAnswer() {
+  const active = document.activeElement;
+  if (active && $("count-controls")?.contains(active)) return;
+  $("count-answer")?.focus();
 }
 
 function renderCountTally() {
@@ -2654,7 +2747,7 @@ function renderCountTally() {
       return box;
     })
   );
-  const paced = count.mode === "running" && count.pace > 0;
+  const paced = count.mode === "running" && speedSeconds(count.speed) > 0;
   $("count-tally-note").textContent =
     count.mode === "decks"
       ? "Mean error is signed: a consistent positive means you read trays high, which" +
@@ -2787,13 +2880,21 @@ function renderCountControls() {
      figure, and pacing a single number would be theatre. */
   if (count.mode === "running") {
     fields.push(
-      segmented(
-        { name: "pace", label: "Dealing speed", options: COUNT_PACES },
-        count.pace,
-        (value) => {
-          count.pace = Number(value);
+      slider(
+        {
+          label: "Dealing speed",
+          min: 1,
+          max: COUNT_SPEED_TOP,
+          format: speedLabel,
+          note: speedNote,
+        },
+        count.speed,
+        (step) => {
+          count.speed = clampSpeed(step);
           saveCount();
-          renderCountControls();
+          /* The controls are deliberately not rebuilt: the dial shows its own
+             value, and replacing it under the hand holding it would take the
+             focus with it. */
           if (count.question) {
             startDealing();
             renderCount();

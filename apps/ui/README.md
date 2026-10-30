@@ -107,12 +107,22 @@ to a true count the way your indices expect, and reading the discard tray you
 divide by. Each answer is timed, so it is a speed test as well as an accuracy
 one, on the same clock `bj count` uses.
 
-The cards can be dealt at a **dealing speed** rather than put up all at once:
-1, 2 or 3 a second, one at a time, which is the thing the drill is actually for
-— the engine's own note calls the error mode "keeping a sum of tags through a
-shoe at dealing speed", and says a terminal cannot do it. Undealt cards hold
-their place so the row does not jump about as they arrive, and space finishes the
-deal when you have already beaten the pace.
+The cards can be dealt at a **dealing speed** rather than put up all at once,
+which is the thing the drill is actually for — the engine's own note calls the
+error mode "keeping a sum of tags through a shoe at dealing speed", and says a
+terminal cannot do it. The speed is a dial from 1 to 11: two seconds a card at
+1, a tenth of a second at 10, and at 11 the whole question at once, the way the
+terminal has to show it.
+
+The nine steps between those ends are not evenly spaced in seconds. Each is
+about a quarter to a third quicker than the one below it, because a dial that
+steps linearly in seconds spends most of its travel between *slow* and
+*slower* and puts everything from brisk to impossible in the final step. The
+dial reads out the interval, and says both the rate and how that rate compares
+with a dealer: a hand-dealt game puts out a card every 0.3 to 0.7 seconds, so
+5 to 8 is table speed. Undealt cards hold their place so the row does not jump
+about as they arrive, and space finishes the deal when you have already beaten
+the pace.
 
 The cards **stay** once dealt. Taking them away again would make it a memory
 test, and it would break the clock: the time reported is from the question being
