@@ -1177,14 +1177,22 @@ def test_a_tray_given_in_decks_withholds_the_card_count(client) -> None:
     for seed in range(12):
         body = _ask(client, mode="decks", seed=seed)
         phrasings[body["in_cards"]] = body
+        # The fraction a screen draws the tray at is the same question in a
+        # picture, so in each phrasing it has to be the figure that phrasing
+        # already prints -- otherwise drawing the tray would quietly be asking
+        # an easier question than writing it.
         if body["in_cards"]:
             assert body["cards_dealt"] is not None, "a tray shown in cards must say how many"
             assert body["tray_decks"] is None
             assert "cards in the tray" in body["describe"]
+            assert body["tray_fraction"] == pytest.approx(
+                body["cards_dealt"] / (body["decks"] * 52)
+            )
         else:
             assert body["cards_dealt"] is None, "deck phrasing must not leak the exact depth"
             assert body["tray_decks"] is not None
             assert "decks in the tray" in body["describe"]
+            assert body["tray_fraction"] == pytest.approx(body["tray_decks"] / body["decks"])
     assert set(phrasings) == {True, False}, "twelve seeds produced only one phrasing"
 
 

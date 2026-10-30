@@ -183,6 +183,7 @@ function slider(spec, value, onChange) {
     step: "1",
     value: String(value),
   });
+  if (spec.id) input.id = spec.id;
   /* Named here rather than by the label's text, which would otherwise swallow
      the readout and the note into the accessible name. And a step number
      announced on its own means nothing, so the value is announced as what it
@@ -2432,6 +2433,7 @@ const count = {
   mode: "running",
   decks: 6,
   speed: COUNT_SPEED_TOP,
+  eye: true,
   seed: null,
   index: 0,
   question: null,
@@ -2459,6 +2461,7 @@ function saveCount() {
         mode: count.mode,
         decks: count.decks,
         speed: count.speed,
+        eye: count.eye,
       })
     );
   } catch {
@@ -2480,6 +2483,7 @@ function loadCount() {
           : typeof saved.pace === "number"
             ? speedStepFor(saved.pace)
             : count.speed,
+      eye: typeof saved.eye === "boolean" ? saved.eye : count.eye,
     });
   } catch {
     /* Nothing to restore. */
@@ -2596,6 +2600,8 @@ function renderCountQuestion(question) {
         el("small", { textContent: "decks remaining" }),
       ])
     );
+  } else if (count.eye) {
+    panel.append(renderTray(question));
   } else {
     panel.append(
       el("div", { className: "bignum mono" }, [
@@ -2612,17 +2618,74 @@ function renderCountQuestion(question) {
   return panel;
 }
 
+/* The tray, drawn. Nobody at a table is told a card count: you look at the
+   plastic holder, judge how much of the shoe is in it, and subtract. A printed
+   figure drills the arithmetic and skips the estimate, which is the half that
+   is actually hard -- so this draws the tray and the figure stays off screen.
+
+   The height is the server's `tray_fraction`, derived from whichever figure the
+   phrasing would have printed, so the picture asks exactly the written
+   question. The tray holds the whole shoe, which is what makes a fraction of
+   it readable at all, and the shoe size is said in words because at a table
+   you know it.
+
+   Deliberately drawn with no card edges. Six decks in 212 pixels is one card
+   every two thirds of a pixel, so any repeating texture would be a lie about
+   how thick a card is and an invitation to measure the picture instead of
+   estimating it. */
+function renderTray(question) {
+  const tray = el("div", { className: "tray" }, [el("div", { className: "stack" })]);
+  tray.style.setProperty("--filled", String(Math.min(Math.max(question.tray_fraction, 0), 1)));
+  tray.setAttribute("role", "img");
+  /* A picture is the question here, so the alternative text cannot describe
+     it: saying how full the tray is would be answering it. */
+  tray.setAttribute(
+    "aria-label",
+    `A discard tray holding part of a ${question.decks}-deck shoe, drawn to be` +
+      ` estimated by eye. How full it is is deliberately not stated; set "Read the` +
+      ` tray" to "As a figure" to be told it instead.`
+  );
+  return el("div", { className: "bignum" }, [
+    tray,
+    el("small", { textContent: `the tray of a ${question.decks}-deck shoe` }),
+  ]);
+}
+
 function renderCountAnswer() {
   const form = el("form", { className: "answerform" });
   const dealing = stillDealing();
-  const input = el("input", {
-    type: "text",
-    id: "count-answer",
-    inputMode: "decimal",
-    autocomplete: "off",
-    disabled: dealing,
-    placeholder: count.mode === "decks" ? "e.g. 2.5" : "e.g. +4",
-  });
+  const byEye = count.mode === "decks" && count.eye;
+  /* The question's shoe, not the control's: they agree, but the one on screen
+     is the one being answered. */
+  const shoe = count.question.decks;
+  const input = byEye
+    ? /* Reading a tray by eye does not produce a number to type. It produces
+         "about two and a half", and a dial is how that gets said. The step is
+         a quarter deck, which is the grader's own tolerance, so the control
+         cannot ask for precision the answer does not have.
+
+         It starts at half the shoe. Any starting point is a nudge, and the
+         middle is the one that nudges least. */
+      slider(
+        {
+          id: "count-answer",
+          label: "Decks still to come",
+          min: 1,
+          max: shoe * 4,
+          format: (quarters) => `${quarters / 4} decks`,
+          note: () => "To the nearest quarter. A half-deck answer is what the drill grades.",
+        },
+        shoe * 2,
+        () => {}
+      )
+    : el("input", {
+        type: "text",
+        id: "count-answer",
+        inputMode: "decimal",
+        autocomplete: "off",
+        disabled: dealing,
+        placeholder: count.mode === "decks" ? "e.g. 2.5" : "e.g. +4",
+      });
   const submit = el("button", {
     type: "submit",
     className: "run",
@@ -2641,22 +2704,30 @@ function renderCountAnswer() {
     rest.addEventListener("click", () => dealTheRest());
     buttons.append(rest);
   }
+  /* The dial brings its own label; a text box is given one here. */
   form.append(
-    el("label", { className: "field" }, [
-      el("span", {
-        textContent: dealing
-          ? `Dealing… ${count.dealt} of ${countCardTotal(count.question)}`
-          : count.question.prompt,
-      }),
-      input,
-    ]),
+    byEye
+      ? input
+      : el("label", { className: "field" }, [
+          el("span", {
+            textContent: dealing
+              ? `Dealing… ${count.dealt} of ${countCardTotal(count.question)}`
+              : count.question.prompt,
+          }),
+          input,
+        ]),
     buttons
   );
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (stillDealing()) return;
-    const given = Number(input.value.trim());
-    if (input.value.trim() === "" || Number.isNaN(given)) {
+    const field = $("count-answer");
+    if (byEye) {
+      answerCount(Number(field.value) / 4);
+      return;
+    }
+    const given = Number(field.value.trim());
+    if (field.value.trim() === "" || Number.isNaN(given)) {
       status($("count-note"), "That is not a number. Counts can be negative, like -3.", true);
       return;
     }
@@ -2875,6 +2946,29 @@ function renderCountControls() {
       }
     ),
   ];
+
+  /* Only the tray drill has a tray to draw, and only it can be put either way:
+     as the figure a terminal has to print, or as the thing on the table. */
+  if (count.mode === "decks") {
+    fields.push(
+      segmented(
+        {
+          name: "eye",
+          label: "Read the tray",
+          options: [[true, "By eye"], [false, "As a figure"]],
+        },
+        count.eye,
+        (value) => {
+          count.eye = value === true || value === "true";
+          saveCount();
+          renderCountControls();
+          /* A new question rather than the same one redrawn: having been told
+             the figure, you cannot un-know it and then estimate it. */
+          nextCountQuestion();
+        }
+      )
+    );
+  }
 
   /* Only the running count has cards to deal. The other two drills show one
      figure, and pacing a single number would be theatre. */

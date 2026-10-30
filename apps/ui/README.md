@@ -131,6 +131,25 @@ meaning anything once the referent is gone. At a pace the clock starts at the
 *last* card for the same reason. Pacing is entirely in the browser; the API has
 no notion of it, and the question and the grade are identical either way.
 
+The tray drill reads the tray **by eye** by default: a discard tray drawn to
+the depth the question is at, rather than the card count a terminal has to
+print. The printed figure drills the division and skips the estimate, which is
+the half that is actually hard — nobody at a table is told how many cards are
+in the tray. The answer is given on a dial in quarter decks, because that is
+how an eyeball estimate arrives and because a quarter deck is the grader's own
+tolerance. "As a figure" puts the written question back.
+
+The tray is drawn from `tray_fraction`, which the server derives from whichever
+figure the phrasing would have printed, so the picture asks exactly the written
+question and a test asserts the two cannot disagree. It is drawn with no card
+edges and no graduations: at six decks in 212 pixels a card is two thirds of a
+pixel, so any repeating texture would be a lie about how thick a card is and an
+invitation to measure the picture instead of reading it. The same goes for
+marks on the tray — a real one has none, which is the whole drill. A screen
+reader is told that the tray is there and that the figure is deliberately
+withheld, along with how to ask for it instead, because an estimate from a
+picture is the one thing here that cannot be described without being answered.
+
 The running count carries between questions and restarts at the shuffle — and
 at the IRC, for an unbalanced system — because a slip should persist the way
 it would at a table. A conversion drill is offered only for systems that
@@ -202,11 +221,6 @@ What no test can tell you is whether a screen *looks* right. That still takes a
 person with a phone.
 
 ## Not built
-
-Grading free play against **indices** is absent, and deliberately: it needs
-an index sweep, which is seconds of work and so belongs on the job runner rather
-than in a request. Offering a "count" standard that quietly graded against flat
-basic strategy would be worse than not offering it.
 
 Saving a setting needs the authentication question answered first, which also
 means a drill tally or a play session cannot follow you between browsers. See

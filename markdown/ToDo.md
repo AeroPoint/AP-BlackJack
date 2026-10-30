@@ -187,7 +187,8 @@ worth building twice.
   derived for the old one, and a test checks that a different table is refused
   again.
   *Dealing speed is done.* The running-count drill deals its cards one at a
-  time at 1, 2 or 3 a second rather than putting the question up whole, which is
+  time, on a dial from two seconds a card up to all at once, rather than putting
+  the question up whole — which is
   the skill the engine's own note describes: "keeping a sum of tags through a
   shoe at dealing speed", which a terminal cannot do. Undealt cards hold their
   place, the answer is gated until the deal finishes, and space deals the rest.
@@ -197,7 +198,18 @@ worth building twice.
   answer — the figure `bj count` reports. At a pace the clock starts at the
   last card, for the same reason. Entirely a browser concern: the API has no
   notion of a pace, and a test confirms the question and the grade are identical
-  whatever seconds are reported.
+  whatever seconds are reported. The eleven steps are spaced by ratio rather
+  than by a constant interval, because a dial linear in seconds spends most of
+  its travel between slow and slower.
+  *Reading the tray by eye is done.* The tray drill draws a discard tray at the
+  depth of the question instead of printing the figure, and takes the answer on
+  a dial in quarter decks — the grader's own tolerance. A printed card count
+  drills the division and skips the estimate, and the estimate is the half
+  nobody is handed at a table. The drawing comes from the engine's
+  `tray_fraction`, derived so the picture cannot disagree with the answer and
+  so it discloses no more than the phrasing it replaces; it carries no card
+  edges and no graduations, both of which would turn an estimate into a
+  measurement.
   *Remaining:* a tally or a session lives in `localStorage`, so it is
   per-browser and cannot follow you between devices until there is somewhere
   authenticated to write it.
@@ -281,9 +293,22 @@ The terminal versions are built. What remains is depth and a UI.
   description of the tray, which shows a miss against the half-deck answer at a
   true count near +3. The core in
   `train/counting_drill.py` is pure; the loop takes injected input, output and
-  clock. **Remaining:** tray estimation from an image or a slider, which belongs
-  in the web UI; true flashing (cards that disappear after a set time) instead
-  of timing a batch that stays on screen.
+  clock.
+  *Tray estimation by eye is done,* in the web UI, which is where it belongs:
+  the tray is drawn to the depth of the question and answered on a dial in
+  quarter decks, so the drill is the estimate rather than the division. The
+  engine exposes it as `DeckQuestion.tray_fraction`, derived so that
+  `decks * (1 - tray_fraction)` is exactly the answer — a picture that
+  disagreed with the figure would be a different question — and derived from
+  whichever figure the phrasing would have printed, so it discloses nothing the
+  text did not. Tray estimation from a *photograph* is still open, and is a
+  different problem: it needs real trays, shot at real angles.
+  **Remaining:** cards that disappear after a set time. Deliberately not done:
+  it makes the drill a recall test and it breaks the clock, which times a
+  question from fully visible to answered. Dealing the cards one at a time at a
+  settable speed, on a dial from two seconds a card to all at once, drills the
+  thing that was actually wanted — keeping a sum through a shoe at dealing
+  speed — and keeps the figure comparable with `bj count`.
 
 - [ ] **Betting drills.** Given a count, what should you bet? Graded against the
   Kelly-optimal ramp for the configured bankroll.

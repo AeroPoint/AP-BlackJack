@@ -621,6 +621,24 @@ class DeckQuestion:
         """The right answer to the nearest half deck: the simulator's divisor."""
         return nearest_half(self.remaining)
 
+    @property
+    def tray_fraction(self) -> float:
+        """How full the tray is, 0 to 1: the question drawn rather than written.
+
+        Nobody at a table is told a card count. You look at the plastic holder
+        and judge how much of the shoe is sitting in it, which is the part of
+        the skill a printed figure skips entirely -- so a screen that can draw
+        the tray should, and this is the only figure it needs.
+
+        Derived from ``remaining`` rather than from the depth behind it, which
+        makes ``decks * (1 - tray_fraction)`` exactly ``remaining``. A drawn
+        tray is another way of putting the same question, and a picture that
+        disagreed with the answer would make the drill unanswerable. It carries
+        no more than the written description does either way: in card phrasing
+        it is the card count rescaled, and in deck phrasing the shown tray.
+        """
+        return (self.decks - self.remaining) / self.decks
+
     def describe(self) -> str:
         """The tray, as the player is told about it."""
         if self.in_cards:

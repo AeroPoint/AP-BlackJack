@@ -325,6 +325,39 @@ def test_deck_question_in_cards_uses_the_exact_depth() -> None:
     assert "120 cards" in q.describe()
 
 
+def test_a_drawn_tray_cannot_disagree_with_the_answer() -> None:
+    """The fraction a screen draws is the question, so it must give the answer.
+
+    Checked at every depth in both phrasings, because the two derive
+    `remaining` differently -- card phrasing from the exact depth, deck
+    phrasing from the rounded figure on the screen -- and a tray drawn from the
+    other one would be a picture of a different question.
+    """
+    for decks in (1, 2, 6, 8):
+        for dealt in range(1, decks * 52):
+            for in_cards in (False, True):
+                q = make_deck_question(decks, dealt, in_cards=in_cards)
+                # An empty tray is a real question in deck phrasing -- one card
+                # from a single deck shows as "0.0 decks" -- and its answer is
+                # the whole shoe. A full one never is: nothing would be left.
+                assert 0 <= q.tray_fraction < 1, f"{decks}d, {dealt} dealt"
+                assert decks * (1 - q.tray_fraction) == pytest.approx(q.remaining)
+
+
+def test_a_drawn_tray_shows_no_more_than_the_written_one() -> None:
+    """Else drawing the tray would be a way of asking an easier question.
+
+    In card phrasing the fraction is the card count rescaled; in deck phrasing
+    it is the tray figure already printed. Neither adds anything, which is why
+    it travels in both.
+    """
+    counted = make_deck_question(6, 120, in_cards=True)
+    assert counted.tray_fraction == pytest.approx(120 / (6 * 52))
+
+    shown = make_deck_question(6, 120, in_cards=False)
+    assert shown.tray_fraction == pytest.approx(2.3 / 6)
+
+
 def test_deck_grade_allows_a_quarter_deck() -> None:
     q = make_deck_question(6, 120, in_cards=False)  # 3.7 left
     assert grade_decks(q, 3.5, 1.0, HI_LO).correct

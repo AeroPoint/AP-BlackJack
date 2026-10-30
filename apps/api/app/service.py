@@ -1381,12 +1381,16 @@ def count_question(payload: dict[str, Any]) -> dict[str, Any]:
         )
     else:
         # `cards_dealt` is the answer when the tray is given in decks, so it
-        # travels only when it is also what the player is shown.
+        # travels only when it is also what the player is shown. `tray_fraction`
+        # travels either way: it is the same question drawn rather than written,
+        # and it is derived from whichever figure the phrasing shows, so it
+        # adds nothing to either one.
         body.update(
             describe=question.describe(),
             in_cards=question.in_cards,
             cards_dealt=question.cards_dealt if question.in_cards else None,
             tray_decks=None if question.in_cards else question.tray_decks,
+            tray_fraction=question.tray_fraction,
         )
     return _envelope(**body)
 

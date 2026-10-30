@@ -303,6 +303,7 @@ COUNT_DECKS: frozenset[str] = frozenset(
         "seed",
         "system",
         "tray_decks",
+        "tray_fraction",
     }
 )
 
