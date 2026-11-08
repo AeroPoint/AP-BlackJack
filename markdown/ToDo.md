@@ -284,7 +284,7 @@ The terminal versions are built. What remains is depth and a UI.
   `legal_actions` is now the single authority on legality and a test asserts it
   returns exactly the keys the pricer scores.
 
-- [ ] **Counting drills.** *Mostly done.* `bj count` has three modes, each
+- [~] **Counting drills.** *Mostly done.* `bj count` has three modes, each
   timed with a monotonic clock and reproducible from `--seed`: running count
   from a real shoe in configurable groups (any system, IRC for unbalanced ones,
   half points for Wong Halves, red and black sevens for Red 7), true-count
@@ -335,7 +335,7 @@ The terminal versions are built. What remains is depth and a UI.
   weight. Until then the number is comparative, not absolute, and the docs say
   so.
 
-- [x] **Custom counting system designer.** *Partly done.* `optimal_tags` scales
+- [~] **Custom counting system designer.** *Partly done.* `optimal_tags` scales
   the EOR vector to a level and rounds; `bj systems --derive` shows the result.
   At level 1 it returns exactly Hi-Lo. What remains is a *search* rather than a
   rounding — the best integer vector at a level is not always the rounded one,
