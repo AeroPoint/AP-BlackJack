@@ -5,6 +5,10 @@ means, because a backlog of vague intentions is a wish list.
 
 Status key: `[ ]` not started · `[~]` partially done · `[x]` done
 
+The order these will be taken in, and what each is waiting on, is in
+[Roadmap.md](Roadmap.md). Known issues, each with its fix, are at the
+[end of this file](#known-issues).
+
 ---
 
 ## P0 — Correctness and speed foundations
@@ -444,38 +448,101 @@ The terminal versions are built. What remains is depth and a UI.
 
 ## Known issues
 
-- YAML configs require `pip install blackjack[cli]`. Without PyYAML, the CLI
-  falls back to built-in presets whose keys match the config filenames, so the
-  shipped rule sets still resolve. Custom YAML files do not.
-- `Charlie` rules are honoured by the solver but not by the simulator.
-- On its own count frequencies the analytic spread model overstates a six-deck
-  KO ramp keyed on the pivot by 18%, because those frequencies weight card
-  positions rather than rounds (see the cut-card item above). Price unbalanced
-  spreads on a simulator's histogram with
-  `TrueCountDistribution.with_frequencies` until that item is done.
-- The `OBO` hole-card rule is treated as `PEEK`; the distinction only matters for
-  a rule variant nobody currently models.
-- Deep single-deck states can produce fractional compositions where a rank falls
-  below one card; the engine clamps at zero and the induced error is below 1e-9,
-  but it is an approximation rather than an exact treatment.
-- Measured miss rates persist only with `--player`; without it they are
-  discarded at exit and the next session starts from the generic model. That is
-  deliberate (nothing is written to disk unasked). The leak view in
-  `bj chart --importance` and the chart page still use the generic model either
-  way: they do not read a player's history.
-- Nothing checks `apps/ui/` the way a build step would, because it has none by
-  design. `tests/unit/test_ui_assets.py` stands in for that: valid UTF-8 with no
-  control bytes, balanced braces, no custom property used without a fallback and
-  without a definition, local references that resolve, both themes declared in
-  the base `:root`. It found an undefined-token false alarm and two real
-  encoding faults the first time it ran. What it cannot check is whether the
-  page *looks* right — that still takes a human with a phone.
-- The chart page reimplements the importance model in JavaScript. It is a
-  transliteration of `ev/importance.py`, noted as such in both files, but it is a
-  second copy with no test holding the two together. Changing thresholds or the
-  error model means changing both.
-- Job state is lost when the API restarts, by design. Every job is reproducible
-  from its request plus the recorded fingerprint.
-- `bj` still calls the engine directly rather than going through
-  `apps/api/app/service.py`. Both bottom out in the same functions today, so
-  nothing is wrong; it is worth closing before the two grow separate features.
+Grouped by what to do about each. Every entry says what is wrong, what it costs
+and, where one is known, the fix. The order they will be taken in is in
+[Roadmap.md](Roadmap.md).
+
+### Defects with a known fix
+
+- **`Charlie` is priced by the solver but not paid at a dealt table.** Neither
+  `sim/engine.py` nor `train/table.py` reads `RuleSet.charlie`, so a simulation
+  of a Charlie rule set runs without the rule and says nothing, and free play
+  grades against a solver expecting a payout the table never makes. The one
+  shipped config that names the field sets it to `null`, so the exposure is a
+  custom config.
+  *Fix:* in both hand loops, settle a hand that reaches `rules.charlie` cards
+  without busting as an automatic winner and stop drawing, matching whatever
+  `ev/player.py` does for split hands and against a dealer blackjack. Add a
+  Charlie rule set to the solver-versus-simulator cross-validation, which is
+  the test that would have caught this.
+  *Stopgap, smaller:* make both raise on a rule set with `charlie` set. A
+  refusal is better than a silently different game.
+- **The chart page carries a second copy of the importance model.**
+  `scripts/chart_page/page-body.html` transliterates `ev/importance.py` into
+  JavaScript, and no test holds the two together, so changing a threshold or
+  the error model means changing both by hand.
+  *Fix:* a test that takes a fixed set of cells, computes margin, closeness,
+  miss rate and leak in Python, runs the page's own model block under `node` on
+  the same EVs, and compares. Skip it with a stated reason where `node` is
+  missing; CI's runners have it, so nothing is added to the dependencies.
+  Precomputing the figures instead was considered when the page was built and
+  rejected: shipping them per cell would have tripled the file.
+- **`bj` and the API each carry their own glue for part of the engine.**
+  Indices, the spread, simulation, the drills and free play go through
+  `blackjack.operations` ([ADR-0009](adr/ADR-0009-operations-layer.md)). The
+  rest does not: `cli.py` calls the solver, explain, compare, side bets and the
+  systems table directly, and `apps/api/app/service.py` has its own calls for
+  most of the same things. Both bottom out in the same functions today, so
+  nothing is wrong yet; it is two places to add every new option.
+  *Fix:* lift each into `operations` as a function returning an `*Outcome`
+  dataclass, the way the existing ones do, and have both callers use it. Not by
+  having `bj` call `service.py`, which an earlier version of this note
+  suggested: the engine must not import from `apps/`. Hold each with a test
+  that both routes give the same answer, as the drills already have.
+- **The leak view ranks leaks with the generic error model, not the player's.**
+  `bj drill` and `bj play` persist measured miss rates with `--player`
+  (`train/history.py`) and the drill weights by them; `bj chart --importance`
+  and the app's chart screen do not read them.
+  *Fix:* `importance.analyse` models the miss rate itself and takes no
+  override, so start there: let it accept a measured rate. Then give
+  `bj chart --importance` the same `--player` flag, and have the chart screen
+  send the tally the trainer already keeps in `localStorage`, as the drill
+  endpoint does. Where a cell has too few observations to trust, reuse however
+  `train/drill.py` blends a measured rate with the model, not a second rule.
+  The standalone chart page stays generic: it is a static file with no player.
+
+### Limits of the model, with a workaround
+
+- **An unbalanced ramp is overstated on the model's own count frequencies.**
+  18% high for a six-deck KO ramp keyed on the pivot, because those frequencies
+  weight card positions rather than rounds.
+  *Workaround:* price unbalanced spreads on a simulator's histogram with
+  `TrueCountDistribution.with_frequencies`.
+  *Fix:* the cut-card item under P3, a frequency model that steps by rounds.
+- **Deep single-deck states can hold less than one card of a rank.** A
+  count-conditioned shoe is an expected composition, so its counts are real
+  numbers; anything at or below `shoe.EPSILON` is treated as exhausted and
+  removal clamps at zero. The induced error is below 1e-9, and a real integer
+  shoe is unaffected.
+  *Fix, if it ever matters:* price such a state as a weighted sum over the
+  integer compositions consistent with the count, not at their mean. Exact, and
+  a solve per composition, so worth it only for the few cells involved. Not
+  planned: the error is far below anything the engine reports.
+- **`OBO` is solved as `PEEK`.** Exact for money: under original-bets-only the
+  player loses only the original wager to a dealer blackjack, which is the peek
+  payoff. What differs is cards, since the player draws before the blackjack is
+  shown, and that only moves depth-dependent figures in the simulator.
+  *Fix:* play the hand out before settling in `sim/engine.py`. Not planned
+  until a rule set needs it.
+
+### By design
+
+- **Custom YAML needs PyYAML.** The core has no dependencies
+  ([ADR-0004](adr/ADR-0004-dependency-free-core.md)), so without
+  `pip install blackjack[cli]` the built-in presets resolve and a custom YAML
+  file does not. The same file as JSON loads with nothing installed, and the
+  error says so.
+- **Measured miss rates persist only with `--player`.** Without it they are
+  discarded at exit and the next session starts from the generic model: nothing
+  is written to disk unasked.
+- **Job state is lost when the API restarts.** Every job is reproducible from
+  its request plus the recorded fingerprint. If losing a sweep starts to cost
+  something, the result cache under P0 is the fix, keyed the same way.
+- **Nothing builds `apps/ui/`, so nothing checks it the way a build would.**
+  `tests/unit/test_ui_assets.py` stands in: valid UTF-8 with no control bytes,
+  balanced braces, no custom property used without a fallback and without a
+  definition, local references that resolve, both themes declared in the base
+  `:root`, and the range control drawn for both rendering engines. What it
+  cannot check is whether a page *looks* right; that takes a person with a
+  phone. A screenshot comparison in CI would close it at the price of a browser
+  in the test suite, and is not planned.

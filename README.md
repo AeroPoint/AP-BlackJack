@@ -109,7 +109,9 @@ Rules, counting systems, spreads and paytables are YAML files in
 | Local app (`apps/ui`) | Working: chart, compare, spread, trainer, free play, counting drills and settings. `bj ui` serves it |
 
 The prioritised backlog, with a definition of "done" for each item, is in
-[markdown/ToDo.md](markdown/ToDo.md).
+[markdown/ToDo.md](markdown/ToDo.md), along with the known issues and their
+fixes. The order it will be taken in is in
+[markdown/Roadmap.md](markdown/Roadmap.md).
 
 ## Documentation
 
@@ -124,6 +126,8 @@ The prioritised backlog, with a definition of "done" for each item, is in
   derivation
 - [markdown/Glossary.md](markdown/Glossary.md): terms, for anyone who is not a
   card counter
+- [markdown/Roadmap.md](markdown/Roadmap.md): the plan, in phases, and what
+  each one waits on
 - [markdown/adr/](markdown/adr/README.md): architecture decision records
 
 ## Contributing

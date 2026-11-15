@@ -261,15 +261,19 @@ attached. Writing it last makes it the commit point.
 
 ## What is scaffolded but not implemented
 
-
-The trainer's state machine is driven over HTTP by replaying a seed and a move
-log rather than by holding a session, which keeps the undealt shoe out of the
-client and lets the service stay stateless — see
-[apps/ui/README.md](../apps/ui/README.md) and
-`blackjack.operations.play_step`.
 - **Writing a config.** The settings screen reads; nothing writes. That needs the
   authentication question answered first, not a route added.
+- **`Charlie` at a dealt table.** `RuleSet.charlie` is priced by the solver and
+  ignored by the simulator and the free-play table. The fix is written out in
+  the known issues in [ToDo.md](ToDo.md#known-issues).
+
+What might look scaffolded and is not: the trainer's state machine is driven
+over HTTP by replaying a seed and a move log rather than by holding a session,
+which keeps the undealt shoe out of the client and lets the service stay
+stateless — see [apps/ui/README.md](../apps/ui/README.md) and
+`blackjack.operations.play_step`.
 
 `apps/ui/` carries a README stating exactly what is missing. Nothing in the
 engine depends on it, or on the API: the dependency direction above is the whole
-design.
+design. The order the remaining work will be taken in is in
+[Roadmap.md](Roadmap.md).

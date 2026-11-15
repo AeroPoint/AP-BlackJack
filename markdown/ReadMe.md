@@ -424,7 +424,8 @@ See [environment/README.md](../environment/README.md).
 | [SideBets.md](SideBets.md) | Side-bet framework and known limitations |
 | [ConfigControl.md](ConfigControl.md) | Configuration, reproducibility, provenance |
 | [Glossary.md](Glossary.md) | Terms, for anyone who is not a card counter |
-| [ToDo.md](ToDo.md) | Prioritised backlog |
+| [ToDo.md](ToDo.md) | Prioritised backlog, and the known issues with their fixes |
+| [Roadmap.md](Roadmap.md) | The order the backlog will be taken in, and what each phase waits on |
 | [../scripts/chart_page/README.md](../scripts/chart_page/README.md) | How the shareable chart page is built, and why it is pre-solved |
 | [adr/](adr/) | Architecture decision records |
 | [../AGENTS.md](../AGENTS.md) | Conventions for AI agents and contributors |

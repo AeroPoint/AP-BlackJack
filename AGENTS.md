@@ -21,7 +21,8 @@ Read [markdown/ReadMe.md](markdown/ReadMe.md) first, then
 
 This repository is public and accepts pull requests. The short version:
 
-1. Pick a task from [markdown/ToDo.md](markdown/ToDo.md) or an open issue. Do
+1. Pick a task from [markdown/ToDo.md](markdown/ToDo.md) or an open issue;
+   [markdown/Roadmap.md](markdown/Roadmap.md) gives the order. Do
    not invent refactors nobody asked for.
 2. Follow the non-negotiables below; they are what reviewers check first.
 3. Run the checks in [Before opening a pull request](#before-opening-a-pull-request)
