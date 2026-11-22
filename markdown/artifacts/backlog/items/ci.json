@@ -1,0 +1,7 @@
+{
+  "detail": "Eight jobs on every push: lint, format, types, the fast suite and the installed-licence check across Windows and Linux on two Pythons; the engine on a bare Python with nothing installed, which is what actually enforces the dependency-free core; the slow cross-validation once; and a native job that builds the Rust core and runs parity in the same job, because split across jobs it would go green having tested nothing.",
+  "order": 6,
+  "section": "p4",
+  "state": "done",
+  "title": "Continuous integration"
+}

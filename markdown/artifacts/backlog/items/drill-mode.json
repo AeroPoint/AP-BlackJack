@@ -1,0 +1,7 @@
+{
+  "detail": "Cells are sampled by what getting them wrong costs, times how often the hand arrives, times how often this player has missed it. The tally counts what the wrong play cost, not what the session lost.",
+  "order": 1,
+  "section": "p2",
+  "state": "done",
+  "title": "Drill mode"
+}

@@ -1,0 +1,8 @@
+{
+  "blocks": "Saving a setting at all; a drill tally or a play session following you between browsers or devices.",
+  "detail": "A write endpoint on the API means an endpoint that creates files, and the service has no authentication of any kind. The tailnet includes a device on somebody else's account, so this is a decision to take on purpose rather than a route to add. The endpoint is the easy half.",
+  "order": 1,
+  "section": "you",
+  "state": "todo",
+  "title": "Decide the authentication question"
+}

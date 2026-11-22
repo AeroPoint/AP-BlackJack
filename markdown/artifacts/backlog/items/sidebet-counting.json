@@ -1,0 +1,8 @@
+{
+  "detail": "EOR per side bet already exists in `sidebets/base.py`.",
+  "doneWhen": "Index generation and a dedicated side-count recommendation, with Lucky Ladies as the first target.",
+  "order": 4,
+  "section": "p3",
+  "state": "todo",
+  "title": "Side-bet counting"
+}

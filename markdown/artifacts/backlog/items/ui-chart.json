@@ -1,0 +1,7 @@
+{
+  "detail": "Plain HTML, CSS and JavaScript, no build step. All three colourings: the play, cost if wrong, and where it leaks. Reviewed on a phone and corrected from it, which is where height became a first-class breakpoint.",
+  "order": 3,
+  "section": "p1",
+  "state": "done",
+  "title": "Local app: strategy chart"
+}

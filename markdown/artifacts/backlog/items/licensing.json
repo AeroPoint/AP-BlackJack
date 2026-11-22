@@ -1,0 +1,7 @@
+{
+  "detail": "AGPL-3.0-only plus a commercial licence, with an inbound grant from contributors so the commercial licence can cover their work. Written up as ADR-0008. The grant's wording is still yours to get a lawyer onto.",
+  "order": 5,
+  "section": "p4",
+  "state": "done",
+  "title": "Licensing decision"
+}

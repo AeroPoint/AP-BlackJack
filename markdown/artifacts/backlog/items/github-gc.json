@@ -1,0 +1,7 @@
+{
+  "detail": "After the history rewrite the old objects stay reachable on their side until support runs a collection. Recorded earlier in this session rather than verified today, so it may already be done. Tick it off if so.",
+  "order": 6,
+  "section": "you",
+  "state": "todo",
+  "title": "Chase GitHub Support for garbage collection"
+}

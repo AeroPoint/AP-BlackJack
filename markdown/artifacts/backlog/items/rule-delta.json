@@ -1,0 +1,7 @@
+{
+  "detail": "Two whole rule sets rather than two preset names, because the question people ask is \"same table but X different\". Attributes the difference one rule at a time with the interaction residual stated rather than spread around.",
+  "order": 5,
+  "section": "p1",
+  "state": "done",
+  "title": "Rule-delta explorer"
+}

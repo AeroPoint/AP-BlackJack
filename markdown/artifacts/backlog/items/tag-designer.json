@@ -1,0 +1,8 @@
+{
+  "detail": "`optimal_tags` scales the EOR vector to a level and rounds it; at level 1 it returns exactly Hi-Lo.",
+  "doneWhen": "It searches rather than rounds. The best integer vector at a level is not always the rounded one, and constraints like \"leave the ace neutral\" should be expressible.",
+  "order": 3,
+  "section": "p3",
+  "state": "part",
+  "title": "Custom counting system designer"
+}

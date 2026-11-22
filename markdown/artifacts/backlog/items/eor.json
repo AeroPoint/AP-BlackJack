@@ -1,0 +1,7 @@
+{
+  "detail": "Derives betting and insurance EOR from the solver with the strategy held fixed, and correlates any tag vector against it. Hi-Lo reports BC 0.969 against a published 0.97, Wong Halves 0.993 against 0.99.",
+  "order": 1,
+  "section": "p3",
+  "state": "done",
+  "title": "Effect-of-removal module"
+}

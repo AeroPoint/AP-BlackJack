@@ -1,0 +1,4 @@
+{
+  "order": 1,
+  "text": "YAML configs need `pip install blackjack[cli]`. Without PyYAML the CLI falls back to built-in presets whose keys match the config filenames, so the shipped rule sets still resolve, but custom YAML files do not."
+}

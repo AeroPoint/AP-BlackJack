@@ -1,0 +1,8 @@
+{
+  "blocks": "Accepting an outside contribution without the commercial licence quietly not covering it.",
+  "detail": "ADR-0008 settled AGPL-3.0-only plus a commercial licence. That only works if contributors grant rights inbound, and the wording is the part I should not be writing.",
+  "order": 5,
+  "section": "you",
+  "state": "todo",
+  "title": "Get a lawyer onto the inbound licence grant"
+}

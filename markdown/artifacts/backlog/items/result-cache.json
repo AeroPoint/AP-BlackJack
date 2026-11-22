@@ -1,0 +1,8 @@
+{
+  "detail": "Demoted: the native core removed most of the need. An index sweep is 1.7 s and a spread analysis 0.5 s, so this is a convenience now rather than a fix. Worth doing when a screen starts re-solving on every keystroke.",
+  "doneWhen": "Solves keyed on the rules slug, the composition hash and the engine version, stored under `data/cache/`, invalidated on an engine version change and never on a timestamp.",
+  "order": 4,
+  "section": "p0",
+  "state": "todo",
+  "title": "Result cache with provenance"
+}

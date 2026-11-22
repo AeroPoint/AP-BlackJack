@@ -1,0 +1,7 @@
+{
+  "detail": "10 woff2 files, 255 KB, latin and latin-ext only. `scripts/fetch_fonts.py` rebuilds the directory byte for byte and verifies each family's licence upstream before downloading. One fix fell out: Windows has no MIME entry for `.woff2`, so fonts were being served as octet-stream.",
+  "order": 8,
+  "section": "p1",
+  "state": "done",
+  "title": "Self-host the three faces"
+}

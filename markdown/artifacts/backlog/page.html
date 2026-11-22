@@ -1,0 +1,842 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>AP-BlackJack Backlog</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* One column. Where it stands, then what needs Sean, then the priorities in
+   order, then the known issues. Tokens are lifted from apps/ui/app.css so this
+   board belongs to the project rather than arriving from somewhere else: the
+   felt green is the single accent, the neutrals carry its faint green bias, and
+   state uses the engine's own severity-band hues, which are deliberately not
+   the accent. */
+:root {
+  --ground: #f6f7f5;
+  --panel: #ffffff;
+  --panel-2: #eef1ee;
+  --ink: #16191a;
+  --muted: #5e6a65;
+  --faint: #8d968f;
+  --line: #d7ddd8;
+  --line-soft: #e7ebe7;
+  --felt: #1c4b40;
+  --felt-ink: #ffffff;
+  --critical: #b4493c;
+  --critical-soft: #f6e3e0;
+  --major: #c47a28;
+  --major-soft: #f8ecd9;
+  --minor: #5b83a6;
+  --minor-soft: #e4ecf4;
+  --negligible: #98a09c;
+  --f-display: "Bricolage Grotesque", "Archivo", system-ui, sans-serif;
+  --f-body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 7px;
+  --shadow: 0 1px 2px rgba(20, 30, 26, 0.06), 0 8px 24px rgba(20, 30, 26, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #111413;
+    --panel: #191d1c;
+    --panel-2: #212625;
+    --ink: #e8ece9;
+    --muted: #9aa5a0;
+    --faint: #6f7a75;
+    --line: #2c3231;
+    --line-soft: #232827;
+    --felt: #4fae96;
+    --felt-ink: #0d1412;
+    --critical: #e0796a;
+    --critical-soft: #2f1d1a;
+    --major: #e3a857;
+    --major-soft: #2e2314;
+    --minor: #8fb0cf;
+    --minor-soft: #1b242d;
+    --negligible: #7d867f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #111413;
+  --panel: #191d1c;
+  --panel-2: #212625;
+  --ink: #e8ece9;
+  --muted: #9aa5a0;
+  --faint: #6f7a75;
+  --line: #2c3231;
+  --line-soft: #232827;
+  --felt: #4fae96;
+  --felt-ink: #0d1412;
+  --critical: #e0796a;
+  --critical-soft: #2f1d1a;
+  --major: #e3a857;
+  --major-soft: #2e2314;
+  --minor: #8fb0cf;
+  --minor-soft: #1b242d;
+  --negligible: #7d867f;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 16px;
+  line-height: 1.45;
+}
+.wrap {
+  max-width: 50rem;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 22px 56px;
+  display: grid;
+  gap: 24px;
+}
+h1, h2, h3 {
+  font-family: var(--f-display);
+  margin: 0;
+  text-wrap: balance;
+  letter-spacing: -0.015em;
+}
+h1 { font-size: 2.1rem; font-weight: 800; line-height: 1.04; }
+h2 { font-size: 1.25rem; font-weight: 700; }
+h3 { font-size: 1rem; font-weight: 700; }
+p { margin: 0; }
+.eyebrow {
+  font-family: var(--f-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.top { display: grid; gap: 7px; }
+.asof { color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Where it stands. One cell per item, grouped by priority: the project's own
+   chart idiom, where a square is a thing priced rather than a bar segment. */
+.stand {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 17px;
+  display: grid;
+  gap: 15px;
+}
+.headline { font-size: 1.02rem; }
+.headline b { font-weight: 700; }
+.bands { display: grid; gap: 11px; }
+.band { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 4px 11px; align-items: center; }
+.band-key {
+  font-family: var(--f-mono); font-size: 0.78rem; font-weight: 500; color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.band-right { display: grid; gap: 4px; min-width: 0; }
+.cells { display: flex; flex-wrap: wrap; gap: 3px; }
+.cell {
+  width: 13px; height: 13px; border-radius: 2px;
+  border: 1px solid var(--line); background: var(--panel-2);
+}
+.cell.s-done { background: var(--felt); border-color: var(--felt); }
+.cell.s-part { background: var(--major); border-color: var(--major); }
+.cell.s-you { background: var(--critical); border-color: var(--critical); }
+.band-count {
+  font-family: var(--f-mono); font-size: 0.72rem; color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.legend { display: flex; flex-wrap: wrap; gap: 5px 15px; font-size: 0.78rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Needs you. The loudest block on the page, and empty when nothing does. */
+.needs { display: grid; gap: 11px; }
+.needs ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.needs button {
+  width: 100%; text-align: left; font: inherit; color: var(--ink);
+  background: var(--critical-soft);
+  border: 1px solid var(--critical);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: 11px 13px; display: grid; gap: 3px; cursor: pointer;
+}
+.needs .n-title { font-weight: 600; }
+.needs .n-sub { font-size: 0.84rem; color: var(--muted); }
+
+.controls { display: grid; gap: 9px; }
+.filters, .jumps { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button, .jumps button {
+  font: inherit; font-size: 0.86rem; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 5px 13px; cursor: pointer;
+}
+.filters button[aria-pressed="true"] { background: var(--felt); color: var(--felt-ink); border-color: var(--felt); }
+.jumps button { font-size: 0.8rem; color: var(--muted); }
+.jumps button b {
+  font-family: var(--f-mono); font-weight: 500; color: var(--ink);
+  margin-left: 5px; font-variant-numeric: tabular-nums;
+}
+button:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 2px solid var(--felt); outline-offset: 2px;
+}
+
+main { display: grid; gap: 26px; }
+.state { color: var(--muted); padding: 20px 0; }
+.sec { display: grid; gap: 9px; scroll-margin-top: 14px; }
+.sec-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; flex-wrap: wrap;
+  border-bottom: 2px solid var(--ink); padding-bottom: 6px;
+}
+.sec-count {
+  font-family: var(--f-mono); font-size: 0.74rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; letter-spacing: 0.04em;
+}
+.sec-blurb { color: var(--muted); font-size: 0.9rem; }
+.items { list-style: none; margin: 0; padding: 0; }
+.none { color: var(--faint); font-size: 0.88rem; padding: 7px 0; }
+
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 14px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line-soft);
+  scroll-margin-top: 14px;
+}
+.item.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--major-soft); } to { background: transparent; } }
+.body { display: grid; gap: 5px; min-width: 0; }
+.t-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 9px; }
+.t-title { font-weight: 600; overflow-wrap: anywhere; }
+.item.s-done .t-title { color: var(--muted); }
+.badge {
+  font-family: var(--f-mono); font-size: 0.63rem; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1px solid var(--line); border-radius: 3px;
+  padding: 1px 6px; color: var(--muted); background: var(--panel);
+  white-space: nowrap;
+}
+.badge.b-done { color: var(--felt); border-color: var(--felt); }
+.badge.b-part { color: var(--major); border-color: var(--major); }
+.detail { color: var(--muted); font-size: 0.92rem; overflow-wrap: anywhere; }
+.detail code, .done-when code, .note code {
+  font-family: var(--f-mono); font-size: 0.86em;
+  background: var(--panel-2); border-radius: 3px; padding: 0 3px;
+}
+.done-when, .blocks {
+  font-size: 0.89rem;
+  border-left: 3px solid var(--line);
+  padding: 1px 0 1px 9px;
+  overflow-wrap: anywhere;
+}
+.blocks { border-left-color: var(--critical); }
+.done-when .k, .blocks .k, .note .k {
+  font-family: var(--f-mono); font-size: 0.62rem; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--faint); display: block;
+}
+.note {
+  font-size: 0.92rem;
+  border-left: 3px solid var(--felt);
+  padding: 1px 0 1px 9px;
+  overflow-wrap: anywhere;
+}
+.changed { font-size: 0.74rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+.ctl { display: grid; gap: 5px; justify-items: end; align-content: start; }
+.pill { position: relative; display: inline-flex; }
+.pill select {
+  appearance: none; -webkit-appearance: none;
+  font: inherit; font-family: var(--f-body); font-size: 0.82rem; font-weight: 600;
+  border-radius: 999px; padding: 4px 25px 4px 12px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+}
+.pill::after {
+  content: "\0025be"; position: absolute; right: 10px; top: 50%;
+  transform: translateY(-55%); font-size: 0.7rem; pointer-events: none; color: inherit;
+}
+.pill.w-next select { background: var(--felt); color: var(--felt-ink); border-color: var(--felt); }
+.pill.w-ask select { background: var(--major-soft); color: var(--major); border-color: var(--major); }
+.pill.w-later select { background: var(--panel); color: var(--faint); border-color: var(--line); }
+.pill.w-done select { background: var(--felt); color: var(--felt-ink); border-color: var(--felt); }
+.pill select:disabled { cursor: default; opacity: 1; }
+.linkbtn {
+  font: inherit; font-size: 0.79rem; color: var(--felt);
+  background: none; border: 0; padding: 2px 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.noteform { grid-column: 1 / -1; display: grid; gap: 8px; margin-top: 7px; }
+.noteform textarea {
+  font: inherit; font-family: var(--f-body); font-size: 0.94rem;
+  color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 9px 11px; min-height: 4.4em; resize: vertical;
+  width: 100%; box-sizing: border-box;
+}
+.noteform .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn {
+  font: inherit; font-size: 0.88rem; font-weight: 600;
+  border-radius: var(--radius); padding: 7px 15px; cursor: pointer;
+  border: 1px solid var(--felt); background: var(--felt); color: var(--felt-ink);
+}
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+
+.issues { display: grid; gap: 9px; }
+.issues ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 7px; }
+.issues li { font-size: 0.91rem; color: var(--muted); overflow-wrap: anywhere; }
+.issues code {
+  font-family: var(--f-mono); font-size: 0.86em;
+  background: var(--panel-2); border-radius: 3px; padding: 0 3px;
+}
+
+footer {
+  color: var(--muted); font-size: 0.84rem;
+  border-top: 1px solid var(--line); padding-top: 13px;
+  display: grid; gap: 7px;
+}
+footer code { font-family: var(--f-mono); font-size: 0.88em; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  max-width: calc(100% - 32px);
+  background: var(--ink); color: var(--ground);
+  padding: 9px 15px; border-radius: var(--radius);
+  font-size: 0.88rem; z-index: 20; box-shadow: var(--shadow);
+}
+
+@media (max-width: 34rem) {
+  h1 { font-size: 1.75rem; }
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .ctl {
+    justify-items: start; grid-auto-flow: column;
+    justify-content: start; align-items: center; gap: 14px;
+  }
+  .band { grid-template-columns: minmax(0, 1fr); }
+  .band-key { letter-spacing: 0.1em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .item.flash { animation: none; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">AeroPoint &middot; AP-BlackJack</p>
+    <h1>Backlog</h1>
+    <p class="asof" id="asof">Opening the list&hellip;</p>
+  </header>
+
+  <section class="stand" aria-label="Where it stands">
+    <p class="headline" id="headline">The standing summary appears here once the list loads.</p>
+    <div class="bands" id="bands"></div>
+    <div class="legend" aria-hidden="true">
+      <span><i class="cell s-done"></i>Done</span>
+      <span><i class="cell s-part"></i>Partly done</span>
+      <span><i class="cell"></i>Open</span>
+      <span><i class="cell s-you"></i>Yours</span>
+    </div>
+  </section>
+
+  <section class="needs" id="needs" hidden>
+    <h2>Needs you</h2>
+    <ul id="needs-list"></ul>
+  </section>
+
+  <nav class="controls" aria-label="Filter and jump">
+    <div class="filters" role="group" aria-label="Show">
+      <button type="button" id="f-open" data-filter="open" aria-pressed="true">Open</button>
+      <button type="button" id="f-all" data-filter="all" aria-pressed="false">Everything</button>
+      <button type="button" id="f-yours" data-filter="yours" aria-pressed="false">Yours</button>
+      <button type="button" id="f-next" data-filter="next" aria-pressed="false">Marked next</button>
+    </div>
+    <div class="jumps" id="jumps"></div>
+  </nav>
+
+  <main id="sections">
+    <div class="state" id="state">Opening the list&hellip;</div>
+  </main>
+
+  <section class="issues" id="issues" hidden>
+    <h2>Known issues</h2>
+    <p class="sec-blurb">Live limitations, not tasks. Each one is written up where it bites.</p>
+    <ul id="issues-list"></ul>
+  </section>
+
+  <footer>
+    <p>
+      Claude keeps this board in step with <code>markdown/ToDo.md</code>. Set a priority or
+      leave a note here and Claude reads it at the start of the next session.
+    </p>
+    <p>
+      Status on a project item is whatever git says, so it is not yours to change here &mdash;
+      the dial you get is priority. Your own items are yours to tick off.
+    </p>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* Sections in the order the backlog itself uses: what needs Sean, then the
+     priorities, which are ordered by what unblocks the most downstream work. */
+  const SECTIONS = [
+    { id: "you", key: "YOU", title: "Yours to do", blurb: "Decisions and errands only you can run. Ticking one off here is how Claude learns it is done." },
+    { id: "p0", key: "P0", title: "Correctness and speed", blurb: "Gates everything else. Nothing built on a wrong or slow core is worth building twice." },
+    { id: "p1", key: "P1", title: "The application", blurb: "The CLI, the API and the local app." },
+    { id: "p2", key: "P2", title: "Training and free play", blurb: "The drills, and playing a real round against the cards actually left." },
+    { id: "p3", key: "P3", title: "Depth in the maths", blurb: "Where the model is still approximate and says so." },
+    { id: "p4", key: "P4", title: "Product and polish", blurb: "Everything that is worth doing once the maths is right." }
+  ];
+
+  /* Two different controls, because two different things own the answer. A
+     project item's status lives in git, so the only thing this page can usefully
+     take from Sean there is priority. His own items have no other record, so
+     there the page takes the status itself. */
+  const WANTS = [["", "No call"], ["next", "Do next"], ["later", "Not now"], ["ask", "Ask me first"]];
+  const MINE = [["todo", "To do"], ["done", "Done"]];
+  const STATES = { todo: "Open", part: "Partly done", done: "Done" };
+
+  const $ = (id) => document.getElementById(id);
+  let db = null;
+  let canWrite = null;
+  let items = [];
+  let issues = [];
+  let info = null;
+  let gotItems = false;
+  let filter = "open";
+  let pendingRender = false;
+  let openNote = null;
+
+  try {
+    const saved = localStorage.getItem("apbj-backlog-filter");
+    if (saved && ["open", "all", "yours", "next"].includes(saved)) filter = saved;
+  } catch (e) { /* a board that cannot remember a filter still shows the list */ }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  /* Backtick spans come through as code, because half these items are the names
+     of files and functions and reading them as prose is harder than it needs to
+     be. Nothing else in the text is treated as markup. */
+  function richInto(node, text) {
+    String(text == null ? "" : text).split(/`([^`]+)`/).forEach((part, i) => {
+      if (!part) return;
+      node.appendChild(i % 2 ? el("code", null, part) : document.createTextNode(part));
+    });
+    return node;
+  }
+
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => { t.hidden = true; }, 3500);
+  }
+
+  function fmtWhen(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString(undefined, {
+      weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
+    });
+  }
+
+  const stateOf = (it) => (STATES[it.state] ? it.state : "todo");
+  const isOpen = (it) => stateOf(it) !== "done";
+  const inSection = (id) => items.filter((it) => it.section === id)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  function visible(it) {
+    if (filter === "all") return true;
+    if (filter === "open") return isOpen(it);
+    if (filter === "yours") return it.section === "you" && isOpen(it);
+    if (filter === "next") return it.want === "next" && isOpen(it);
+    return true;
+  }
+
+  function reduceMotion() {
+    try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; }
+  }
+
+  function jumpTo(id) {
+    const n = $(id);
+    if (!n) return;
+    n.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "start" });
+    if (n.classList.contains("item")) {
+      n.classList.remove("flash");
+      void n.offsetWidth;
+      n.classList.add("flash");
+    }
+  }
+
+  function cellClass(it) {
+    const s = stateOf(it);
+    if (s === "done") return "cell s-done";
+    if (s === "part") return "cell s-part";
+    return it.section === "you" ? "cell s-you" : "cell";
+  }
+
+  function renderStand() {
+    $("asof").textContent = info && info.asof
+      ? "In step with markdown/ToDo.md as of " + fmtWhen(info.asof)
+      : "";
+    const open = items.filter(isOpen).length;
+    const mine = items.filter((it) => it.section === "you" && isOpen(it)).length;
+    const head = $("headline");
+    head.replaceChildren();
+    if (!gotItems) {
+      head.textContent = "The standing summary appears here once the list loads.";
+    } else if (info && info.headline) {
+      richInto(head, info.headline);
+    } else {
+      head.textContent = open + " items open, " + mine + " of them yours.";
+    }
+
+    const bands = $("bands");
+    bands.replaceChildren();
+    SECTIONS.forEach((s) => {
+      const list = inSection(s.id);
+      if (!list.length) return;
+      const row = el("div", "band");
+      row.appendChild(el("span", "band-key", s.key));
+      const right = el("div", "band-right");
+      const cells = el("div", "cells");
+      cells.setAttribute("aria-hidden", "true");
+      list.forEach((it) => cells.appendChild(el("div", cellClass(it))));
+      right.appendChild(cells);
+      const done = list.filter((it) => stateOf(it) === "done").length;
+      right.appendChild(el("span", "band-count", s.title + " — " + done + " of " + list.length + " done"));
+      row.appendChild(right);
+      bands.appendChild(row);
+    });
+  }
+
+  function renderNeeds() {
+    const mine = inSection("you").filter(isOpen);
+    const ul = $("needs-list");
+    ul.replaceChildren();
+    mine.forEach((it) => {
+      const b = el("button");
+      b.type = "button";
+      b.appendChild(el("span", "n-title", it.title || ""));
+      const sub = el("span", "n-sub");
+      richInto(sub, it.blocks ? "Holds up: " + it.blocks : (it.detail || ""));
+      b.appendChild(sub);
+      b.addEventListener("click", () => jumpTo("item-" + it.id));
+      const li = el("li");
+      li.appendChild(b);
+      ul.appendChild(li);
+    });
+    $("needs").hidden = mine.length === 0;
+  }
+
+  function renderJumps() {
+    const j = $("jumps");
+    j.replaceChildren();
+    SECTIONS.forEach((s) => {
+      const list = inSection(s.id);
+      if (!list.length) return;
+      const b = el("button");
+      b.type = "button";
+      b.textContent = s.title;
+      const open = list.filter(isOpen).length;
+      b.appendChild(el("b", null, String(open)));
+      b.setAttribute("aria-label", s.title + ", " + open + " open");
+      b.addEventListener("click", () => jumpTo("sec-" + s.id));
+      j.appendChild(b);
+    });
+  }
+
+  async function write(id, patch) {
+    const body = Object.assign({}, patch, {
+      changedAt: new Date().toISOString(),
+      changedBy: "board"
+    });
+    const ref = db.doc("items/" + id);
+    try {
+      await ref.update(body);
+    } catch (e) {
+      if (e && e.code === "unavailable") {
+        await new Promise((r) => setTimeout(r, 600 + Math.random() * 900));
+        await ref.update(body);
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  function writeFailed(e) {
+    if (e && e.code === "invalid_argument") {
+      canWrite = false;
+      toast("This board is read-only for you.");
+      render(true);
+    } else {
+      toast("That did not save. Try again in a moment.");
+    }
+  }
+
+  function itemRow(it) {
+    const mineToTick = it.section === "you";
+    const li = el("li", "item s-" + stateOf(it));
+    li.id = "item-" + it.id;
+
+    const body = el("div", "body");
+    const head = el("div", "t-head");
+    head.appendChild(el("span", "t-title", it.title || ""));
+    const s = stateOf(it);
+    if (!mineToTick) {
+      head.appendChild(el("span", "badge b-" + s, STATES[s]));
+    }
+    body.appendChild(head);
+
+    if (it.detail) body.appendChild(richInto(el("p", "detail"), it.detail));
+
+    if (it.doneWhen) {
+      const d = el("div", "done-when");
+      d.appendChild(el("span", "k", "Done when"));
+      richInto(d, it.doneWhen);
+      body.appendChild(d);
+    }
+    if (it.blocks) {
+      const d = el("div", "blocks");
+      d.appendChild(el("span", "k", "Holds up"));
+      richInto(d, it.blocks);
+      body.appendChild(d);
+    }
+    if (it.note) {
+      const d = el("div", "note");
+      d.appendChild(el("span", "k", "Your note"));
+      richInto(d, it.note);
+      body.appendChild(d);
+    }
+    if (it.changedAt && it.changedBy === "board") {
+      body.appendChild(el("span", "changed", "Changed here " + fmtWhen(it.changedAt)));
+    }
+    li.appendChild(body);
+
+    const ctl = el("div", "ctl");
+    const field = mineToTick ? "state" : "want";
+    const options = mineToTick ? MINE : WANTS;
+    const current = mineToTick ? s : (it.want || "");
+    const pill = el("span", "pill " + (mineToTick ? "w-" + (s === "done" ? "done" : "todo") : "w-" + (current || "none")));
+    const sel = el("select");
+    sel.id = "pick-" + it.id;
+    sel.setAttribute("aria-label", (mineToTick ? "Status of: " : "Priority for: ") + (it.title || ""));
+    options.forEach(([v, label]) => {
+      const o = el("option", null, label);
+      o.value = v;
+      if (v === current) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.disabled = canWrite === false || !db;
+    sel.addEventListener("change", async () => {
+      const v = sel.value;
+      pill.className = "pill " + (mineToTick ? "w-" + (v === "done" ? "done" : "todo") : "w-" + (v || "none"));
+      sel.disabled = true;
+      try {
+        const patch = {};
+        patch[field] = v;
+        await write(it.id, patch);
+        const label = (options.find((o) => o[0] === v) || ["", ""])[1];
+        toast("Saved: " + label);
+      } catch (e) {
+        sel.value = current;
+        pill.className = "pill " + (mineToTick ? "w-" + (s === "done" ? "done" : "todo") : "w-" + (current || "none"));
+        writeFailed(e);
+      } finally {
+        sel.disabled = canWrite === false;
+      }
+    });
+    pill.appendChild(sel);
+    ctl.appendChild(pill);
+
+    if (canWrite !== false && db) {
+      const nb = el("button", "linkbtn", it.note ? "Edit note" : "Add note");
+      nb.type = "button";
+      nb.addEventListener("click", () => {
+        openNote = openNote === it.id ? null : it.id;
+        render(true);
+      });
+      ctl.appendChild(nb);
+    }
+    li.appendChild(ctl);
+
+    if (openNote === it.id && canWrite !== false && db) {
+      const form = el("form", "noteform");
+      const ta = el("textarea");
+      ta.id = "note-" + it.id;
+      ta.setAttribute("aria-label", "Note for: " + (it.title || ""));
+      ta.placeholder = "Anything Claude should know before touching this — a decision, a constraint, or leave it.";
+      ta.value = it.note || "";
+      const row = el("div", "row");
+      const save = el("button", "btn", "Save note");
+      save.type = "submit";
+      const cancel = el("button", "btn ghost", "Cancel");
+      cancel.type = "button";
+      cancel.addEventListener("click", () => { openNote = null; render(true); });
+      row.append(save, cancel);
+      form.append(ta, row);
+      form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        save.disabled = true;
+        try {
+          await write(it.id, { note: ta.value.trim() });
+          openNote = null;
+          toast("Note saved");
+          render(true);
+        } catch (e) {
+          writeFailed(e);
+        } finally {
+          save.disabled = false;
+        }
+      });
+      li.appendChild(form);
+      setTimeout(() => { try { ta.focus(); } catch (e) { /* no focus, no harm */ } }, 0);
+    }
+    return li;
+  }
+
+  function renderIssues() {
+    const list = issues.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const ul = $("issues-list");
+    ul.replaceChildren();
+    list.forEach((row) => ul.appendChild(richInto(el("li"), row.text || "")));
+    $("issues").hidden = list.length === 0 || filter === "yours" || filter === "next";
+  }
+
+  function render(force) {
+    /* Never pull a control out from under the hand on it: a snapshot that
+       arrives mid-edit waits for the blur. */
+    const ae = document.activeElement;
+    if (!force && ae && $("sections").contains(ae) && ae.matches("select, textarea")) {
+      pendingRender = true;
+      return;
+    }
+    pendingRender = false;
+    ["open", "all", "yours", "next"].forEach((f) => {
+      $("f-" + f).setAttribute("aria-pressed", String(filter === f));
+    });
+    renderStand();
+    renderNeeds();
+    renderJumps();
+    renderIssues();
+    if (!gotItems) return;
+
+    const main = $("sections");
+    main.replaceChildren();
+    if (!items.length) {
+      main.appendChild(el("div", "state", "No items on the board yet. Claude puts them here."));
+      return;
+    }
+    let shownAny = false;
+    SECTIONS.forEach((s) => {
+      const all = inSection(s.id);
+      if (!all.length) return;
+      const shown = all.filter(visible);
+      if (!shown.length && filter !== "all") return;
+      const sec = el("section", "sec");
+      sec.id = "sec-" + s.id;
+      const head = el("div", "sec-head");
+      head.appendChild(el("h2", null, s.title));
+      const done = all.filter((it) => stateOf(it) === "done").length;
+      head.appendChild(el("span", "sec-count", done + " of " + all.length + " done"));
+      sec.appendChild(head);
+      if (s.blurb) sec.appendChild(el("p", "sec-blurb", s.blurb));
+      if (!shown.length) {
+        sec.appendChild(el("p", "none", "Nothing here under this filter."));
+      } else {
+        const ul = el("ul", "items");
+        shown.forEach((it) => ul.appendChild(itemRow(it)));
+        sec.appendChild(ul);
+        shownAny = true;
+      }
+      main.appendChild(sec);
+    });
+    if (!shownAny) {
+      main.appendChild(el("div", "state", "Nothing matches that filter. Try Everything."));
+    }
+  }
+
+  document.querySelectorAll(".filters button").forEach((b) => {
+    b.addEventListener("click", () => {
+      filter = b.dataset.filter;
+      try { localStorage.setItem("apbj-backlog-filter", filter); } catch (e) { /* fine */ }
+      render(true);
+    });
+  });
+  $("sections").addEventListener("focusout", () => {
+    setTimeout(() => { if (pendingRender) render(); }, 0);
+  });
+
+  function showState(msg) {
+    const n = $("state");
+    if (n) n.textContent = msg;
+  }
+
+  render(true);
+
+  async function start() {
+    if (!window.claude || typeof window.claude.use !== "function") {
+      showState("This copy cannot reach the board. Open it on claude.ai while signed in.");
+      $("asof").textContent = "";
+      return;
+    }
+    db = await window.claude.use("db");
+    if (!db) {
+      showState("This view cannot open the board. Open it on claude.ai while signed in.");
+      $("asof").textContent = "";
+      return;
+    }
+
+    let timer = setTimeout(() => {
+      if (!gotItems) showState("Cannot reach the board yet. It loads by itself once the connection is back.");
+      else toast("The board may be out of date: the connection is slow.");
+    }, 10000);
+    const stopTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+    db.collection("items").onSnapshot((snap) => {
+      items = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      gotItems = true;
+      if (!snap.metadata.fromCache) stopTimer();
+      render();
+    }, () => {
+      stopTimer();
+      if (!gotItems) showState("The board did not load. Reopen the page later.");
+      else toast("Live updates stopped. Reopen the page to refresh.");
+    });
+
+    db.collection("issues").onSnapshot((snap) => {
+      issues = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      render();
+    }, () => { /* the issues list is the least of it */ });
+
+    db.doc("info/summary").onSnapshot((snap) => {
+      info = snap.exists ? snap.data() : null;
+      render();
+    }, () => { /* the summary is cosmetic */ });
+
+    try {
+      const user = await window.claude.use("user");
+      if (user) {
+        const may = await user.can("data.write");
+        if (may === false) { canWrite = false; render(true); }
+        else if (may === true) { canWrite = true; render(true); }
+      }
+    } catch (e) { /* not told: keep the controls and let a refused write decide */ }
+  }
+  start();
+})();
+</script>
+
+</body></html>

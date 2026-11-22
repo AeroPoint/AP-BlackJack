@@ -1,0 +1,8 @@
+{
+  "detail": "Correlated hands against one dealer change both EV and variance materially, which changes the optimal spread when playing two spots. The moments module already carries the machinery for correlated hands, since that is what makes splitting composable.",
+  "doneWhen": "Two spots are priced together rather than as two independent hands, and the spread model takes the number of spots.",
+  "order": 5,
+  "section": "p3",
+  "state": "todo",
+  "title": "Multi-hand play"
+}

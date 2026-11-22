@@ -1,0 +1,7 @@
+{
+  "detail": "The gap was partly sample size and partly a real bug: the count-frequency model binned for round-to-nearest while the player truncates. Model and simulator now agree to 0.0003 units a round over 400 million rounds.",
+  "order": 3,
+  "section": "p0",
+  "state": "done",
+  "title": "Reconcile the analytic spread model against simulation"
+}

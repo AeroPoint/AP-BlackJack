@@ -1,0 +1,7 @@
+{
+  "detail": "`backup-pre-rename`, `backup-pre-rewrite` and `backup-pre-rewrite-2` are still on this machine, checked just now. They were insurance for the history rewrite, which is long finished. `git tag -d` each.",
+  "order": 4,
+  "section": "you",
+  "state": "todo",
+  "title": "Delete the three local backup tags"
+}

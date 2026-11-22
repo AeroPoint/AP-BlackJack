@@ -1,0 +1,7 @@
+{
+  "detail": "`git fetch origin && git reset --hard origin/main`, if that session is still alive. Recorded earlier in this session and quite possibly moot now.",
+  "order": 7,
+  "section": "you",
+  "state": "todo",
+  "title": "Point the cloud Claude session at the new history"
+}

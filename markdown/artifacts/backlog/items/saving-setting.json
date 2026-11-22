@@ -1,0 +1,8 @@
+{
+  "detail": "The settings screen is read-only on purpose: a write endpoint is an endpoint that creates files, on a service with no authentication.",
+  "doneWhen": "The authentication question is answered. Then the endpoint itself is an afternoon.",
+  "order": 7,
+  "section": "p1",
+  "state": "todo",
+  "title": "Saving a setting"
+}

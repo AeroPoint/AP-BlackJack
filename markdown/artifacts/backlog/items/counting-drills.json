@@ -1,0 +1,8 @@
+{
+  "detail": "Three modes, each timed on a monotonic clock and reproducible from a seed: running count through a real shoe, true-count conversion, and reading the discard tray. The tray is now drawn and estimated by eye, and the cards deal at a settable speed.",
+  "doneWhen": "Tray estimation from a photograph, which is a different problem: it needs real trays shot at real angles. Cards that disappear after a set time are deliberately not coming, because that makes the drill a recall test and breaks the clock.",
+  "order": 3,
+  "section": "p2",
+  "state": "part",
+  "title": "Counting drills"
+}

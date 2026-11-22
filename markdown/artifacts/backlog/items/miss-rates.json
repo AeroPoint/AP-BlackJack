@@ -1,0 +1,7 @@
+{
+  "detail": "The drill and free play both write a per-player history that the weighting reads back, so the drill gets harder where you are actually weak rather than where learners in general are.",
+  "order": 3,
+  "section": "p4",
+  "state": "done",
+  "title": "Persist measured miss rates across sessions"
+}

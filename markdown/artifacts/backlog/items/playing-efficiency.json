@@ -1,0 +1,8 @@
+{
+  "detail": "`ev/efficiency.py` derives the per-decision EOR for every close cell. The ranking matches published PE almost exactly, Spearman 0.98, but the levels sit a consistent +0.13 above Griffin's normalisation. Tests assert the ranking, not the levels, because matching levels would mean tuning a constant to one author's table.",
+  "doneWhen": "The normalisation difference is explained. Most likely his specific decision set, or his treatment of the available-gain weight. Until then the number is comparative rather than absolute, and the docs say so.",
+  "order": 2,
+  "section": "p3",
+  "state": "part",
+  "title": "Playing efficiency"
+}

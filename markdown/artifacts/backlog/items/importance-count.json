@@ -1,0 +1,8 @@
+{
+  "detail": "Margins move with the count. A cell that is negligible flat can be worth real money at +4, and the current importance model prices every square at a true count of zero.",
+  "doneWhen": "The leak and cost scales take a true count, so the study order at +4 differs from the study order flat.",
+  "order": 2,
+  "section": "p4",
+  "state": "todo",
+  "title": "Importance under a count"
+}

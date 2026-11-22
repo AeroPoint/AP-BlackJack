@@ -1,0 +1,4 @@
+{
+  "order": 3,
+  "text": "On its own count frequencies the analytic spread model overstates a six-deck KO ramp keyed on the pivot by 18%, because those frequencies weight card positions rather than rounds. Price unbalanced spreads on a simulator's histogram with `TrueCountDistribution.with_frequencies` until the cut-card item is done."
+}

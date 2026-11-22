@@ -1,0 +1,7 @@
+{
+  "detail": "13 tracked files and 69 MB of `node_modules`, superseded on every axis. Its TypeScript interfaces were the only declaration of the API's response shape, so they moved to `tests/unit/api_contract.py` rather than going with it.",
+  "order": 9,
+  "section": "p1",
+  "state": "done",
+  "title": "Delete the React front end"
+}

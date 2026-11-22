@@ -1,0 +1,7 @@
+{
+  "detail": "All 480 rule combinations baked into one self-contained file that works from a link on a phone with no server. `build.py` regenerates the published file byte for byte.",
+  "order": 2,
+  "section": "p1",
+  "state": "done",
+  "title": "Standalone chart page"
+}

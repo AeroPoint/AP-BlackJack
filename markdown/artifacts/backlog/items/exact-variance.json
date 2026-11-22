@@ -1,0 +1,7 @@
+{
+  "detail": "`ev/moments.py` carries moments conditional on each dealer outcome, which is what makes splitting composable. Variance is not flat across the count, and the old constant understated a 1-12 spread's risk of ruin by a fifth.",
+  "order": 2,
+  "section": "p0",
+  "state": "done",
+  "title": "Exact variance from the solver"
+}

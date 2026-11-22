@@ -1,0 +1,8 @@
+{
+  "detail": "Quantified, not yet modelled. 0.0007 units a round on a 1-8 Hi-Lo ramp, because rounds are sparser after the low-card runs that push the count up. Worse on an unbalanced count: 18% high on a six-deck KO ramp keyed on the pivot, because a KO count reaches its pivot late in the shoe where rounds are thinnest.",
+  "doneWhen": "The frequency model weights rounds rather than card positions, most likely a Markov chain over running count and depth whose step is one round, and matches the simulator's histogram within its noise without reweighting.",
+  "order": 7,
+  "section": "p3",
+  "state": "part",
+  "title": "Cut-card effect"
+}

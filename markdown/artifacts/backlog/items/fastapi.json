@@ -1,0 +1,7 @@
+{
+  "detail": "Fast operations are plain requests; the long ones are jobs with progress and cancellation. `service.py` imports no web framework, which is the test that the boundary sits in the right place.",
+  "order": 1,
+  "section": "p1",
+  "state": "done",
+  "title": "FastAPI service"
+}

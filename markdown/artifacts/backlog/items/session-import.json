@@ -1,0 +1,8 @@
+{
+  "detail": "Import a player's own session log, CSV or a tracker export, and say what it means against the model: whether a losing month was variance or a leak, which is the question every tracker fails to answer.",
+  "doneWhen": "A log in, and out: the measured win rate with its standard error, against what the model says that table and that ramp should have paid.",
+  "order": 4,
+  "section": "p4",
+  "state": "todo",
+  "title": "Session tracker import"
+}

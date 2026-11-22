@@ -1,0 +1,7 @@
+{
+  "detail": "The ramp is edited as bands rather than two parallel rows of numbers, which is what the first version did and was reported unusable. Reports EV, SD, N0, SCORE and risk of ruin, each with a sentence saying what it means.",
+  "order": 4,
+  "section": "p1",
+  "state": "done",
+  "title": "Local app: spread and risk explorer"
+}

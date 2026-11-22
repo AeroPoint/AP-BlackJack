@@ -1,0 +1,8 @@
+{
+  "detail": "Given a count, what should you bet? The one drill that trains the half of the game that actually makes the money.",
+  "doneWhen": "Graded against the Kelly-optimal ramp for the configured bankroll, the way the play drills are graded against the solver.",
+  "order": 4,
+  "section": "p2",
+  "state": "todo",
+  "title": "Betting drills"
+}

@@ -1,0 +1,4 @@
+{
+  "order": 5,
+  "text": "The standalone chart page still links the font CDN. Deliberate: it is one self-contained file shared by link, so a viewer has internet by definition, and embedding the faces would add about 340 KB to a file whose whole virtue is being one file."
+}

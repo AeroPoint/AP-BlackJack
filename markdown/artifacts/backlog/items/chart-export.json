@@ -1,0 +1,8 @@
+{
+  "detail": "A PDF or PNG of a strategy chart and an index card, sized for a pocket. The standalone chart page already proves the layout survives being one file.",
+  "doneWhen": "A chart and an index card print legibly at card size without hand-tuning.",
+  "order": 1,
+  "section": "p4",
+  "state": "todo",
+  "title": "Chart export"
+}

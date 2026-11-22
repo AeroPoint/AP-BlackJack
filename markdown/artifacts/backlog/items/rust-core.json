@@ -1,0 +1,7 @@
+{
+  "detail": "Full solve 1352 ms to 10.8 ms, 125x, and 31 ms end to end. Parity is exact rather than 1e-12: `tests/parity/` asserts bit equality across four rule sets. Index generation 34.5 s to 1.72 s.",
+  "order": 1,
+  "section": "p0",
+  "state": "done",
+  "title": "Rust core: dealer probabilities and player EV recursion"
+}

@@ -1,0 +1,8 @@
+{
+  "detail": "The strategy drill, free play with counted grading, all three counting drills, the dealing-speed dial and the drawn tray are done. Every question and every verdict comes from the engine, so a drill in the browser is the same drill as in the terminal on the same seed.",
+  "doneWhen": "A tally or a session can follow you between devices. It lives in `localStorage` today because per-player state on a service with no authentication would collide between two browsers on one network.",
+  "order": 6,
+  "section": "p1",
+  "state": "part",
+  "title": "Local app: trainer, free play and the drills"
+}
